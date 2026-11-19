@@ -1,0 +1,4 @@
+name: diagonal
+expected: success
+shift that must still factorise with every pivot positive: 0.5
+shift that must be refused: 1.5

@@ -1,0 +1,7 @@
+/build/
+/config.local.psd1
+*.fasl
+*.log
+__pycache__/
+*.pyc
+/system-index.txt

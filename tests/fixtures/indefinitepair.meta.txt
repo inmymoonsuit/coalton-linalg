@@ -1,0 +1,3 @@
+name: indefinitepair
+expected: refused
+expected refusal: 1

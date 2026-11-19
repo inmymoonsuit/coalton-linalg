@@ -1,0 +1,3 @@
+name: scalarnegative
+expected: refused
+expected refusal: 0

@@ -1,0 +1,16 @@
+(cl:defpackage #:coalton-linalg/tests/callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
+  (:export #:dynamic-shifts))
+(cl:in-package #:coalton-linalg/tests/callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare dynamic-shifts (ldlt:Symbolic * arr:LispArray F64 * UFix -> UFix))
+  (define (dynamic-shifts s a count)
+    "Exercise the cross-package Coalton call with a changing, computed F64 shift."
+    (let status = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1)) (shift 0.0d0 (+ shift 1.0d-12))) :while (< i count)
+      (cell:write! status (+ (cell:read status) (if (== (ldlt:factor-status (ldlt:factor! s a shift)) ldlt:FactorSuccess) 0 1))))
+    (cell:read status)))

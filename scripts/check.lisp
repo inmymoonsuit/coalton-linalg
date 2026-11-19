@@ -1,0 +1,23 @@
+(load (merge-pathnames "bootstrap.lisp" *load-truename*))
+(unless (and (null (find-package "COALTON-LINALG/TOOLS"))
+             (null (find-package "COALTON-LINALG/TESTS"))
+             (null (find-package "COALTON-LINALG/EXAMPLES")))
+  (error "Loading the main library loaded development tooling."))
+(format t "CORE-LOAD-ISOLATION-PASS~%")
+(asdf:load-system "coalton-linalg/tests" :force t)
+(asdf:load-system "coalton-linalg/tools-tests")
+(load (merge-pathnames "tools/toolchain-metadata.lisp" *library-root*))
+(load (merge-pathnames "allocation-isolation.lisp" *load-truename*))
+(check-isolation-restoration)
+(call-with-allocation-isolation
+  (lambda ()
+    (asdf:test-system "coalton-linalg")
+    (asdf:test-system "coalton-linalg/tools-tests")
+    (uiop:symbol-call :coalton-linalg/tools :run-fixtures
+      (asdf:system-relative-pathname "coalton-linalg" "tests/fixtures/")
+      (uiop:getenv "COALTON_LINALG_OUTPUT") :repeats 1 :allocation-repeats 100)
+    (uiop:symbol-call :coalton-linalg/tools :run-fixtures
+      (uiop:getenv "COALTON_LINALG_STRESS_INPUT")
+      (uiop:getenv "COALTON_LINALG_STRESS_OUTPUT")
+      :repeats 1 :allocation-repeats 100)))
+(coalton-linalg/toolchain:write-metadata (uiop:getenv "COALTON_LINALG_METADATA"))

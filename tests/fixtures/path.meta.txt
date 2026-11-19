@@ -1,0 +1,4 @@
+name: path
+expected: success
+shift that must still factorise with every pivot positive: 1
+shift that must be refused: 5

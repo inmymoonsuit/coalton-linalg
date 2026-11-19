@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-19",
+  "sbcl": "2.6.10",
+  "host": "Windows x86-64",
+  "coalton": "b6e284bdd91ef9ba0fb303e0798c9818b9b3e268",
+  "policies": [
+    "speed 3 / safety 1",
+    "speed 3 / safety 0"
+  ],
+  "fixture_cases": 20,
+  "passed": 20,
+  "successful_factors": 14,
+  "refused": 6,
+  "verifier_planted_controls_rejected": 10,
+  "interface_allocation_paths": 11,
+  "allocation_warmup_calls": 10000,
+  "allocation_measured_calls": 10000,
+  "allocation_measured_bytes": 0,
+  "computed_shift_calls": 10000,
+  "computed_shift_bytes": 0,
+  "fixture_files_reproduced": 75,
+  "identical_artifacts_across_policies_and_prototype": 74,
+  "max_backward_error": 2.18417455838898E-17
+}

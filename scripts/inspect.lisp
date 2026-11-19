@@ -1,0 +1,11 @@
+(load (merge-pathnames "bootstrap.lisp" *load-truename*))
+(let ((directory (merge-pathnames "build/disassembly/" *library-root*)))
+  (ensure-directories-exist directory)
+  (dolist (name '("FACTOR!" "FACTOR!%UNBOXED" "SOLVE!" "SOLVE!%UNPACKED"))
+    (let ((symbol (find-symbol name "COALTON-LINALG/SPARSE/SPD-LDLT")))
+      (when (and symbol (fboundp symbol))
+        (with-open-file (*standard-output*
+                         (merge-pathnames (concatenate 'string (string-downcase name) ".txt") directory)
+                         :direction :output :if-exists :supersede)
+          (disassemble (symbol-function symbol)))))))
+(format t "DISASSEMBLY-WRITTEN~%")

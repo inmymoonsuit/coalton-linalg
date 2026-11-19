@@ -1,0 +1,3 @@
+name: star_refusal
+expected: refused
+expected refusal: 4

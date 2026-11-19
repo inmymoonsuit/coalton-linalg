@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-19",
+  "batches": [
+    1,
+    2
+  ],
+  "checks": "scripts/check.ps1 at safety1 from an empty dependency cache, then safety0 using that populated cache",
+  "toolchain_lock": "toolchain.lock.json",
+  "pinned_components": 17,
+  "pinned_files": 1311,
+  "loaded_dependency_systems": 28,
+  "fresh_cache_fasls": 336,
+  "baseline_cases": 20,
+  "generated_cases": 336,
+  "generated_successes": 240,
+  "generated_refusals": 96,
+  "metamorphic_relations": 252,
+  "max_generated_backward_error": 1.1696176720330866E-16,
+  "max_generated_forward_error": 7.450580596923828E-09,
+  "repeated_refactor_cases": 96,
+  "rounded_gram_observations": 24,
+  "primitive_contract_groups": [
+    "norms",
+    "constructors",
+    "transforms",
+    "matvec refusals",
+    "SPD integration"
+  ],
+  "coalton_examples": 2,
+  "allocation_paths": 11,
+  "dynamic_shift_calls": 10000,
+  "allocating_controls_detected": true,
+  "finalizer_restoration_control_passed": true,
+  "planted_controls": {
+    "artifact_verifier": 10,
+    "stress_verifier": 6,
+    "primitive_oracles": 4,
+    "toolchain": 6,
+    "parser_mutation": 1,
+    "allocating_thunk": 1,
+    "isolation_failure": 1
+  },
+  "byte_identical_stress_artifacts_across_policies": 2016,
+  "byte_identical_baseline_artifacts_across_policies": 74,
+  "componentwise_diagonal_checks_verified_both_policies": true
+}

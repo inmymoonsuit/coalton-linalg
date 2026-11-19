@@ -1,0 +1,250 @@
+{
+  "format": 1,
+  "recorded_date": "2026-11-19",
+  "description": "Acquisition coordinates for the tested Windows x86-64 dependency content. No dependency implementation is redistributed. Download URLs are version-specific; hashes distinguish recorded local bytes and upstream-declared bytes.",
+  "verification": "Verify download byte sizes and SHA256 before extraction, then run tools/check-toolchain.py against the complete installed roots. Extraction and successful source compilation are separate checks. See docs/setup.md.",
+  "sbcl": {
+    "version": "2.6.10",
+    "platform": "Windows x86-64",
+    "url": "https://prdownloads.sourceforge.net/sbcl/sbcl-2.6.10-x86-64-windows-binary.msi",
+    "source": "https://www.sbcl.org/platform-table.html",
+    "sha256": null,
+    "note": "Official archive coordinate only. An MSI archive hash was not established from a primary source or local copy. toolchain.lock.json pins the installed executable, core, and contrib bytes; a version string alone is insufficient."
+  },
+  "coalton": {
+    "repository": "https://github.com/coalton-lang/coalton.git",
+    "revision": "b6e284bdd91ef9ba0fb303e0798c9818b9b3e268",
+    "checkout_configuration": {
+      "core.autocrlf": "true",
+      "core.eol": "crlf"
+    },
+    "note": "The recorded checkout has CRLF for Git-managed text unless upstream .gitattributes requires LF. Preserve upstream attributes. Use a detached Git checkout with these settings, not an unnormalized source archive. Installed content hashes remain authoritative."
+  },
+  "quicklisp": {
+    "client_version": "2021-02-13",
+    "dist_version": "2026-01-01",
+    "note": "URLs retain the exact schemes advertised by pinned Quicklisp metadata. SHA256 checks apply to returned bytes regardless of transport. The registration script loads installed sources only, and disables Quicklisp discovery hooks."
+  },
+  "downloads": [
+    {
+      "id": "quicklisp-client",
+      "file": "quicklisp-2021-02-13.tar",
+      "url": "http://beta.quicklisp.org/client/2021-02-13/quicklisp.tar",
+      "bytes": 266240,
+      "sha256": "a8a3c8c91b51dd185175abad4d7c3999ebb4e2520be5a6cee2127035ac6c87be",
+      "sha256_source": "Installed canonical client-info.sexp, :client-tar metadata; client tar not available locally at recording time.",
+      "unpack_to": "quicklisp/"
+    },
+    {
+      "id": "quicklisp-client-info",
+      "file": "client-info-2021-02-13.sexp",
+      "url": "http://beta.quicklisp.org/client/2021-02-13/client-info.sexp",
+      "bytes": 839,
+      "sha256": "b4f515c5ed204d9fa4ea8637e60c0b12575609f450f26919dbfb835ee29933e0",
+      "sha256_source": "Installed client-info.sexp bytes.",
+      "copy_to": "quicklisp/client-info.sexp"
+    },
+    {
+      "id": "quicklisp-setup",
+      "file": "quicklisp-setup-2021-02-11.lisp",
+      "url": "http://beta.quicklisp.org/client/2021-02-11/setup.lisp",
+      "bytes": 5057,
+      "sha256": "549fe3e7e0f2669daede98437c99cd60e02c0b8536d3d135c9aa9d346ed951b6",
+      "sha256_source": "Installed canonical client-info.sexp metadata and matching installed setup.lisp bytes.",
+      "copy_to": "quicklisp/setup.lisp"
+    },
+    {
+      "id": "quicklisp-asdf",
+      "file": "asdf-3.2.1.lisp",
+      "url": "http://beta.quicklisp.org/asdf/3.2.1/asdf.lisp",
+      "bytes": 643253,
+      "sha256": "51912f3f7c2c62c204f515d97346d56011528399bbf0a76a123318343ebd8bf0",
+      "sha256_source": "Installed canonical client-info.sexp metadata and matching installed asdf.lisp bytes.",
+      "copy_to": "quicklisp/asdf.lisp",
+      "note": "Retained bootstrap input; the supported check runner uses SBCL's ASDF 3.3.1 and does not load this older copy."
+    },
+    {
+      "id": "quicklisp-distinfo",
+      "file": "distinfo-2026-01-01.txt",
+      "url": "http://beta.quicklisp.org/dist/quicklisp/2026-01-01/distinfo.txt",
+      "bytes": 408,
+      "sha256": "fc436eb7582c8b69f2ec87d77bdaa4087502328dec09f21c576d78fac8bf5e15",
+      "sha256_source": "Installed distribution metadata bytes, also pinned by toolchain.lock.json.",
+      "copy_to": "quicklisp/dists/quicklisp/distinfo.txt"
+    },
+    {
+      "id": "quicklisp-releases",
+      "file": "releases-2026-01-01.txt",
+      "url": "http://beta.quicklisp.org/dist/quicklisp/2026-01-01/releases.txt",
+      "bytes": 577575,
+      "sha256": "9cad59398e760032de0053cafcfdcf16eb437caf1a20d65668a8e3b726485da4",
+      "sha256_source": "Installed distribution metadata bytes, also pinned by toolchain.lock.json.",
+      "copy_to": "quicklisp/dists/quicklisp/releases.txt"
+    },
+    {
+      "id": "quicklisp-systems",
+      "file": "systems-2026-01-01.txt",
+      "url": "http://beta.quicklisp.org/dist/quicklisp/2026-01-01/systems.txt",
+      "bytes": 469975,
+      "sha256": "cb8309321840887b542fa853dc4fe95f9a4ea2d7ca028c521d32b67d2bdf51c7",
+      "sha256_source": "Installed distribution metadata bytes, also pinned by toolchain.lock.json.",
+      "copy_to": "quicklisp/dists/quicklisp/systems.txt"
+    },
+    {
+      "id": "acclimation",
+      "file": "acclimation-20241012-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/acclimation/2024-10-12/acclimation-20241012-git.tgz",
+      "bytes": 6270,
+      "sha256": "d6a78badf0e7b0f5305cd12c04a9a8b48785f0a315973b44d7cf9e65fa9b4943",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "7abdd27c89e525a8e969954a18db3c05",
+      "upstream_content_sha1": "c416eac4a4283b07648ac9c2d5cff8e1583490c2",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "acclimation-20241012-git"
+    },
+    {
+      "id": "alexandria",
+      "file": "alexandria-20241012-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/alexandria/2024-10-12/alexandria-20241012-git.tgz",
+      "bytes": 57281,
+      "sha256": "dcdfc5bac229a952358dfe661f0860e8a02480e406d0d95dee4300cdc3d45b31",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "2443b986cd2760fbd93386311f0dce21",
+      "upstream_content_sha1": "ce11403840f574fad9bd05b9410d0eef83e28e50",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "alexandria-20241012-git"
+    },
+    {
+      "id": "closer-mop",
+      "file": "closer-mop-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/closer-mop/2026-01-01/closer-mop-20260101-git.tgz",
+      "bytes": 23841,
+      "sha256": "bea987c69b906d9a94b5e19e6d3f1665a1646d511f080076637195ed4bc7089f",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "fdcca216cc074c9fe1def1a710808c49",
+      "upstream_content_sha1": "e3f5af4586455a043dd2f100e0dd902d2209784c",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "closer-mop-20260101-git"
+    },
+    {
+      "id": "concrete-syntax-tree",
+      "file": "concrete-syntax-tree-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/concrete-syntax-tree/2026-01-01/concrete-syntax-tree-20260101-git.tgz",
+      "bytes": 57014,
+      "sha256": "cad937db9cf180103a3a16ab0868423b5f9d2c2a381bbd5fc7fc313f30a36c29",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "d04b48274be04218791e5588f2c35766",
+      "upstream_content_sha1": "02cacc8f34736227e96ed37b629658e49995d943",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "concrete-syntax-tree-20260101-git"
+    },
+    {
+      "id": "documentation-utils",
+      "file": "documentation-utils-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/documentation-utils/2026-01-01/documentation-utils-20260101-git.tgz",
+      "bytes": 10343,
+      "sha256": "a2318cd2da66a7761f5ac389955563d127d70366491bd3e3f26413d1f8503ad8",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "3a0fffe7bb5f4f9651e74e63703b636d",
+      "upstream_content_sha1": "cf4ace2152c43473c6009285c4ae0e304e560556",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "documentation-utils-20260101-git"
+    },
+    {
+      "id": "eclector",
+      "file": "eclector-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/eclector/2026-01-01/eclector-20260101-git.tgz",
+      "bytes": 2834460,
+      "sha256": "3b270c3beb10bd7f58d5923357f8a654ac3879ffc749ae82bdfcec05ac1a65c6",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "abc501a0e71c51808011b4d65c2c2dd4",
+      "upstream_content_sha1": "ad5ee1b179e519567873ddb5c3ed0f3d98e174e1",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "eclector-20260101-git"
+    },
+    {
+      "id": "float-features",
+      "file": "float-features-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/float-features/2026-01-01/float-features-20260101-git.tgz",
+      "bytes": 12254,
+      "sha256": "6699d24553e78d7b60462ed0a336b47336b33639f674c7a352b4c4d98c211cc5",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "5c3fcd4618c5b794af9acc2e198280cd",
+      "upstream_content_sha1": "f010548180831f5b645c609202b6a68c912b4f3f",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "float-features-20260101-git"
+    },
+    {
+      "id": "mgl-pax",
+      "file": "mgl-pax-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/mgl-pax/2026-01-01/mgl-pax-20260101-git.tgz",
+      "bytes": 1098569,
+      "sha256": "2c7efd402c1814ae4bb4d809e704a6b1f547841725b80e8c4203ee3185a523ad",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "676c78bc7cd9acd54d2e3d6ed6786075",
+      "upstream_content_sha1": "aeb34201aecd3cb7e3f8a3b37096f0661f09e25f",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "mgl-pax-20260101-git"
+    },
+    {
+      "id": "named-readtables",
+      "file": "named-readtables-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/named-readtables/2026-01-01/named-readtables-20260101-git.tgz",
+      "bytes": 26169,
+      "sha256": "d6ce94191b559d9b1cc521aca026161a6b67d9d51676ef9daee8c50bdfa04491",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "c1173e9ce043db7c72e847b814d2109d",
+      "upstream_content_sha1": "24d8ad2d0f2e8e60e7ec27d3dc355ef2e6910d13",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "named-readtables-20260101-git"
+    },
+    {
+      "id": "trivial-features",
+      "file": "trivial-features-20250622-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/trivial-features/2025-06-22/trivial-features-20250622-git.tgz",
+      "bytes": 11368,
+      "sha256": "d8c9686e0425ea6f2cc8e18139a80bb082c44a23ac68fd455e5c74848b42257a",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "9ba12be9b4ecd65797eadf41473989f0",
+      "upstream_content_sha1": "23d028dfe6b9d8737668dbce70a6e4a846a61491",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "trivial-features-20250622-git"
+    },
+    {
+      "id": "trivial-garbage",
+      "file": "trivial-garbage-20231021-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/trivial-garbage/2023-10-21/trivial-garbage-20231021-git.tgz",
+      "bytes": 11005,
+      "sha256": "b29529bc3615ef373bcd8705b991709939dbcdf1071da494b1bf8e33c46d006a",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "02da474ff3100c17af38f60a8f651339",
+      "upstream_content_sha1": "21c2909ade10f5b3ad7bb3c3ee6db9f2d0a6e7bd",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "trivial-garbage-20231021-git"
+    },
+    {
+      "id": "trivial-gray-streams",
+      "file": "trivial-gray-streams-20241012-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/trivial-gray-streams/2024-10-12/trivial-gray-streams-20241012-git.tgz",
+      "bytes": 8054,
+      "sha256": "be7c33e82fdc8f4834b93b697df98a3b06486e6492928841dc26bb824d091cca",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "af0d64bafb6032659152a5afab38bfdf",
+      "upstream_content_sha1": "768f8d13e626ca72253ccf5fb82da3e1f43ab548",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "trivial-gray-streams-20241012-git"
+    },
+    {
+      "id": "trivial-indent",
+      "file": "trivial-indent-20260101-git.tgz",
+      "url": "http://beta.quicklisp.org/archive/trivial-indent/2026-01-01/trivial-indent-20260101-git.tgz",
+      "bytes": 4769,
+      "sha256": "3f1e99a46fbb00dad37bb5f34ce5057901c1ceaf8f224dcfdfe9cebe136d3961",
+      "sha256_source": "Locally cached release archive bytes; URL/size/legacy checksums from pinned releases.txt.",
+      "upstream_md5": "099c5d56ca0ff8903550cc4f1a75a1a1",
+      "upstream_content_sha1": "183061c4c2dc8ac314004445528092e017bd5487",
+      "unpack_to": "quicklisp/dists/quicklisp/software/",
+      "archive_prefix": "trivial-indent-20260101-git"
+    }
+  ]
+}

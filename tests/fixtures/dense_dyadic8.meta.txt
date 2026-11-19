@@ -1,0 +1,2 @@
+name: dense_dyadic8
+expected: success

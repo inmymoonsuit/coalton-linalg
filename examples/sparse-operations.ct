@@ -1,0 +1,28 @@
+(cl:defpackage #:coalton-linalg/examples/sparse
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc))
+  (:export #:normal-product))
+(cl:in-package #:coalton-linalg/examples/sparse)
+
+(coalton-toplevel
+  (declare normal-product (Void -> arr:LispArray F64))
+  (define (normal-product)
+    "Build a rectangular matrix from unsorted coordinates and return transpose(A)*(A*x)."
+    (let rows = (arr:make 4 (the UFix 0)))
+    (arr:set! rows 0 1)
+    (arr:set! rows 2 1)
+    (let columns = (arr:make 4 (the UFix 2)))
+    (arr:set! columns 1 0)
+    (arr:set! columns 2 1)
+    (let entries = (arr:make 4 0.0d0))
+    (arr:set! entries 0 4.0d0)
+    (arr:set! entries 1 2.0d0)
+    (arr:set! entries 2 3.0d0)
+    (arr:set! entries 3 -1.0d0)
+    (let matrix = (csc:from-coo 2 3 rows columns entries csc:RejectDuplicates))
+    (let x = (arr:make 3 0.0d0))
+    (arr:set! x 0 1.0d0)
+    (arr:set! x 1 2.0d0)
+    (arr:set! x 2 3.0d0)
+    (csc:transpose-matvec matrix (csc:matvec matrix x))))

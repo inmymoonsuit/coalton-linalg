@@ -1,0 +1,2 @@
+name: cycle7
+expected: success

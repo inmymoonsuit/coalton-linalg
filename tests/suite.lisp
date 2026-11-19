@@ -1,0 +1,16 @@
+(in-package #:coalton-linalg/tests)
+(export 'run-tests)
+
+(defun run-tests ()
+  "Signal an error on failure; callable through ASDF:TEST-SYSTEM."
+  (allocation-control-test)
+  (run-interface-tests)
+  (run-runtime-tests)
+  (run-property-tests)
+  (run-primitive-tests)
+  (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
+  (coalton-linalg/tests/encapsulation:run-status-type-tests)
+  (coalton-linalg/tests/encapsulation:run-typed-status-tests)
+  (assert (close-vector-p (coalton-linalg/examples:solve-2x2) (doubles 1d0 2d0)))
+  (assert (close-vector-p (coalton-linalg/examples/sparse:normal-product) (doubles -2d0 54d0 73d0)))
+  (format t "COALTON-EXAMPLE-PASS~%LIBRARY-TESTS-PASS~%"))
