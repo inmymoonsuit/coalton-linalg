@@ -1,0 +1,377 @@
+{
+  "schema": 1,
+  "date": "2026-11-19",
+  "baseline_commit": "78f2daa",
+  "supported_host": "Windows x86-64 SBCL 2.6.10, pinned Coalton b6e284bdd91ef9ba0fb303e0798c9818b9b3e268",
+  "runs": {
+    "1": {
+      "complete_check_passed": true,
+      "allocation_paths": [
+        {
+          "path": "factor-success",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-success",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-bad-size",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-nonfinite-rhs",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-nonpositive",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-invalid-factor",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-bad-values",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-bad-shift",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-nonfinite-input",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-nonfinite-result",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-nonfinite-result",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "handle-raw-lisp",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "handle-cross-file-direct",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "handle-first-class",
+          "calls": 10000,
+          "bytes": 0
+        }
+      ],
+      "stress": {
+        "case_count": 336,
+        "families": {
+          "cancellation": 48,
+          "disconnected": 48,
+          "dominant": 48,
+          "indefinite": 48,
+          "known_ldl": 48,
+          "near_singular": 48,
+          "zero_diagonal": 48
+        },
+        "max_backward_error": 1.1696176720330866e-16,
+        "max_forward_error": 7.450580596923828e-09,
+        "metamorphic_relations": 252,
+        "outcomes": {
+          "refused": 96,
+          "success": 240
+        },
+        "passed": true,
+        "schema": 1,
+        "seed_count": 12
+      }
+    },
+    "0": {
+      "complete_check_passed": true,
+      "allocation_paths": [
+        {
+          "path": "factor-success",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-success",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-bad-size",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-nonfinite-rhs",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-nonpositive",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-invalid-factor",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-bad-values",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-bad-shift",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-nonfinite-input",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "solve-nonfinite-result",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "factor-nonfinite-result",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "handle-raw-lisp",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "handle-cross-file-direct",
+          "calls": 10000,
+          "bytes": 0
+        },
+        {
+          "path": "handle-first-class",
+          "calls": 10000,
+          "bytes": 0
+        }
+      ],
+      "stress": {
+        "case_count": 336,
+        "families": {
+          "cancellation": 48,
+          "disconnected": 48,
+          "dominant": 48,
+          "indefinite": 48,
+          "known_ldl": 48,
+          "near_singular": 48,
+          "zero_diagonal": 48
+        },
+        "max_backward_error": 1.1696176720330866e-16,
+        "max_forward_error": 7.450580596923828e-09,
+        "metamorphic_relations": 252,
+        "outcomes": {
+          "refused": 96,
+          "success": 240
+        },
+        "passed": true,
+        "schema": 1,
+        "seed_count": 12
+      }
+    }
+  },
+  "artifact_equivalence": {
+    "counts": {
+      "fixtures": 74,
+      "stress": 2016
+    },
+    "current_safety_policies_equal": true,
+    "previous_snapshot_equal": true,
+    "independently_reviewed": true
+  },
+  "new_checks": {
+    "primitive_error_cases": 23,
+    "duplicate_payloads": 2,
+    "host_exception_interop": 1,
+    "handle_identity_paths": 3,
+    "encapsulation_negative_cases": 8,
+    "status_type_negative_cases": 4,
+    "factor_outcomes": 5,
+    "solve_outcomes": 5,
+    "analysis_size_boundary": 4096,
+    "oversized_dimensions": [
+      4097,
+      4611686018427387903
+    ]
+  },
+  "exact_singular_regression": {
+    "matrix": [
+      [
+        3,
+        1,
+        4
+      ],
+      [
+        1,
+        1,
+        2
+      ],
+      [
+        4,
+        2,
+        6
+      ]
+    ],
+    "null_vector": [
+      -1,
+      -1,
+      1
+    ],
+    "rank": 2,
+    "determinant": 0,
+    "computed_minimum_pivot": 2.220446049250313e-16,
+    "control_final_diagonal": 7,
+    "control_rank": 3,
+    "control_determinant": 2
+  },
+  "red_evidence": {
+    "old_primitive_failures_returned_wrong_category": 22,
+    "valid_operation_control_passed": true,
+    "old_oversized_analysis_wrong_error_category": true,
+    "uninlined_factor_bytes_per_10000_calls": 1769472,
+    "predicate_probe": {
+      "checks": 100000,
+      "ordinary_call_bytes": 1572864,
+      "inline_call_bytes": 0
+    }
+  },
+  "source_and_fixture_sha256_lf": {
+    "coalton-linalg.asd": "a320745f446b724fd2406f679b55f324dd74c96fbfc4d63b5bfc52e1627181a0",
+    "examples/sparse-operations.ct": "94574a1d5ce867fda212d1173df337abeddf2d8402f3e9180c5fec224eed084d",
+    "examples/spd-solve.ct": "5aac70207ae3e16d2dc9bb5e426c1c6e79e55f1e188ba2477dddd9bc45e0a835",
+    "scripts/allocation-isolation.lisp": "169b923668c4f8da96c5c7d41137b08d86db4f32dd187f05e1d9ae3e6613ee92",
+    "scripts/bootstrap.lisp": "e4e4ec4050c0736569ae1edf2e59f084745c7a397de0056262434c231442cca9",
+    "scripts/check.lisp": "ff48511c090f1c81dc3526f1e03ea2c38f75aca4294a9fc426198551627ebfc4",
+    "scripts/check.ps1": "e392816f43066c5a16d0d03ce8fa4441454f2e65f581829b1479501a5433f13a",
+    "scripts/fixtures.lisp": "b26d9e4d54ad092ef225b8a2ad7e3d076792bedc6d0d34f899c9e50493352aeb",
+    "scripts/inspect.lisp": "b707596ff5c1cd81ed1152d85ca79677a3f60f9fc663ce97126cb3828c58b8b6",
+    "scripts/register-dependencies.lisp": "f0914468e1b1cef9a0a27618e35cc40f6bc3f04f1ab9189624d9c34126fa0a9c",
+    "src/errors.ct": "983e017d4f3596d086b34da6c4c05ffbbb770d9f535f9dfb1553893a507cd83d",
+    "src/numeric.ct": "30d96bba74358588c68db09f968efb90b68d8aafc012c0f6b8f317aec21089b1",
+    "src/sparse/csc.ct": "7fbb5296cb3ad613c0a170db511bcc9639ce947daf5a0f79bb1f9f65062fd7e3",
+    "src/sparse/spd-ldlt.ct": "e74b9fdf47a2446f4f271e4fb05447e8234821f6918f753c625ee834b137eec6",
+    "tests/callers.ct": "95f46a065a18f21abb35e2c223e5b30fddf9b684cc7a89c7f3e76679be7b3ef7",
+    "tests/encapsulation.lisp": "32e1a75d46fe0571e0bf5dc40e7a395d197d8a975edbb467ae04e8060d157c27",
+    "tests/exact-singular-rounding.sexp": "b43c8edadb3472206c3038bd1625b8866ea7801eef4b8e069212f40b80173faf",
+    "tests/fixtures/cycle7.A.txt": "2d210922d7f6cc440429ba38152b8f545124e3b2c4c4a288efa63dc232c40815",
+    "tests/fixtures/cycle7.b.txt": "966f707c72adecabb7ee3f6deb334e96271d1e4625a6a7372f05eaea33c761c1",
+    "tests/fixtures/cycle7.meta.txt": "77b682a9e0ae818950834d46d69b1d3ae7f0c2ded41eb4c79491170c7af7099e",
+    "tests/fixtures/cycle7.x.txt": "0c369870e4286a1c6e20c36c5dc1c46b05f24637ab6d0a332a44614ac0cbdb7a",
+    "tests/fixtures/cycle7_relabelled.A.txt": "f67ce6d87a39f11e2f782ce54d4702575da2faca83299b0508f7cae4d13b4ea9",
+    "tests/fixtures/cycle7_relabelled.b.txt": "1ef38adbed23beaef54a8a2041740c95d8623b446484d03479d35b8c845e44f3",
+    "tests/fixtures/cycle7_relabelled.meta.txt": "f95ede0d67940c1ea864caa5de67aff6ff701e126eeb85ce5d063c0634d70469",
+    "tests/fixtures/cycle7_relabelled.x.txt": "ae2b0a885b5e4826489aad83b3c3754df2754964f9c4b66f7ad7c966b7c02d0b",
+    "tests/fixtures/dense_dyadic8.A.txt": "226112078aba3465c5dc0bb675d845e8badced0627bbc79e7d782296cf41a28a",
+    "tests/fixtures/dense_dyadic8.b.txt": "64ec789ca87adb9ed25a1b65617aedbf4abbb7b0314d21d7a9d63c8abd7a068f",
+    "tests/fixtures/dense_dyadic8.meta.txt": "3f60e9d33f0d72ddfc4f422cb539d0c80bf765c05a631656659edfd5c93f5dc4",
+    "tests/fixtures/dense_dyadic8.x.txt": "5bd1230b914fc9c25fec1ea557709709efe5d61d1b885d35e62b81517bfdc825",
+    "tests/fixtures/diagonal.A.txt": "cff5f4797f2fae670031f3c689e777cce732047656b0902cfa919deb4cdd865e",
+    "tests/fixtures/diagonal.b.txt": "0ec3469f8f3f8f62d79208740fccfcb57a82d284ca8df54127697212c533a37e",
+    "tests/fixtures/diagonal.meta.txt": "036f8adc43ed4d14e484485629986d855499eb70496a9e439f3986085d944ee4",
+    "tests/fixtures/diagonal.x.txt": "32838d0b92274d3402754ad5327cc9251b5168aebd76eb2cf4a368ff16c015ad",
+    "tests/fixtures/disconnected.A.txt": "38123e97083306a5f86dbb7f62bed8b0f3005c0d762b5909adcc34a27f31810f",
+    "tests/fixtures/disconnected.b.txt": "aa60d5bb1939ed1cc436b60432a56b6f7131ac7762e0a48723952048be39a775",
+    "tests/fixtures/disconnected.meta.txt": "ba10be82f3a4b2254c852181ff972c602209f1bda523cbb55f027b74b01c2c06",
+    "tests/fixtures/disconnected.x.txt": "32838d0b92274d3402754ad5327cc9251b5168aebd76eb2cf4a368ff16c015ad",
+    "tests/fixtures/grid3x3.A.txt": "6a4ea9b7d69c4847bb75ec4657810d94f4a277b8d1da8d13f693d803c0aba955",
+    "tests/fixtures/grid3x3.b.txt": "30ce7603d5b38acc7ea7d135073b06657b838002057804ed54b097c88e15f651",
+    "tests/fixtures/grid3x3.meta.txt": "47f4eaf15709c16f1f36d4990f4ead9486a3ee3f2737b65cbe4d66be70679190",
+    "tests/fixtures/grid3x3.x.txt": "caba0196eb74bce605eb02374679c16ae01c1b5fe5e6994c6899cf33a9686645",
+    "tests/fixtures/indefinitepair.A.txt": "e8046f701181e0d5bc258758d6d61bf529fc6499ad476cdbbaa3b55a99e1f3ad",
+    "tests/fixtures/indefinitepair.b.txt": "5ad7f6a91b47df806ba37213322d2da078b7e65117aa67014eb566a11632dc68",
+    "tests/fixtures/indefinitepair.meta.txt": "95ad19e071a5d38c5155a15ebaed8a4ec126cf996ac3cc968043afab52f71f25",
+    "tests/fixtures/large_scale.A.txt": "9a76e1202f4bd6b82c3740ea4bd8ff71b9f13078d916c6a3fed98ba108b104dc",
+    "tests/fixtures/large_scale.b.txt": "29886223479e676a0f2be61c83dbc9d72e6ef8522c5896d83c846cafa4154d49",
+    "tests/fixtures/large_scale.meta.txt": "e575b64a5fbcd2518a016b1def23219e0d832055fd2ef4ec3721e3b6b5b390a5",
+    "tests/fixtures/large_scale.x.txt": "c579e75c5fc584ea3510f863abe638cca9797a96aa71539e939613f6002899ea",
+    "tests/fixtures/manifest.json": "44a126d23deb205f531204e75c7267d6fcfab55faae11d79d8bfa86bdeb120ea",
+    "tests/fixtures/near_singular.A.txt": "07b3a6a82b962bb05c6c61fe8153e2141a56cca6d0af2c354688d92b9c68bd92",
+    "tests/fixtures/near_singular.b.txt": "3666cbb46daaed2e53f24616ebd148283d6b6586970e972c430458a6cb67cb72",
+    "tests/fixtures/near_singular.meta.txt": "62d9031e9daa40580023c03d0b189879a2b9276dc74ff6829219720654c0ccd3",
+    "tests/fixtures/near_singular.x.txt": "cf1f2f9e36e5c80e0d1b261dae4179a249ec8c1262224489288d266ea39aa6a4",
+    "tests/fixtures/path.A.txt": "b19dfef2d839ef6ec65bf7fd05e2b822e2b87cf9767d441ad20b1554262dd0b8",
+    "tests/fixtures/path.b.txt": "5d578e5df3a5bc987cb665df1c5d5b957c6d38b6fcdfbbda448e2c67ad628c4d",
+    "tests/fixtures/path.meta.txt": "ba2e15a21c8053e0ec4161796cd785f1b040abf9846755d88654fcf6b20c78aa",
+    "tests/fixtures/path.x.txt": "e04df2756072eab3531cd143ebc54b6c1fe9866936aa813bea6df60bfcef3113",
+    "tests/fixtures/path_relabelled.A.txt": "2614310a2af73ce00aa09381ca68fa2d7cb8fa0c1bc5d89b37f72442563341f7",
+    "tests/fixtures/path_relabelled.b.txt": "4e46231dba5df0aa5207eb8f54d6eb829116cc9dd54a881867e79f47176439f3",
+    "tests/fixtures/path_relabelled.meta.txt": "c5036c9e2a55563e8641cabcd4c11f4bfad3da94c8e5190751a6564886dd3d55",
+    "tests/fixtures/path_relabelled.x.txt": "a05510cc0ec1cf32647f1403ebb691264219416cba05c3a1757dd476f8d37194",
+    "tests/fixtures/scalar.A.txt": "3f92799f225b3a98c1c245f50c5642ca641c551c026c418080abb751e9967d82",
+    "tests/fixtures/scalar.b.txt": "06e9d52c1720fca412803e3b07c4b228ff113e303f4c7ab94665319d832bbfb7",
+    "tests/fixtures/scalar.meta.txt": "800fa7deb037185375c12b4f116b37ddd2ea44c895a24c758e07445b99d34f0d",
+    "tests/fixtures/scalar.x.txt": "03c76d47c407b24353b3121bd96490373bd6c5de05f6b3d32bd420c4810f1160",
+    "tests/fixtures/scalarnegative.A.txt": "1e93437684dd5f144c5975f4aa2c04ba51d53826761159fd917a75f47255ac83",
+    "tests/fixtures/scalarnegative.b.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "tests/fixtures/scalarnegative.meta.txt": "dfe1cc02c92f181937f77e7e57d79b555226ab82bd13023f00879eda36ce5db9",
+    "tests/fixtures/scalarzero.A.txt": "5b12ce47a7cd1d0c27176fd80881c7d8676b680b86626b9df12d4e78095744e3",
+    "tests/fixtures/scalarzero.b.txt": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+    "tests/fixtures/scalarzero.meta.txt": "801a5dbec4fc5955af1f14a996ee6b3e0f9b72665f8048e014619976beb8cfa0",
+    "tests/fixtures/singularpair.A.txt": "ba58c40625967686c50dcadf83e83cf77530d76911a2646a42466826d7526eb8",
+    "tests/fixtures/singularpair.b.txt": "f872bd26e14bf85170d1c7aeaff29c71453bc2a484ba29ceed63b0d2fa23e180",
+    "tests/fixtures/singularpair.meta.txt": "f4906a1c765e19e64a61ec4f1309cda873a0cd90f5c02e7ba90b2d73a04daaa4",
+    "tests/fixtures/star.A.txt": "a10cb64327a8fd5716ed35c6f718a60eb065bba2401d85463fd906951e23db02",
+    "tests/fixtures/star.b.txt": "95acc3077d07934cad94153c11e8f31031c037c818c9756b226ce95dd626c7e5",
+    "tests/fixtures/star.meta.txt": "7782f7486a0f7446facd7f6e2badc56826f16986a742f319d69e1ea01882277b",
+    "tests/fixtures/star.x.txt": "e04df2756072eab3531cd143ebc54b6c1fe9866936aa813bea6df60bfcef3113",
+    "tests/fixtures/star_refusal.A.txt": "b80a055fe5aff73066e035c1afe752c6d33040ffdc26162a5a9e714e39742b52",
+    "tests/fixtures/star_refusal.b.txt": "260f112b443477275b2d0d756bc31065f73ac9759812ffa867dcf3f808a06eba",
+    "tests/fixtures/star_refusal.meta.txt": "946b04a8d438d422097028be0646ee0594e0b4d46334dd0f7af7013b2ce4e9ce",
+    "tests/fixtures/structuralzero.A.txt": "3ae11b91ef498b56a504827f4867544ae11baad6c5e09b151b8c332f7e7fa5dc",
+    "tests/fixtures/structuralzero.b.txt": "d3e16cf685cfdb29ea985bdf3d847cfda902f60f0abc493c13226d8338a5e549",
+    "tests/fixtures/structuralzero.meta.txt": "a4b87b8db5e52b0a44ee8e1fba875e7d69c924cfbdc6bc033a4c4ca7edd7887e",
+    "tests/fixtures/structuralzero.x.txt": "8294ca77b3248bc77b0eb6c1adb3007df1b974275acda2a1b7edb69eb978f8fb",
+    "tests/fixtures/tiny_scale.A.txt": "5fc7a482f55e16a0f0e3d77cdc9cf1f30a5aee22390a422fcfc5f691bad7376f",
+    "tests/fixtures/tiny_scale.b.txt": "91a924de96ac7018ac218dc10fc3e0cd1732fe495160a4dda9364a2d288bfeaa",
+    "tests/fixtures/tiny_scale.meta.txt": "8635270f99486425f6116dcb9ab6577de587f54503ff75493ba477048cce5c93",
+    "tests/fixtures/tiny_scale.x.txt": "c579e75c5fc584ea3510f863abe638cca9797a96aa71539e939613f6002899ea",
+    "tests/fixtures/zero_leading.A.txt": "5ba94eee235f06491f36524fcaa09e100abf741c8adcfd255b244d60854d806f",
+    "tests/fixtures/zero_leading.b.txt": "1f8d1df1354f85ac80f38b00f05ca1b53cca96458f3451a24568bc38d61aa4fb",
+    "tests/fixtures/zero_leading.meta.txt": "01c3aec3d756602b93300de224c7093348a6a173744a7132daa66a8e6f8365e0",
+    "tests/interface.lisp": "127562ccf6490d44552d33615f298076bdf8f709a09f6d0142c61ba894bee4f2",
+    "tests/primitives.lisp": "f8508b7e89c2e57d35dcb400aefa22f8814aebb326b382892fa5f75e130de7ee",
+    "tests/property-tests.lisp": "754ce8b57122996fc04e8eb983dce2b8b194c050f5b934d8d936f35562570a4c",
+    "tests/runtime.lisp": "82f533fb2e7c917b4bf47f50af5c9590cece4c02de56514bb27c954f3f35c7f2",
+    "tests/suite.lisp": "53e357770d5135c3e43b7bf31a7cf1c6219d179900bbb383d41c832c9020608c",
+    "tests/tools.lisp": "5eb97b70e6a1a95a4584a1eed02b4df8f8a286ad41bfc9c84787d79464d3d3d4",
+    "tests/typed-errors.ct": "0770820405160dcb556746de8c65fca9c92fb41973a6787db9ca3d77195e87d4",
+    "tests/typed-status.ct": "c594ceb544216d02e3b806d1c29820b77e432250490017401edc0b1ea58895a5",
+    "toolchain.lock.json": "31be4263713e8ba2307acd064466b6ba9883a4e742b8d16996b7abb441bbb75b",
+    "toolchain.sources.json": "5d4457516183ff8a401555a3cf4e37dad7f540a3d21614aca5fec66b316bedfb",
+    "tools/check-toolchain.py": "6347bcae3e5f508e17c3693a465b22a1e33e06b8b22dc5a3542baa4929362446",
+    "tools/fixtures.lisp": "3e067b5382fbe154cf4b7dfc7a41890ab6fb13ff5239911d71130c8a9cd6d3a1",
+    "tools/runtime-probe.lisp": "d8158d7bbf6a45e1955523a7fd3da523f7254039b604f416054d305c7c47dcda",
+    "tools/stress.py": "8aa03e43e3f18e0077c105b44aa1539fb50ef7d84574881d57992b5974ad86cb",
+    "tools/toolchain-metadata.lisp": "63c0f9d5c16bec29b551f66fce75cb314b8b7a8b300d1bd002c820d4487a262d",
+    "tools/verify.py": "dc69cdf9dcfdb348b2b98e678da78adcd5ff7bc00bb4ee4a188ff3d7da56b458"
+  }
+}

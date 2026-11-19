@@ -34,7 +34,9 @@ fully specified dependency setup; no untested workflow is presented as working C
 
 The constructor/status recommendations below were subsequently implemented for
 the initial review snapshot; they describe the reasoning for that change.
-The current signatures and guarantees are in [the interface reference](api.md).
+The subsequent [pre-publication revision](revision-2.md) further simplifies results
+and implements typed errors. The current signatures and guarantees are in
+[the interface reference](api.md).
 No broader numeric/storage generalization was introduced.
 
 Scope: source and contract review of the three mathematical modules, with an

@@ -1,8 +1,9 @@
 (cl:defpackage #:coalton-linalg/tests/typed-status
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
-                    (#:arr #:coalton/lisparray))
-  (:export #:exercise-status-branches))
+                    (#:arr #:coalton/lisparray) (#:err #:coalton-linalg/errors)
+                    (#:csc #:coalton-linalg/sparse/csc))
+  (:export #:exercise-status-branches #:analysis-pattern-error #:analysis-csc-error))
 (cl:in-package #:coalton-linalg/tests/typed-status)
 
 (coalton-toplevel
@@ -26,7 +27,7 @@
 
   (declare observe-factor (ldlt:Symbolic * arr:LispArray F64 * F64 -> UFix))
   (define (observe-factor symbolic entries shift)
-    (factor-branch (ldlt:factor-status (ldlt:factor! symbolic entries shift))))
+    (factor-branch (ldlt:factor! symbolic entries shift)))
 
   (declare observe-solve (ldlt:NumericFactor * arr:LispArray F64 * arr:LispArray F64 -> UFix))
   (define (observe-solve factor rhs output)
@@ -37,7 +38,7 @@
     "Reach every typed outcome through the external public operations and exhaustive matches."
     (let pointers = (arr:make 2 (the UFix 0)))
     (arr:set! pointers 1 1)
-    (let symbolic = (ldlt:analyse (ldlt:Pattern 1 pointers (arr:make 1 (the UFix 0)))))
+    (let symbolic = (ldlt:analyze (ldlt:Pattern 1 pointers (arr:make 1 (the UFix 0)))))
     (let factor = (ldlt:symbolic-factor symbolic))
     (let results = (arr:make 10 (the UFix 99)))
     (let positive = (arr:make 1 4.0d0))
@@ -47,15 +48,15 @@
     (let huge = (lisp (-> F64) () cl:most-positive-double-float))
     (let output = (arr:make 1 17.0d0))
     (let old-success = (ldlt:factor! symbolic positive 0.0d0))
-    (arr:set! results 0 (factor-branch (ldlt:factor-status old-success)))
+    (arr:set! results 0 (factor-branch old-success))
     (arr:set! results 1 (observe-factor symbolic (arr:make 1 -1.0d0) 0.0d0))
     (arr:set! results 2 (observe-factor symbolic (arr:make 1 infinity) 0.0d0))
     (arr:set! results 3 (observe-factor symbolic empty 0.0d0))
     (arr:set! results 4 (observe-factor symbolic positive infinity))
-    (unless (== (factor-branch (ldlt:factor-status old-success)) 0)
-      (lisp (-> Void) () (cl:error "An earlier successful result lost its immutable success status.")))
-    (when (ldlt:factor-ready? (ldlt:result-factor old-success))
-      (lisp (-> Void) () (cl:error "The old success handle retained a valid factor after refusal.")))
+    (unless (== (factor-branch old-success) 0)
+      (lisp (-> Void) () (cl:error "A saved factor status changed after a later call.")))
+    (when (ldlt:factor-ready? factor)
+      (lisp (-> Void) () (cl:error "The owned factor remained valid after refusal.")))
     (arr:set! results 6 (observe-solve factor (arr:make 1 8.0d0) output))
     (observe-factor symbolic positive 0.0d0)
     (arr:set! results 5 (observe-solve factor (arr:make 1 8.0d0) output))
@@ -67,4 +68,25 @@
     (arr:set! results 9 (observe-solve factor (arr:make 1 huge) output))
     (unless (== (arr:aref output 0) 2.0d0)
       (lisp (-> Void) () (cl:error "Typed solve refusal modified the caller output.")))
-    results))
+    results)
+
+  (declare classify-analysis ((Void -> ldlt:Symbolic) * UFix -> UFix))
+  (define (classify-analysis operation requested)
+    "Observe actual public errors and validate both resource-limit payload fields."
+    (catch (progn (operation) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisLimitExceeded size maximum)
+          (if (and (== size requested) (== maximum 4096)) 7 77))
+         ((err:InvalidStructure _) 1)
+         ((err:InvalidDimensions _) 2)
+         (_ 99)))
+      (_ 99)))
+
+  (declare analysis-pattern-error (UFix * arr:LispArray UFix * arr:LispArray UFix -> UFix))
+  (define (analysis-pattern-error n pointers rows)
+    (classify-analysis (fn () (ldlt:analyze (ldlt:Pattern n pointers rows))) n))
+
+  (declare analysis-csc-error (csc:Matrix -> UFix))
+  (define (analysis-csc-error matrix)
+    (classify-analysis (fn () (ldlt:analyze-csc matrix)) (csc:row-count matrix))))

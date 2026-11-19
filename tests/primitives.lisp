@@ -117,13 +117,9 @@
           "~A shares value storage." label))
 
 (defun primitive-norm-tests ()
-  (dolist (value (list 0d0 -0d0 3d0 -9d0 least-positive-double-float
-                       most-positive-double-float))
-    (assert (numeric:finite? value)))
   (let ((nan (sb-kernel:make-double-float #x7ff80000 0)))
     (dolist (value (list nan sb-ext:double-float-positive-infinity
                          sb-ext:double-float-negative-infinity))
-      (assert (not (numeric:finite? value)))
       (primitive-refuses "nonfinite norm2"
                          (lambda () (numeric:norm2 (primitive-doubles 0d0 value))))
       (primitive-refuses "nonfinite norm-inf"
@@ -368,36 +364,36 @@
 (defun primitive-ldlt-bridge-tests ()
   (let* ((matrix (primitive-from-entries 2 2 '((0 0 4d0) (1 0 1d0) (1 1 3d0))
                                          (coalton:coalton csc:RejectDuplicates)))
-         (symbolic (ldlt:analyse-csc matrix))
-         (again (ldlt:analyse-csc matrix))
+         (symbolic (ldlt:analyze-csc matrix))
+         (again (ldlt:analyze-csc matrix))
          (result (ldlt:factor! symbolic (csc:entries matrix) 0d0))
          (out (primitive-doubles 99d0 99d0)))
     (assert (not (eq (ldlt:symbolic-factor symbolic) (ldlt:symbolic-factor again))))
-    (assert (eq (coalton:coalton ldlt:FactorSuccess) (ldlt:factor-status result)))
-    (assert (eq (coalton:coalton ldlt:SolveSuccess) (ldlt:solve! (ldlt:result-factor result) (primitive-doubles 6d0 7d0) out)))
-    (primitive-vector "analyse-csc solve" out (primitive-doubles 1d0 2d0))
-    (assert (eq (coalton:coalton ldlt:FactorSuccess) (ldlt:factor-status (ldlt:factor! again (csc:entries matrix) 0d0))))
-    (assert (eq (coalton:coalton ldlt:FactorNonPositive) (ldlt:factor-status (ldlt:factor! again (csc:entries matrix) 10d0))))
+    (assert (eq (coalton:coalton ldlt:FactorSuccess) result))
+    (assert (eq (coalton:coalton ldlt:SolveSuccess) (ldlt:solve! (ldlt:symbolic-factor symbolic) (primitive-doubles 6d0 7d0) out)))
+    (primitive-vector "analyze-csc solve" out (primitive-doubles 1d0 2d0))
+    (assert (eq (coalton:coalton ldlt:FactorSuccess) (ldlt:factor! again (csc:entries matrix) 0d0)))
+    (assert (eq (coalton:coalton ldlt:FactorNonPositive) (ldlt:factor! again (csc:entries matrix) 10d0)))
     (assert (ldlt:factor-ready? (ldlt:symbolic-factor symbolic)))
     (primitive-matrix "analysis preserves matrix" matrix
                       (primitive-dense 2 2 '((0 0 4d0) (1 0 1d0) (1 1 3d0)))
                       '((0 0 4d0) (1 0 1d0) (1 1 3d0))))
   (let* ((empty (primitive-from-entries 0 0 nil (coalton:coalton csc:RejectDuplicates)))
-         (symbolic (ldlt:analyse-csc empty)))
-    (assert (eq (coalton:coalton ldlt:FactorSuccess) (ldlt:factor-status (ldlt:factor! symbolic (primitive-doubles) 0d0)))))
+         (symbolic (ldlt:analyze-csc empty)))
+    (assert (eq (coalton:coalton ldlt:FactorSuccess) (ldlt:factor! symbolic (primitive-doubles) 0d0))))
   (dolist (case '((2 3 ((0 0 1d0) (1 1 1d0)))
                  (2 2 ((0 0 2d0) (0 1 1d0) (1 1 2d0)))
                  (2 2 ((0 0 2d0) (1 0 1d0)))
                  (2 2 ((1 0 1d0) (1 1 2d0)))))
     (destructuring-bind (m n entries) case
-      (primitive-refuses "analyse-csc shape or lower diagonal structure"
-                         (lambda () (ldlt:analyse-csc
+      (primitive-refuses "analyze-csc shape or lower diagonal structure"
+                         (lambda () (ldlt:analyze-csc
                                      (primitive-from-entries m n entries
                                                             (coalton:coalton csc:RejectDuplicates)))))))
   (let* ((indefinite (primitive-from-entries 1 1 '((0 0 -1d0))
                                              (coalton:coalton csc:RejectDuplicates)))
-         (symbolic (ldlt:analyse-csc indefinite)))
-    (assert (eq (coalton:coalton ldlt:FactorNonPositive) (ldlt:factor-status (ldlt:factor! symbolic (csc:entries indefinite) 0d0)))))
+         (symbolic (ldlt:analyze-csc indefinite)))
+    (assert (eq (coalton:coalton ldlt:FactorNonPositive) (ldlt:factor! symbolic (csc:entries indefinite) 0d0))))
   (format t "PRIMITIVE-LDLT-BRIDGE-PASS~%"))
 
 (defun primitive-oracle-controls ()

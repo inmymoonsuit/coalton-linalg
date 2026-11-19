@@ -1,6 +1,6 @@
 # Public interface reference
 
-This is the symbol index for the three library packages, excluding examples and
+This is the symbol index for the four library packages, excluding examples and
 tooling. The linked contracts specify storage, errors, ownership, numerical
 assumptions, and cost. See the [glossary](../CONTEXT.md) for mathematical terms.
 
@@ -10,14 +10,27 @@ not exported type aliases. `*` separates arguments; `->` introduces the result.
 Dimensions and indices use UFix; matrix indices are zero-based. Factor and solve
 outcomes have distinct named types.
 
+## coalton-linalg/errors
+
+[Typed error contract](errors.md) · [Source](../src/errors.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `LinalgError` | Exception family for construction, validation and primitive arithmetic |
+| `InvalidStructure`, `InvalidDimensions`, `InvalidPermutation` | String -> LinalgError |
+| `DuplicateEntry` | UFix * UFix -> LinalgError; row, column |
+| `NonFiniteInput`, `NonFiniteResult` | String -> LinalgError |
+| `AnalysisLimitExceeded` | UFix * UFix -> LinalgError; requested dimension, maximum |
+
 ## coalton-linalg/numeric
 
 [Contract and derivation](primitives.md#numeric) Â· [Source](../src/numeric.ct)
 
 | Export | Type |
 | --- | --- |
-| `finite?` | F64 -> Boolean |
 | `norm2`, `norm-inf` | V -> F64 |
+
+Use `coalton/math:finite?` for finiteness; this library does not duplicate that export.
 
 ## coalton-linalg/sparse/csc
 
@@ -47,20 +60,18 @@ Constructors and transforming operations return owned storage.
 
 | Export | Type or role |
 | --- | --- |
+| `maximum-analysis-size` | UFix; current analysis dimension cap, 4096 |
 | `Pattern` | Lower CSC input; constructor UFix * I * I -> Pattern |
-| `Symbolic` | Analysis and reusable workspace; obtain from analyse/analyse-csc |
-| `NumericFactor` | Borrowed factor; obtain from result-factor or symbolic-factor |
-| `FactorResult` | Opaque factor outcome handle |
-| `analyse` | Pattern -> Symbolic |
-| `analyse-csc` | coalton-linalg/sparse/csc:Matrix -> Symbolic |
+| `Symbolic` | Analysis and reusable workspace; obtain from analyze/analyze-csc |
+| `NumericFactor` | Borrowed factor; obtain from symbolic-factor |
+| `analyze` | Pattern -> Symbolic |
+| `analyze-csc` | coalton-linalg/sparse/csc:Matrix -> Symbolic |
 | `FactorStatus` | Factorization outcome type |
 | `FactorSuccess`, `FactorNonPositive`, `FactorNonFinite`, `FactorBadValues`, `FactorBadShift` | FactorStatus values |
 | `SolveStatus` | Solve outcome type |
 | `SolveSuccess`, `SolveInvalidFactor`, `SolveBadSize`, `SolveNonFiniteRhs`, `SolveNonFiniteResult` | SolveStatus values |
-| `factor!` | Symbolic * V * F64 -> FactorResult |
-| `factor-status` | FactorResult -> FactorStatus |
-| `result-column` | FactorResult -> IFix |
-| `result-factor` | FactorResult -> NumericFactor |
+| `factor!` | Symbolic * V * F64 -> FactorStatus |
+| `refused-column` | Symbolic -> IFix; latest factor! column, otherwise -1 |
 | `symbolic-factor` | Symbolic -> NumericFactor |
 | `factor-permutation`, `factor-columns`, `factor-rows` | NumericFactor -> I |
 | `factor-values`, `factor-diagonal` | NumericFactor -> V |
@@ -74,12 +85,12 @@ inspection arrays are borrowed; calls sharing a workspace are not concurrent.
 Symbolic and NumericFactor have private constructors and hide their workspace
 fields from ordinary external Coalton callers. The public inspection arrays
 remain mutable at runtime and read-only by contract. An earlier FactorSuccess
-describes its original call; its borrowed factor can later become invalid.
+describes its original call; the separately borrowed factor can later become invalid.
 See the [design review](design.md#coalton-interface-review-2026-11-19).
 
 ## Choosing the entry point
 
-Use [the SPD example](../examples/spd-solve.ct) for analyse/factor!/solve! and
+Use [the SPD example](../examples/spd-solve.ct) for analyze/factor!/solve! and
 [the sparse example](../examples/sparse-operations.ct) for matrix construction
 and products. Both are compiled and exercised by the library tests.
 

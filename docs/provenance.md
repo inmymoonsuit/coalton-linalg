@@ -51,3 +51,16 @@ prefix sums, and scatter; permutations use explicit coordinate substitution.
 Products follow their defining sums. These new algorithms are written in Coalton.
 Independent reviewers supplied dense/exact tests and challenged the calling contract.
 The SBCL runtime source was consulted for measurement semantics, not numerical algorithms.
+
+## Pre-publication revision
+
+Standard Coalton finiteness and absolute-value operations replace local duplicates;
+their implementations are dependencies, not copied source. Typed exceptions use
+Coalton's documented language facility.
+
+The exact-singular regression is independently derived from the integer Gram
+identity for rows [1,1,2], [1,0,1], [1,0,1]. It stores the resulting exact integer
+entries directly and proves rank using rational arithmetic on the F64 inputs.
+The external review's floating Gram candidates were inspected but not imported:
+all three were full rank as serialized. No external generator or factorization
+code was copied into the library or verifier.

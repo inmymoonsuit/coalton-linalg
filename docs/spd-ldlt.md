@@ -11,30 +11,34 @@ Each column starts with its diagonal; rows then strictly increase below it.
 Duplicates are invalid. Explicit numeric zeros remain structural entries.
 The empty n=0 matrix is supported.
 
-- `analyse(pattern) -> Symbolic` validates the structure and owns its derived
-  data. Malformed structure signals an error. Caller pattern arrays are not retained.
-- `analyse-csc(matrix) -> Symbolic` accepts a checked square lower CSC matrix
+- `analyze(pattern) -> Symbolic` validates the structure and owns its derived
+  data. Malformed structure raises InvalidStructure. Caller pattern arrays are not retained.
+- `analyze-csc(matrix) -> Symbolic` accepts a checked square lower CSC matrix
   with every diagonal present; values remain explicit arguments to factor!.
-- `factor!(symbolic, values, shift) -> FactorResult` computes
+  A nonsquare matrix raises InvalidDimensions.
+- `factor!(symbolic, values, shift) -> FactorStatus` computes
   `P (A - shift I) Pᵀ = L D Lᵀ`. Values follow the original CSC order; a changed
   structure needs a new analysis. Values are not retained.
 - `solve!(factor, b, out) -> SolveStatus` solves in original caller order. b and
   out may be the same array. On any refusal out remains unchanged.
 
-`factor-status(result) -> FactorStatus` returns one of:
+`factor!` directly returns one of:
 
 | FactorStatus | Meaning |
 | --- | --- |
-| FactorSuccess | Success; result-factor returns the borrowed factor |
+| FactorSuccess | Success; symbolic-factor returns the now-ready borrowed factor |
 | FactorNonPositive | Computed pivot is nonpositive |
 | FactorNonFinite | Nonfinite input or arithmetic |
 | FactorBadValues | Wrong value count |
 | FactorBadShift | Nonfinite shift |
 
-For FactorNonPositive and FactorNonFinite, result-column is the current
-elimination column in original numbering. It is not necessarily the location
-of a nonfinite input entry. Other outcomes return -1. Calling result-factor
-on a refusal signals an error.
+`refused-column(symbolic)` is the latest factor! call's elimination column in
+original numbering for FactorNonPositive and FactorNonFinite. It is not necessarily
+the location of a nonfinite input entry. It is -1 before any call and after every
+other outcome, including BadValues, BadShift and empty-matrix success. Read/copy
+it before the next factor! call if a diagnostic must be retained. Solve calls do
+not change it. `symbolic-factor(symbolic)` always returns the same owned handle;
+`factor-ready?` reports whether that handle currently holds a successful factor.
 
 SolveStatus is a distinct type with these outcomes:
 
@@ -65,10 +69,10 @@ use generated record access to their workspace fields. Public inspection arrays
 remain borrowed, ordinary mutable arrays, not statically protected views.
 
 One Symbolic owns one mutable factor and scratch workspace. Every factor! call,
-including a refusal, overwrites or invalidates earlier contents. A FactorResult retains
-its original outcome. Its successful factor handle is a borrowed view, not a
-snapshot: a later successful refactor changes its data, and a later refusal
-invalidates it even though the earlier result still reports FactorSuccess.
+including a refusal, overwrites or invalidates earlier contents. A saved
+FactorStatus describes its original call and carries no factor or column snapshot.
+The factor handle is a borrowed view: a later successful refactor changes its data,
+and a later refusal invalidates it even though an earlier status remains FactorSuccess.
 factor-ready? and solve! inspect the factor's current validity.
 Inspection arrays are borrowed, read-only views. Do not mutate them, pass them as
 output buffers, or alias them with input values.
@@ -88,11 +92,24 @@ not a dynamically checked foreign-language API.
 No pivoting, jitter, automatic damping, rank tolerance, or zero pruning is added.
 A pivot must be finite and strictly positive. This floating-point decision is not
 an exact rank or positive-definiteness certificate. The caller chooses its shift.
+The generic regression matrix `[[3,1,4],[1,1,2],[4,2,6]]` is exactly rank two:
+its null vector is `[-1,-1,1]` and its leading 2x2 minor is 2. Nevertheless, the
+supported runtime accepts it with a final computed pivot of 2^-52. The regression
+proves the input rank using exact arithmetic on the actual F64 entries; it does
+not infer singularity from the way a rounded matrix was generated.
 
 The tested Coalton setup disables floating-point traps. Explicit nonfinite checks
 provide the documented refusals; a caller enabling traps changes that behavior.
 Underflow is not diagnosed separately. Bitwise determinism is tested for repeated
 input on the same runtime and policy; cross-platform identity is not promised.
+
+Analysis accepts dimensions at most `maximum-analysis-size`, currently 4096.
+Larger dimensions raise `AnalysisLimitExceeded(requested, maximum)` before pattern
+validation, dimension arithmetic or workspace allocation. Comparing the dimension
+first prevents oversized UFix inputs from overflowing n+1 or n*n. This engineering
+cap bounds the adjacency bitmap to 16 MiB; it is not an accuracy threshold, a total
+memory budget or a performance guarantee. Analysis of a nonsquare CSC matrix first
+reports InvalidDimensions. See [typed errors](errors.md).
 
 Analysis uses exact minimum degree, not AMD. Its temporary adjacency bitmap takes
 n² bytes, with further ordering/frontier storage. A simple dense-graph worst-case
@@ -118,14 +135,16 @@ Only commit out after every computed result is finite.
 
 ## Representation choices
 
-Private nominal handle types wrap private records. A public alias of a private
-record would still permit Coalton's type-directed dot-field access; the external
-compile probes cover that distinction. Handle wrappers are created during
-analysis, and hot calls unwrap them to use the existing workspace.
+Private nominal handle types use `(repr :transparent)` around private records.
+They remain distinct Coalton types with private constructors, but their runtime
+value is the underlying record reference, without a separate wrapper. A public
+alias would still permit type-directed dot-field access; external compile probes
+cover that distinction.
 
-Cached result and factor identity are part of the calling contract. The opaque
-FactorResult and Lisp ABI on identity-returning accessors preserve that contract;
-factor! retains the compiler's automatic calling convention for its F64 shift.
-The [external caller](../tests/callers.ct) supplies computed, changing shifts,
-and the [interface tests](../tests/interface.lisp) check cached identity and
-allocations. These choices are deliberate review points for a language maintainer.
+The pinned compiler excludes transparent types from product-return unpacking.
+The public handle-returning accessor therefore uses the automatic ABI, with no
+Lisp-ABI override. FactorStatus and SolveStatus use symbol-backed enums. The
+[external caller](../tests/callers.ct) exercises direct and first-class handle
+access plus computed F64 shifts; [interface tests](../tests/interface.lisp) check
+identity, latest diagnostics, factor lifetimes and allocations. These are measured
+contracts for the pinned compiler, not promises about every future compiler.

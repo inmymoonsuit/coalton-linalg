@@ -1,0 +1,18 @@
+(cl:defpackage #:coalton-linalg/errors
+  (:use #:coalton #:coalton-prelude)
+  (:export #:LinalgError #:InvalidStructure #:InvalidDimensions #:InvalidPermutation
+           #:DuplicateEntry #:NonFiniteInput #:NonFiniteResult #:AnalysisLimitExceeded))
+(cl:in-package #:coalton-linalg/errors)
+
+(coalton-toplevel
+  (define-exception LinalgError
+    "Validation and primitive arithmetic errors; messages describe context, not machine-readable codes."
+    (InvalidStructure String)
+    (InvalidDimensions String)
+    (InvalidPermutation String)
+    (DuplicateEntry UFix UFix)
+    "Repeated coordinate as zero-based row, then column."
+    (NonFiniteInput String)
+    (NonFiniteResult String)
+    (AnalysisLimitExceeded UFix UFix)
+    "Requested analysis dimension, then the supported maximum dimension."))

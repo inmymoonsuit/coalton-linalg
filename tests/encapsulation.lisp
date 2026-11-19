@@ -45,7 +45,7 @@
   "(declare probe (Void -> ldlt:NumericFactor))
   (define (probe)
     (ldlt:symbolic-factor
-      (ldlt:analyse
+      (ldlt:analyze
         (ldlt:Pattern 0 (arr:make 1 (the UFix 0)) (arr:make 0 (the UFix 0))))))")
 
 (defparameter *encapsulation-probes*
@@ -65,8 +65,8 @@
         (match factor
           ((ldlt:NumericFactor _ _ _ _ _ _ _ state) (arr:length state))))")
     ("symbolic-construction" .
-     "(declare probe (ldlt:NumericFactor * ldlt:FactorResult -> ldlt:Symbolic))
-      (define (probe factor result)
+     "(declare probe (ldlt:NumericFactor -> ldlt:Symbolic))
+      (define (probe factor)
         (ldlt:Symbolic factor 0
                        (arr:make 1 (the UFix 0))
                        (arr:make 0 (the UFix 0))
@@ -74,12 +74,12 @@
                        (arr:make 1 (the UFix 0))
                        (arr:make 0 (the UFix 0))
                        (arr:make 0 (the UFix 0))
-                       result (arr:make 0 result) (arr:make 0 result)))")
+                       (arr:make 1 (the IFix -1))))")
     ("symbolic-destructuring" .
      "(declare probe (ldlt:Symbolic -> ldlt:NumericFactor))
       (define (probe symbolic)
         (match symbolic
-          ((ldlt:Symbolic factor _ _ _ _ _ _ _ _ _ _) factor)))")
+          ((ldlt:Symbolic factor _ _ _ _ _ _ _ _) factor)))")
     ("factor-state-access" .
      "(declare probe (ldlt:NumericFactor -> UFix))
       (define (probe factor) (arr:aref (.state factor) 0))")
@@ -89,9 +89,9 @@
     ("symbolic-factor-access" .
      "(declare probe (ldlt:Symbolic -> ldlt:NumericFactor))
       (define (probe symbolic) (.numeric symbolic))")
-    ("symbolic-result-access" .
-     "(declare probe (ldlt:Symbolic -> ldlt:FactorResult))
-      (define (probe symbolic) (.success symbolic))")))
+    ("symbolic-diagnostic-access" .
+     "(declare probe (ldlt:Symbolic -> arr:LispArray IFix))
+      (define (probe symbolic) (.diagnostic symbolic))")))
 
 (defun require-accepted-control (name body &key execute)
   (multiple-value-bind (accepted diagnostics) (compile-probe name body :execute execute)
@@ -154,7 +154,7 @@
     ("factor-return-as-solve-status" .
      "(declare probe (ldlt:Symbolic * arr:LispArray F64 * F64 -> ldlt:SolveStatus))
       (define (probe symbolic entries shift)
-        (ldlt:factor-status (ldlt:factor! symbolic entries shift)))")))
+        (ldlt:factor! symbolic entries shift))")))
 
 (defun run-status-type-tests ()
   "Compile a valid exhaustive match before rejecting cross-family outcome assignments."

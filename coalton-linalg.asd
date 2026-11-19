@@ -11,7 +11,7 @@
           (sb-ext:*block-compile-default* :specified))
       (funcall compile)))
   :components ((:module "src" :serial t
-                :components ((:ct-file "numeric")
+                :components ((:ct-file "errors") (:ct-file "numeric")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "spd-ldlt")))))))
 
@@ -27,8 +27,8 @@
   :serial t
   :components ((:module "tests" :serial t
                 :components ((:file "interface") (:ct-file "callers")
-                             (:file "runtime") (:file "property-tests")
-                             (:file "primitives") (:file "encapsulation") (:ct-file "typed-status") (:file "suite"))))
+                             (:file "runtime") (:static-file "exact-singular-rounding.sexp") (:file "property-tests")
+                             (:file "primitives") (:file "encapsulation") (:ct-file "typed-errors") (:ct-file "typed-status") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))

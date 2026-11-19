@@ -8,6 +8,7 @@
   (run-runtime-tests)
   (run-property-tests)
   (run-primitive-tests)
+  (coalton-linalg/tests/typed-errors:run-typed-error-tests)
   (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
   (coalton-linalg/tests/encapsulation:run-status-type-tests)
   (coalton-linalg/tests/encapsulation:run-typed-status-tests)

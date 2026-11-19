@@ -1,19 +1,12 @@
 (cl:defpackage #:coalton-linalg/numeric
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:math #:coalton/math))
-  (:export #:finite? #:norm2 #:norm-inf))
+                    (#:math #:coalton/math) (#:err #:coalton-linalg/errors))
+  (:export #:norm2 #:norm-inf))
 (cl:in-package #:coalton-linalg/numeric)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
 (coalton-toplevel
-  (inline)
-  (declare finite? (F64 -> Boolean))
-  (define (finite? x)
-    "True for a finite F64. See docs/primitives.md for the numeric contract."
-    (lisp (-> Boolean) (x)
-      (cl:not (cl:or (sb-ext:float-nan-p x) (sb-ext:float-infinity-p x)))))
-
   (declare norm2 (arr:LispArray F64 -> F64))
   (define (norm2 vector)
     "Euclidean norm using scaled squares; refuse nonfinite input or result."
@@ -21,9 +14,9 @@
     (let squares = (cell:new 1.0d0))
     (for ((i 0 (+ i 1))) :while (< i (arr:length vector))
       (let x = (arr:aref vector i))
-      (unless (finite? x)
-        (lisp (-> Void) () (cl:error "Norm input must be finite.")))
-      (let magnitude = (if (< x 0.0d0) (- 0.0d0 x) x))
+      (unless (inline (math:finite? x))
+        (throw (err:NonFiniteInput "Norm input must be finite.")))
+      (let magnitude = (abs x))
       (unless (== magnitude 0.0d0)
         (if (> magnitude (cell:read scale))
             (let ((ratio (/ (cell:read scale) magnitude)))
@@ -32,8 +25,8 @@
             (let ((ratio (/ magnitude (cell:read scale))))
               (cell:write! squares (+ (cell:read squares) (* ratio ratio)))))))
     (let result = (* (cell:read scale) (math:sqrt (cell:read squares))))
-    (unless (finite? result)
-      (lisp (-> Void) () (cl:error "Norm result is not finite.")))
+    (unless (inline (math:finite? result))
+      (throw (err:NonFiniteResult "Norm result is not finite.")))
     result)
 
   (declare norm-inf (arr:LispArray F64 -> F64))
@@ -42,8 +35,8 @@
     (let largest = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i (arr:length vector))
       (let x = (arr:aref vector i))
-      (unless (finite? x)
-        (lisp (-> Void) () (cl:error "Norm input must be finite.")))
-      (let magnitude = (if (< x 0.0d0) (- 0.0d0 x) x))
+      (unless (inline (math:finite? x))
+        (throw (err:NonFiniteInput "Norm input must be finite.")))
+      (let magnitude = (abs x))
       (when (> magnitude (cell:read largest)) (cell:write! largest magnitude)))
     (cell:read largest)))

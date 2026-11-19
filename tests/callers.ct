@@ -2,7 +2,7 @@
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
-  (:export #:dynamic-shifts))
+  (:export #:dynamic-shifts #:direct-handle #:first-class-handle))
 (cl:in-package #:coalton-linalg/tests/callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -12,5 +12,15 @@
     "Exercise the cross-package Coalton call with a changing, computed F64 shift."
     (let status = (cell:new (the UFix 0)))
     (for ((i 0 (+ i 1)) (shift 0.0d0 (+ shift 1.0d-12))) :while (< i count)
-      (cell:write! status (+ (cell:read status) (if (== (ldlt:factor-status (ldlt:factor! s a shift)) ldlt:FactorSuccess) 0 1))))
-    (cell:read status)))
+      (cell:write! status (+ (cell:read status) (if (== (ldlt:factor! s a shift) ldlt:FactorSuccess) 0 1))))
+    (cell:read status))
+
+  (declare direct-handle (ldlt:Symbolic -> ldlt:NumericFactor))
+  (define (direct-handle symbolic)
+    "A separate compiled direct caller must return the owned handle itself."
+    (ldlt:symbolic-factor symbolic))
+
+  (declare first-class-handle ((ldlt:Symbolic -> ldlt:NumericFactor) * ldlt:Symbolic -> ldlt:NumericFactor))
+  (define (first-class-handle accessor symbolic)
+    "The accessor is supplied at runtime, preventing a direct-call substitute."
+    (accessor symbolic)))

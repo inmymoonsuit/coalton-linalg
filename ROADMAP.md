@@ -5,7 +5,7 @@
 The standalone library now provides sparse SPD LDLᵀ, stable vector norms,
 validated rectangular CSC/COO construction, explicit duplicate handling,
 transpose, row/column permutations, and both matrix-vector product directions.
-The SPD analysis consumes the checked sparse structure through analyse-csc.
+The SPD analysis consumes the checked sparse structure through analyze-csc.
 
 Validation includes the original 20 matrices, 336 seeded exact-input cases,
 252 permutation/scaling relations, 96 repeated-refactor cases, floating-point
@@ -27,6 +27,14 @@ manifest, setup instructions, and the maintainer-selected MIT license.
 Fresh public-source acquisition and complete serial checks at both safety
 policies passed in an isolated source export. [The review record](docs/initial-review.md)
 states the measured evidence and limitations.
+
+## Pre-publication revision
+
+[The focused revision](docs/revision-2.md) simplifies factor statuses and transparent
+handles, makes latest-diagnostic lifetime explicit, reuses Coalton's standard
+numeric operations, supplies typed errors, and bounds the current analysis bitmap.
+The complete serial checks passed at both safety policies with unchanged numerical
+artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
 ## Batch 3: scalable symbolic factorization
 

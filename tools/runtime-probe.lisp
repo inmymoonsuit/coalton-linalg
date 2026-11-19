@@ -20,7 +20,7 @@
   (let* ((mode (or (uiop:getenv "COALTON_LINALG_RUNTIME_PROBE") "factor-first"))
          (paused (string= mode "paused"))
          (idle-first (string= mode "idle-first"))
-         (s (coalton-linalg/sparse/spd-ldlt:analyse
+         (s (coalton-linalg/sparse/spd-ldlt:analyze
              (coalton-linalg/sparse/spd-ldlt:pattern
               3 (indices 0 3 4 5) (indices 0 1 2 1 2))))
          (a (doubles 5d0 1d0 1d0 2d0 2d0))

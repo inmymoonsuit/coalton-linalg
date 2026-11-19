@@ -49,7 +49,7 @@ pattern. It is distinct from computing numerical factor values.
 
 **Numeric factorization**:
 Computation of factor values for a particular matrix. Refactorization repeats
-this computation for changed values with the same analysed pattern.
+this computation for changed values with the same analyzed pattern.
 
 **Solve**:
 Computation of a solution to a linear system for a supplied right-hand side.

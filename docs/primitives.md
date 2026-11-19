@@ -3,19 +3,21 @@
 These modules use F64 values and UFix indices on the supported 64-bit SBCL
 toolchain. Coalton checks the calling types. Raw Lisp callers must supply simple
 specialized arrays: DOUBLE-FLOAT for values, (UNSIGNED-BYTE 62) for indices.
-Malformed contents signal Common Lisp errors. Floating-point traps must have
+Malformed contents raise [typed LinalgError conditions](errors.md). Floating-point traps must have
 the documented disabled policy.
 
 ## Numeric
 
 Package: `coalton-linalg/numeric`, source: [numeric.ct](../src/numeric.ct).
 
-- `finite?(x)` is false for NaN and either infinity.
+Finiteness checks use `coalton/math:finite?`; norms use the standard `abs`.
+The numeric package exports only the two norms.
+
 - `norm2(vector)` computes the Euclidean norm with scaled sum-of-squares
   accumulation. Empty/all-zero vectors return positive zero. Nonfinite input or
-  a nonfinite computed result signals an error.
+  a nonfinite computed result raises NonFiniteInput or NonFiniteResult, respectively.
 - `norm-inf(vector)` returns the greatest absolute component, or positive zero
-  for an empty vector. Nonfinite input signals an error.
+  for an empty vector. Nonfinite input raises NonFiniteInput.
 
 Neither norm mutates input. Norm2 avoids unnecessarily squaring the largest or
 smallest magnitude directly. It does not promise correct rounding or compensated
@@ -90,7 +92,7 @@ Norms take O(vector length) time with constant scalar workspace.
 
 ## Consuming the structure in SPD analysis
 
-`coalton-linalg/sparse/spd-ldlt:analyse-csc(matrix)` requires a square matrix whose
+`coalton-linalg/sparse/spd-ldlt:analyze-csc(matrix)` requires a square matrix whose
 stored pattern is lower triangular with every diagonal present. It calls the
 existing symbolic analysis, which owns its derived structure. Numeric values
 remain explicit arguments to `factor!`; use `csc:entries` initially, or a new
