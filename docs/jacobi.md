@@ -127,6 +127,38 @@ counts. The largest count on any tested matrix was 30, against the default limit
 unblocked and sequential, and it is slower than a tridiagonalizing or bidiagonalizing
 method by a large factor that grows with the dimension.
 
+## Artifact driver
+
+The optional tools system writes reviewable outputs for a folder of systems:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1 -Task Jacobi `
+  -InputFolder <folder> -OutputFolder build/<name> -Repeats 1 -AllocationRepeats 1
+```
+
+Every `<name>.S.txt` is a symmetric eigenvalue problem: n, then n² values in column-major
+order, of which the lower triangle is read. Every `<name>.M.txt` is a singular value
+problem: m and n, then m n values in column-major order. One name may not be both.
+`<name>.meta.txt` is optional. Each of its lines `sweep limit: <k>` is one run, in order
+from index 0; with none there is one run at the default limit. For a singular value
+problem each line `threshold: <value>` is not a run: every successful run reports the
+count of singular values strictly above that value times the largest.
+
+For run index i, a successful eigenvalue run writes `<name>.<i>.eigen.out.txt`: n, the n
+values ascending, the n² vector entries column-major, then `sweeps <k>`. A successful
+singular value run writes `<name>.<i>.svd.out.txt`: m, n, the n values descending, the
+left vectors as m n entries and the right vectors as n² entries, column-major, then
+`sweeps <k>` and one line `rank <count>` a threshold, in meta order. Every value is on its
+own line, floating values with 17 significant digits. A refused run writes only
+`<name>.<i>.refused.out.txt` holding the JacobiStatus name.
+
+`eigen-table.txt` carries `name run n sweeps eigen_ms eigen_bytes` and `svd-table.txt`
+carries `name run m n sweeps svd_ms svd_bytes`, one line a run, with `refused <Status>` in
+place of the last three fields for a refusal. Times are the best of the requested repeats
+after one warm-up call, and bytes are over the requested allocation repeats after one
+warm-up call; both honour a count of 1, for matrices that take seconds a call. Reruns
+replace every artifact of a system.
+
 ## Derivation
 
 **The rotation.** For a symmetric 2-by-2 matrix `[[a, b], [b, d]]` and

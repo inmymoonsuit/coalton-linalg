@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Test','Fixtures','Gram','Indefinite','Orthogonal','Inspect')][string]$Task = 'Test',
+    [ValidateSet('Test','Fixtures','Gram','Indefinite','Orthogonal','Jacobi','Inspect')][string]$Task = 'Test',
     [ValidateSet(0,1)][int]$Safety = 1,
     [string]$Sbcl = '',
     [string]$Python = '',
@@ -58,6 +58,11 @@ if ($Task -eq 'Orthogonal' -and
     -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.M.txt' -File -ErrorAction Stop)) {
     throw "No dense rectangular fixtures in $InputFolder"
 }
+if ($Task -eq 'Jacobi' -and
+    -not (Get-ChildItem -LiteralPath $InputFolder -File -ErrorAction Stop |
+          Where-Object { $_.Name -like '*.S.txt' -or $_.Name -like '*.M.txt' })) {
+    throw "No dense symmetric or rectangular fixtures in $InputFolder"
+}
 [System.IO.Directory]::CreateDirectory($OutputFolder) | Out-Null
 [System.IO.Directory]::CreateDirectory($CacheRoot) | Out-Null
 $environment = @{
@@ -102,6 +107,7 @@ try {
         Gram { 'gram.lisp' }
         Indefinite { 'indefinite.lisp' }
         Orthogonal { 'orthogonal.lisp' }
+        Jacobi { 'jacobi.lisp' }
         Inspect { 'inspect.lisp' }
     }
     # A runtime option must precede the toplevel options. Zero keeps SBCL's own default heap.

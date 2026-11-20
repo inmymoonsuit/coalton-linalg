@@ -2,6 +2,11 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.6.1 — 2026-11-20
+
+Added: an artifact driver for the Jacobi routines, `scripts/check.ps1 -Task Jacobi`.
+[Protocol](docs/jacobi.md#artifact-driver). No library call changed.
+
 ## 0.6.0 — 2026-11-19
 
 Added:

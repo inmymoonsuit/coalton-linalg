@@ -166,6 +166,16 @@ NumPy program.
   transpose. Safety 0 is 6% to 18% faster than safety 1, and the two policies produce
   identical output files.
 
+## After review
+
+An artifact driver, `scripts/check.ps1 -Task Jacobi`, was added at the reviewer's request so
+that a held-back set can be checked from files alone. It writes the values, the vectors and
+the sweep count of each run by sweep limit, and for singular value problems the rank at
+each named threshold; [the contract page](jacobi.md#artifact-driver) has the protocol. Its
+regressions cover exact eigenvalue and singular value files, a named non-convergence at a
+sweep limit, strict rank lines, a named overflow refusal, one name used for both kinds, and
+removal of stale artifacts.
+
 ## Limits
 
 - Small and moderate sizes only, and an order of magnitude or more slower than

@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.6.0"
+  :version "0.6.1"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -50,16 +50,18 @@
   :description "Optional fixture reader, artifact writer, and benchmark driver."
   :depends-on ("coalton-linalg")
   :components ((:module "tools" :serial t :components ((:file "fixtures") (:file "gram-fixtures")
-                                                       (:file "indefinite-fixtures") (:file "orthogonal-fixtures")))))
+                                                       (:file "indefinite-fixtures") (:file "orthogonal-fixtures")
+                                                       (:file "jacobi-fixtures")))))
 
 (asdf:defsystem "coalton-linalg/tools-tests"
   :description "Fixture parser and artifact lifecycle regressions."
   :depends-on ("coalton-linalg/tools")
   :components ((:module "tests" :serial t :components ((:file "tools") (:file "gram-tools") (:file "indefinite-tools")
-                                                       (:file "orthogonal-tools"))))
+                                                       (:file "orthogonal-tools") (:file "jacobi-tools"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tools :run-tools-tests)
              (uiop:symbol-call :coalton-linalg/tools :run-gram-tools-tests)
              (uiop:symbol-call :coalton-linalg/tools :run-indefinite-tools-tests)
-             (uiop:symbol-call :coalton-linalg/tools :run-orthogonal-tools-tests)))
+             (uiop:symbol-call :coalton-linalg/tools :run-orthogonal-tools-tests)
+             (uiop:symbol-call :coalton-linalg/tools :run-jacobi-tools-tests)))

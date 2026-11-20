@@ -1,0 +1,150 @@
+(in-package #:coalton-linalg/tools)
+
+;;; Optional artifact driver for the Jacobi routines. Every <name>.S.txt in a folder is a
+;;; symmetric eigenvalue problem and every <name>.M.txt a singular value problem; each run
+;;; named by <name>.meta.txt writes files an independent reviewer can recompute from. See
+;;; docs/jacobi.md, Artifact driver, for the file protocol.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (sb-ext:add-package-local-nickname "JC" "COALTON-LINALG/DENSE/JACOBI"))
+
+(defun meta-prefixed-values (directory name prefix)
+  "The value of every line of <name>.meta.txt that starts with PREFIX, in order."
+  (let ((path (fixture-path directory name ".meta.txt")) (found '()))
+    (when (probe-file path)
+      (with-open-file (in path)
+        (loop for line = (read-line in nil nil) while line
+              when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
+                do (let ((value (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
+                                  (read-from-string line nil nil :start (length prefix)))))
+                     (unless (realp value) (error "Malformed meta line in ~A: ~A" name line))
+                     (push value found)))))
+    (nreverse found)))
+
+(defun meta-sweep-limits (directory name)
+  "Each `sweep limit: <k>` line is one run; with none there is one run at the default limit, written NIL."
+  (let ((limits (meta-prefixed-values directory name "sweep limit: ")))
+    (dolist (limit limits)
+      (unless (and (integerp limit) (>= limit 0)) (error "Malformed sweep limit in ~A: ~A" name limit)))
+    (or limits (list nil))))
+
+(defun jacobi-status-name (status)
+  (cond ((eq status (coalton:coalton jc:JacobiSuccess)) "JacobiSuccess")
+        ((eq status (coalton:coalton jc:JacobiNotConverged)) "JacobiNotConverged")
+        ((eq status (coalton:coalton jc:JacobiNonFinite)) "JacobiNonFinite")
+        ((eq status (coalton:coalton jc:JacobiBadSize)) "JacobiBadSize")
+        (t (error "Unnamed Jacobi status ~S." status))))
+
+(defun bytes-for-few (thunk repeats)
+  "Bytes allocated by REPEATS calls after one warm-up call; for runs too long to repeat often."
+  (funcall thunk)
+  (sb-ext:gc :full t)
+  (let ((before (sb-ext:get-bytes-consed)))
+    (dotimes (i repeats) (funcall thunk))
+    (- (sb-ext:get-bytes-consed) before)))
+
+(defun write-values-to (out values)
+  (loop for v across values do (write-line (if (floatp v) (f64-string v) (format nil "~D" v)) out)))
+
+(defun run-jacobi-fixtures (input output &key (repeats 20) (allocation-repeats 20))
+  "Write each system's values, vectors and sweep count at every named sweep limit, and one line a run."
+  (ensure-directories-exist (uiop:ensure-directory-pathname output))
+  (let* ((directory (uiop:ensure-directory-pathname input))
+         (symmetric (sort (directory (merge-pathnames "*.S.txt" directory)) #'string< :key #'namestring))
+         (rectangular (sort (directory (merge-pathnames "*.M.txt" directory)) #'string< :key #'namestring))
+         (failures 0) (count 0)
+         (indexed '(".eigen.out.txt" ".svd.out.txt" ".refused.out.txt")))
+    (flet ((name-of (path suffix)
+             (let ((file (file-namestring path)))
+               (subseq file 0 (- (length file) (length suffix)))))
+           (table (file)
+             (open (merge-pathnames file (uiop:ensure-directory-pathname output))
+                   :direction :output :if-exists :supersede :if-does-not-exist :create))
+           (failed (name condition)
+             (incf failures)
+             (format t "JACOBI-DRIVER-ERROR ~A ~A~%" name condition)))
+      (with-open-stream (eigen-table (table "eigen-table.txt"))
+        (format eigen-table "name run n sweeps eigen_ms eigen_bytes~%")
+        (dolist (path symmetric)
+          (let ((name (name-of path ".S.txt")))
+            (incf count)
+            (delete-indexed-artifacts output name indexed)
+            (handler-case
+                (progn
+                  (when (probe-file (fixture-path input name ".M.txt"))
+                    (error "One name is both a symmetric and a rectangular system: ~A" name))
+                  (multiple-value-bind (n a) (read-dense-symmetric input name)
+                    (let ((eigen (jc:make-symmetric-eigen n)))
+                      (loop for limit in (meta-sweep-limits input name) for index from 0 do
+                        (let* ((thunk (if limit
+                                          (lambda () (jc:eigen-with-sweep-limit! eigen a limit))
+                                          (lambda () (jc:eigen! eigen a))))
+                               (status (funcall thunk)))
+                          (if (not (eq status (coalton:coalton jc:JacobiSuccess)))
+                              (let ((line (format nil "~A ~D ~D refused ~A" name index n (jacobi-status-name status))))
+                                (write-line-file (indexed-path output name index ".refused.out.txt")
+                                                 (jacobi-status-name status))
+                                (write-line line) (write-line line eigen-table))
+                              (let ((sweeps (jc:eigen-sweeps eigen)))
+                                (with-open-file (out (indexed-path output name index ".eigen.out.txt")
+                                                     :direction :output :if-exists :supersede
+                                                     :if-does-not-exist :create)
+                                  (format out "~D~%" n)
+                                  (write-values-to out (jc:eigenvalues eigen))
+                                  (write-values-to out (jc:eigenvectors eigen))
+                                  (format out "sweeps ~D~%" sweeps))
+                                (let* ((ms (best-ms thunk repeats))
+                                       (bytes (bytes-for-few thunk (max 1 allocation-repeats)))
+                                       (line (format nil "~A ~D ~D ~D ~,6F ~D" name index n sweeps ms bytes)))
+                                  (unless (zerop bytes) (incf failures))
+                                  (write-line line) (write-line line eigen-table)))))))))
+              (error (condition) (failed name condition))))))
+      (with-open-stream (svd-table (table "svd-table.txt"))
+        (format svd-table "name run m n sweeps svd_ms svd_bytes~%")
+        (dolist (path rectangular)
+          (let ((name (name-of path ".M.txt")))
+            (incf count)
+            (unless (probe-file (fixture-path input name ".S.txt"))
+              (delete-indexed-artifacts output name indexed))
+            (handler-case
+                (progn
+                  (when (probe-file (fixture-path input name ".S.txt"))
+                    (error "One name is both a symmetric and a rectangular system: ~A" name))
+                  (multiple-value-bind (m n a) (read-dense-rectangular input name)
+                    (let ((svd (jc:make-svd m n))
+                          (thresholds (meta-prefixed-values input name "threshold: ")))
+                      (loop for limit in (meta-sweep-limits input name) for index from 0 do
+                        (let* ((thunk (if limit
+                                          (lambda () (jc:svd-with-sweep-limit! svd a limit))
+                                          (lambda () (jc:svd! svd a))))
+                               (status (funcall thunk)))
+                          (if (not (eq status (coalton:coalton jc:JacobiSuccess)))
+                              (let ((line (format nil "~A ~D ~D ~D refused ~A" name index m n
+                                                  (jacobi-status-name status))))
+                                (write-line-file (indexed-path output name index ".refused.out.txt")
+                                                 (jacobi-status-name status))
+                                (write-line line) (write-line line svd-table))
+                              (let ((sweeps (jc:svd-sweeps svd)))
+                                (with-open-file (out (indexed-path output name index ".svd.out.txt")
+                                                     :direction :output :if-exists :supersede
+                                                     :if-does-not-exist :create)
+                                  (format out "~D~%~D~%" m n)
+                                  (write-values-to out (jc:singular-values svd))
+                                  (write-values-to out (jc:left-vectors svd))
+                                  (write-values-to out (jc:right-vectors svd))
+                                  (format out "sweeps ~D~%" sweeps)
+                                  (dolist (threshold thresholds)
+                                    (format out "rank ~D~%"
+                                            (jc:rank-above svd (if (plusp n)
+                                                                   (* (coerce threshold 'double-float)
+                                                                      (aref (jc:singular-values svd) 0))
+                                                                   0d0)))))
+                                (let* ((ms (best-ms thunk repeats))
+                                       (bytes (bytes-for-few thunk (max 1 allocation-repeats)))
+                                       (line (format nil "~A ~D ~D ~D ~D ~,6F ~D" name index m n sweeps ms bytes)))
+                                  (unless (zerop bytes) (incf failures))
+                                  (write-line line) (write-line line svd-table)))))))))
+              (error (condition) (failed name condition)))))))
+    (if (zerop failures)
+        (format t "JACOBI-FIXTURES-PASS ~D~%" count)
+        (error "JACOBI-FIXTURES-FAIL ~D of ~D" failures count))))
