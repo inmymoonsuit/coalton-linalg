@@ -38,7 +38,7 @@ artifacts. The exact-singular regression demonstrates the computed-pivot contrac
 
 ## Batches 3 through 6
 
-Batch 3 is completed in four steps, 3a through 3d; Batches 4 through 6 are planned. [The batch record](docs/batch3a.md)
+Batch 3, in four steps 3a through 3d, and Batch 4 are completed; Batches 5 and 6 are planned. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -70,10 +70,14 @@ with an explicit factor-entry budget and overflow-safe representability limits.
 
 ### Batch 4: dense symmetric indefinite LDL^T and inertia
 
-Add stable 1-by-1 and 2-by-2 pivoting, solves and block-correct inertia. Validate
-shifted eigenvalue counts and augmented systems with exact/reference cases.
-Numerical threshold reliability, variable nullity and singular-solve behavior
-have distinct contracts. Dense delivery does not establish large sparse scaling.
+**Completed.** `coalton-linalg/dense/indefinite-ldlt` factors a dense symmetric matrix
+with 1-by-1 and 2-by-2 pivots under bounded multipliers, solves, and reports the inertia
+of the computed block diagonal with both eigenvalues of each 2-by-2 block. A singular
+matrix completes with a zero count and its solve is refused by name. 365 exact-reference
+factorizations, shifted eigenvalue counts, augmented systems, thirteen planted source
+controls and an allocation measurement per policy pass. [The batch record](docs/batch4.md)
+holds the measurements; [the contract](docs/indefinite-ldlt.md) the derivation and what a
+count near a threshold does not say. Dense delivery does not establish large sparse scaling.
 
 ### Batch 5: orthogonal decompositions
 

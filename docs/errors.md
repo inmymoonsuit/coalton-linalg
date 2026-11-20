@@ -16,7 +16,7 @@ codes; callers should match constructors, not text.
 | `DuplicateEntry(row,column)` | A repeated coordinate in canonical CSC or COO with RejectDuplicates; zero-based caller coordinates. |
 | `NonFiniteInput(message)` | Nonfinite entries passed to matrix construction, products or norms. |
 | `NonFiniteResult(message)` | Nonfinite primitive result or duplicate accumulation. |
-| `AnalysisLimitExceeded(requested,maximum)` | Analysis dimension exceeds its representability bound; both payloads UFix. |
+| `AnalysisLimitExceeded(requested,maximum)` | A sparse analysis dimension exceeds its representability bound, or a dense factor dimension exceeds `maximum-dimension`; both payloads UFix. |
 | `AnalysisStorageExceeded(required,budget)` | Analyzed output entries exceed the entry budget: total factor entries including implicit diagonals for SPD, or stored lower Gram entries including explicit diagonals for Gram analysis. Required is an Integer lower bound; budget is the effective UFix budget (capped for representability). |
 
 SPD Pattern validation reports InvalidStructure for repeated rows as well as other

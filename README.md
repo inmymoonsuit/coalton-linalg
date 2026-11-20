@@ -16,6 +16,7 @@ loaded or required.
 - Caller-buffer matvec! and transpose-matvec!, with measured allocation-free success.
 - Fixed-pattern Gram products AᵀA and AAᵀ: analyze once, refill caller storage without allocating.
 - A lower estimate of the inverse's 1-norm from a prepared factor, for a reciprocal condition estimate.
+- Dense symmetric indefinite LDLᵀ with 1-by-1 and 2-by-2 pivots, solves, and inertia.
 - Stable Euclidean/infinity norms using Coalton standard numeric primitives.
 - Lower compressed sparse column (CSC) factorization input, double-precision values.
 - Deterministic exact minimum-degree ordering and symbolic factor structure.
@@ -23,7 +24,7 @@ loaded or required.
 - Repeated factorization and solves using owned reusable workspace.
 - Explicit refusals, borrowed-factor ownership, and independent numerical checks.
 
-This is an early library, not a general indefinite solver. Symbolic analysis uses
+This is an early library. Its indefinite factorization is dense; the sparse one is positive definite only. Symbolic analysis uses
 compact adjacency tables and an indexed minimum-degree heap. Storage follows the
 input and factor fill; fill can itself be dense. Analysis defaults to a budget of
 1,048,576 total factor entries (including the implicit diagonal), with explicit
@@ -56,7 +57,8 @@ development-mode performance is unverified. See the toolchain notes below.
 ```
 
 The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
-`coalton-linalg/sparse/csc`, and `coalton-linalg/sparse/spd-ldlt`. The [interface reference](docs/api.md) indexes
+`coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/spd-ldlt`
+and `coalton-linalg/dense/indefinite-ldlt`. The [interface reference](docs/api.md) indexes
 all exported symbols and links to their contracts. [A compiled SPD example](examples/spd-solve.ct)
 uses the local nickname `ldlt`; [a sparse example](examples/sparse-operations.ct)
 shows construction and products. The [mathematical glossary](CONTEXT.md) explains
@@ -98,7 +100,8 @@ each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the
 | `src/sparse/csc.ct` | Owned sparse matrices and operations |
 | `src/sparse/gram.ct` | Fixed-pattern AᵀA and AAᵀ products |
 | `src/sparse/ordering.ct` | Private minimum-degree ordering |
-| `src/sparse/spd-ldlt.ct` | SPD factorization and solves |
+| `src/sparse/spd-ldlt.ct` | SPD factorization, solves and condition estimate |
+| `src/dense/indefinite-ldlt.ct` | Dense symmetric indefinite factorization and inertia |
 | `tests/` | Interface/runtime tests and small generic fixtures |
 | `tools/` | Optional artifact driver and independent Python verifier |
 | `examples/` | Executable caller examples, exercised by tests |

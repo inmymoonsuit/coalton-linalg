@@ -2,6 +2,19 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.4.0 — 2026-11-19
+
+Added:
+
+- `coalton-linalg/dense/indefinite-ldlt`: dense symmetric indefinite LDLᵀ with 1-by-1 and
+  2-by-2 pivots, solves, and the inertia of the computed block diagonal, counting both
+  eigenvalues of each 2-by-2 block. A singular matrix completes with a zero count and its
+  solve is refused by name. [Contract](docs/indefinite-ldlt.md) · [record](docs/batch4.md).
+- A compiled minimum-norm example through the augmented system, `examples/minimum-norm.ct`.
+
+Changed: `AnalysisLimitExceeded` is now also raised by `make-factor` for a dense dimension
+above `maximum-dimension`. No existing call changes meaning.
+
 ## 0.3.0 — 2026-11-19
 
 Added:

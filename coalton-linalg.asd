@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.3.0"
+  :version "0.4.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -14,13 +14,15 @@
                 :components ((:ct-file "errors") (:ct-file "numeric")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
-                                           (:ct-file "gram") (:ct-file "spd-ldlt")))))))
+                                           (:ct-file "gram") (:ct-file "spd-ldlt")))
+                             (:module "dense" :serial t
+                              :components ((:ct-file "indefinite-ldlt")))))))
 
 (asdf:defsystem "coalton-linalg/examples"
   :description "Runnable public-interface examples."
   :depends-on ("coalton-linalg")
   :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
-                                                (:ct-file "normal-equations")))))
+                                                (:ct-file "normal-equations") (:ct-file "minimum-norm")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -35,7 +37,8 @@
                              (:file "buffered-properties")
                              (:ct-file "gram-callers") (:file "gram-runtime")
                              (:file "gram-properties")
-                             (:ct-file "condition-callers") (:file "condition") (:file "suite"))))
+                             (:ct-file "condition-callers") (:file "condition")
+                             (:ct-file "indefinite-callers") (:file "indefinite") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))

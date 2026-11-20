@@ -1,6 +1,6 @@
 # Public interface reference
 
-This is the symbol index for the five public library packages, excluding examples,
+This is the symbol index for the six public library packages, excluding examples,
 tooling and the private sparse/ordering package. The linked contracts specify storage, errors, ownership, numerical
 assumptions, and cost. See the [glossary](../CONTEXT.md) for mathematical terms.
 
@@ -120,11 +120,42 @@ remain mutable at runtime and read-only by contract. An earlier FactorSuccess
 describes its original call; the separately borrowed factor can later become invalid.
 See the [design review](design.md#coalton-interface-review-2026-11-19).
 
+## coalton-linalg/dense/indefinite-ldlt
+
+[Contract and derivation](indefinite-ldlt.md) · [Source](../src/dense/indefinite-ldlt.ct)
+
+A dense symmetric matrix is a V of n² elements in column-major order, entry (i,j) at
+i + j n, of which only the lower triangle is read.
+
+| Export | Type or role |
+| --- | --- |
+| `Factor` | Reusable dense factor with private workspace; obtain from make-factor |
+| `make-factor` | UFix -> Factor; storage for n-by-n problems |
+| `maximum-dimension` | UFix; 32,768 |
+| `pivot-threshold` | F64; (1 + √17)/8, the 1-by-1 acceptance ratio |
+| `dimension` | Factor -> UFix |
+| `FactorStatus` | Factorization outcome type |
+| `FactorSuccess`, `FactorNonFinite`, `FactorBadSize`, `FactorBadShift` | FactorStatus values |
+| `SolveStatus` | Solve outcome type |
+| `SolveSuccess`, `SolveInvalidFactor`, `SolveBadSize`, `SolveSingular`, `SolveNonFiniteRhs`, `SolveNonFiniteResult` | SolveStatus values |
+| `factor!` | Factor * V * F64 -> FactorStatus; P (A - shift I) Pᵀ = L D Lᵀ |
+| `solve!` | Factor * V * V -> SolveStatus |
+| `factor-ready?` | Factor -> Boolean |
+| `positive-count`, `negative-count`, `zero-count` | Factor -> UFix; inertia of the computed block diagonal |
+| `factor-permutation`, `factor-block-sizes` | Factor -> I |
+| `factor-lower`, `factor-diagonal`, `factor-subdiagonal` | Factor -> V |
+
+`FactorStatus` and `SolveStatus` here are distinct types from the sparse package's. A
+singular matrix is `FactorSuccess` with a nonzero `zero-count`. Inspection arrays are
+borrowed, read-only by contract, and rewritten by the next `factor!`.
+
 ## Choosing the entry point
 
 Use [the SPD example](../examples/spd-solve.ct) for analyze/factor!/solve! and
 [the sparse example](../examples/sparse-operations.ct) for matrix construction
-and products. Both are compiled and exercised by the library tests.
+and products. [The normal-equations example](../examples/normal-equations.ct) joins Gram
+products to the SPD factorization, and [the minimum-norm example](../examples/minimum-norm.ct)
+uses the dense indefinite factorization. All are compiled and exercised by the library tests.
 
 A general CSC matrix represents exactly its stored entries; it has no implicit
 symmetry. The SPD interface specifically interprets its lower triangle as a

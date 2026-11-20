@@ -1,6 +1,7 @@
 # Planned numerical batches
 
-State: Batch 3 completed (3a through 3d); Batches 4 through 6 planned.
+State: Batches 3 (3a through 3d) and 4 completed; Batches 5 and 6 planned.
+[Batch 4 evidence](batch4.md) records the dense indefinite factorization.
 [Batch 3d evidence](batch3d.md) records the condition estimate.
 [Batch 3c evidence](batch3c.md) records the Gram products.
 [Batch 3b evidence](batch3b.md) records buffered-product delivery.
@@ -116,6 +117,11 @@ estimator failure cases and counted solve calls. An estimate is not a certified
 bound unless an error analysis and tests support that stronger contract.
 
 ## Batch 4: dense symmetric indefinite factorization and inertia
+
+Implementation note: delivered as `coalton-linalg/dense/indefinite-ldlt`;
+[the contract](indefinite-ldlt.md) is the current statement and carries the derivation.
+The pivot search is the bounded variant that follows growing off-diagonal maxima to a
+mutual maximum. Zero pivots are counted only when exactly zero in the computed arithmetic.
 
 Build a separate symmetric-indefinite LDL^T interface, initially dense F64, using
 permutations and stable 1-by-1 / 2-by-2 pivot selection of the Bunch-Kaufman family.

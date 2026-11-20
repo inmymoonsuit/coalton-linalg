@@ -83,6 +83,28 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 4: dense symmetric indefinite factorization
+
+**This factorization follows published methods.** Block-diagonal pivoting with 1-by-1 and
+2-by-2 pivots and the threshold (1 + sqrt 17)/8 is the method of Bunch and Parlett (1971)
+and Bunch and Kaufman (1977); the column search that follows growing off-diagonal maxima
+until it meets a mutual maximum is the bounded variant of Ashcraft, Grimes and Lewis
+(1998), often called rook pivoting. The planned-batch page asked for this family by name.
+The code was written from the derivation on [the contract page](indefinite-ldlt.md), which
+was written first: the multiplier bounds, the threshold equation, the termination argument
+and the lower-triangle exchange are worked out there from the elimination identities. The
+methods were known from their descriptions. No numerical-library implementation and no
+algorithm listing or pseudocode box was opened while writing it. Whether following
+published methods this closely from their descriptions meets this repository's clean-room
+rule is the same open maintainer decision as for Batch 3d.
+
+Inverting the 2-by-2 block in a form divided by its off-diagonal entry was worked out here
+from the bound on the scaled determinant. The tests' references are an exact rational
+product of the exported factor, an exact symmetric elimination with a different pivot rule
+for the inertia, and an exact rational inverse, all written for the tests. NumPy and SciPy
+were used after the implementation, as an eigenvalue-sign comparison and a timing
+reference only.
+
 ## Batch 3d: condition estimate
 
 The estimate was derived from convexity: |inverse(M) x|_1 is convex in x, its maximum over

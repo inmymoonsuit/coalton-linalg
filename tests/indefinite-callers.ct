@@ -1,0 +1,61 @@
+(cl:defpackage #:coalton-linalg/tests/indefinite-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:il #:coalton-linalg/dense/indefinite-ldlt)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:observe-factor #:observe-solve #:factor-solve-loop #:allocation-error))
+(cl:in-package #:coalton-linalg/tests/indefinite-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare factor-code (il:FactorStatus -> UFix))
+  (define (factor-code status)
+    (match status
+      ((il:FactorSuccess) 0)
+      ((il:FactorNonFinite) 1)
+      ((il:FactorBadSize) 2)
+      ((il:FactorBadShift) 3)))
+
+  (declare solve-code (il:SolveStatus -> UFix))
+  (define (solve-code status)
+    (match status
+      ((il:SolveSuccess) 0)
+      ((il:SolveInvalidFactor) 1)
+      ((il:SolveBadSize) 2)
+      ((il:SolveSingular) 3)
+      ((il:SolveNonFiniteRhs) 4)
+      ((il:SolveNonFiniteResult) 5)))
+
+  (declare observe-factor (il:Factor * arr:LispArray F64 * F64 -> UFix))
+  (define (observe-factor factor a shift)
+    "Exhaustively matched factor outcome: success 0, non-finite 1, size 2, shift 3."
+    (factor-code (il:factor! factor a shift)))
+
+  (declare observe-solve (il:Factor * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (observe-solve factor b out)
+    "Exhaustively matched solve outcome: success 0, invalid 1, size 2, singular 3, rhs 4, result 5."
+    (solve-code (il:solve! factor b out)))
+
+  (declare factor-solve-loop (il:Factor * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (factor-solve-loop factor a b out count)
+    "A real external caller: refactor, read the inertia and solve; count what goes wrong."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (il:factor! factor a 0.0d0) il:FactorSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (+ (il:positive-count factor) (+ (il:negative-count factor) (il:zero-count factor)))
+                  (il:dimension factor))
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (il:solve! factor b out) il:SolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare allocation-error (UFix -> UFix))
+  (define (allocation-error n)
+    "Test-only codes for make-factor: success 0, dimension limit 3, unexpected 99."
+    (catch (progn (il:make-factor n) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisLimitExceeded _ _) 3)
+         (_ 99)))
+      (_ 99))))
