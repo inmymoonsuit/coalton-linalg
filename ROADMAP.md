@@ -211,11 +211,13 @@ ranking of what it would use first:
    signed factorization, and the inertia as a count that none was missed.
 3. Continuous integration on the pinned toolchain.
 
-Dependent rows, first in that ranking, is Batch 11, and sparse LU, second, is Batch 12;
-a refactorization on a fixed pivot sequence and a condition estimate for it would
-follow a consumer's use of it. Its second method, a triangular
-factor of Aᵀ by rotations that resolves distances the first cannot, is designed and not
-built: it waits for a consumer whose tolerance is finer than about 10⁻⁷ of a row's size.
+Dependent rows, first in that ranking, is Batch 11, and sparse LU, second, is Batch 12.
+Two things are left open by those batches and wait for a consumer's use:
+
+- For dependent rows, a second method: a triangular factor of Aᵀ by rotations, which
+  resolves distances the first cannot. It is designed and not built, and is wanted
+  only where a tolerance is finer than about 10⁻⁷ of a row's size.
+- For sparse LU, a refactorization on a fixed pivot sequence and a condition estimate.
 
 **Measured since, and settled:** a consumer timed its whole first step on its loose grids
 after Batch 8. Analysis fell from 141 to 17 ms and from 272 to 47 ms and is now a sixth
