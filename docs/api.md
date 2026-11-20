@@ -130,8 +130,9 @@ i + j n, of which only the lower triangle is read.
 | Export | Type or role |
 | --- | --- |
 | `Factor` | Reusable dense factor with private workspace; obtain from make-factor |
-| `make-factor` | UFix -> Factor; storage for n-by-n problems |
-| `maximum-dimension` | UFix; 32,768 |
+| `make-factor` | UFix -> Factor; storage for n-by-n problems under default-entry-limit |
+| `make-factor-with-limit` | UFix * UFix -> Factor; explicit budget of n² entries |
+| `maximum-dimension`, `default-entry-limit` | UFix; 32,768 and 16,777,216 |
 | `pivot-threshold` | F64; (1 + √17)/8, the 1-by-1 acceptance ratio |
 | `dimension` | Factor -> UFix |
 | `FactorStatus` | Factorization outcome type |

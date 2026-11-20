@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Test','Fixtures','Gram','Inspect')][string]$Task = 'Test',
+    [ValidateSet('Test','Fixtures','Gram','Indefinite','Inspect')][string]$Task = 'Test',
     [ValidateSet(0,1)][int]$Safety = 1,
     [string]$Sbcl = '',
     [string]$Python = '',
@@ -50,6 +50,10 @@ if ($Task -eq 'Gram' -and
     -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.J.txt' -File -ErrorAction Stop)) {
     throw "No rectangular fixtures in $InputFolder"
 }
+if ($Task -eq 'Indefinite' -and
+    -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.S.txt' -File -ErrorAction Stop)) {
+    throw "No dense symmetric fixtures in $InputFolder"
+}
 [System.IO.Directory]::CreateDirectory($OutputFolder) | Out-Null
 [System.IO.Directory]::CreateDirectory($CacheRoot) | Out-Null
 $environment = @{
@@ -92,6 +96,7 @@ try {
         Test { 'check.lisp' }
         Fixtures { 'fixtures.lisp' }
         Gram { 'gram.lisp' }
+        Indefinite { 'indefinite.lisp' }
         Inspect { 'inspect.lisp' }
     }
     # A runtime option must precede the toplevel options. Zero keeps SBCL's own default heap.

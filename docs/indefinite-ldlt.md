@@ -11,9 +11,15 @@ A symmetric n-by-n matrix is passed as an F64 array of n² elements in column-ma
 order: entry (i,j) is at index `i + j n`. **Only the lower triangle, i ≥ j, is read.**
 The strict upper triangle may hold anything, including non-finite values.
 
-- `make-factor(n) -> Factor` allocates reusable storage for n-by-n problems. n above
-  `maximum-dimension` (32,768) raises `AnalysisLimitExceeded(n, maximum-dimension)`
-  before any allocation that depends on n. Storage is n² + O(n) doubles.
+- `make-factor(n) -> Factor` allocates reusable storage for n-by-n problems: n² + O(n)
+  doubles. It refuses by name before allocating:
+  `AnalysisStorageExceeded(n², budget)` when n² exceeds `default-entry-limit`
+  (16,777,216 entries, n = 4096, 128 MB), and
+  `AnalysisLimitExceeded(n, maximum-dimension)` when n exceeds `maximum-dimension`
+  (32,768), which keeps n² representable.
+- `make-factor-with-limit(n, maximum-entries) -> Factor` takes the entry budget from the
+  caller. The budget counts the n² entries of L, not bytes; a host can still fail to
+  allocate inside any budget.
 - `factor!(factor, a, shift) -> FactorStatus` computes
   `P (A - shift I) Pᵀ = L D Lᵀ`, with L unit lower triangular and D block diagonal
   with 1-by-1 and 2-by-2 blocks. The input is copied; `a` is not retained or changed.
@@ -109,7 +115,8 @@ overflow is detected by finiteness checks on every pivot and multiplier and is a
 refusal. Underflow follows F64 and is not diagnosed.
 
 A 2-by-2 block `[[a, b], [b, c]]` is inverted in the form divided by b: its scaled
-determinant `(a/b)(c/b) - 1` lies in [-1, -(1 - α²)] and is computed without forming
+determinant `(a/b)(c/b) - 1` lies strictly between -(1 + α²) and -(1 - α²), since the two
+diagonals may differ in sign, and is computed without forming
 b², so matrices scaled by any power of two that keeps their entries representable give
 the same pivots and the same L, bit for bit.
 
@@ -117,6 +124,28 @@ Storage is dense: n² doubles for L plus O(n). Work is about n³/3 multiply-adds
 factorization, plus the pivot search described below, and n² for a solve. The code is a
 plain column-oriented loop, with no blocking and no parallelism. Dense delivery says
 nothing about large sparse augmented systems.
+
+## Artifact driver
+
+The optional tools system writes reviewable outputs for a folder of systems:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1 -Task Indefinite `
+  -InputFolder <folder> -OutputFolder build/<name> -AllocationRepeats 20
+```
+
+Each `<name>.S.txt` holds n, then n² values in column-major order, of which only the lower
+triangle is read. `<name>.b.txt` holds n values. `<name>.meta.txt` is optional; each of its
+lines `shift: <value>` names one run, in order, and with none there is one run at shift 0.
+
+For run index i from 0, a successful factorization writes `<name>.<i>.factor.out.txt`: n,
+the permutation, the block sizes, the diagonal, the subdiagonal, L column-major, each value
+on its own line with 17 significant digits, then `counts <positive> <negative> <zero>`. The
+solve writes `<name>.<i>.x.out.txt`, or `<name>.<i>.solve.out.txt` holding the SolveStatus
+name when it is refused. A refused factorization writes only `<name>.<i>.refused.out.txt`
+holding the FactorStatus name. `indefinite-table.txt` and standard output carry one line a
+run: `name shift n positive negative zero factor_ms solve_ms factor_bytes`, with `NA` for the
+time of a refused solve. Reruns replace every indexed artifact of a system.
 
 ## Derivation
 

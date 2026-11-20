@@ -2,6 +2,16 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.4.1 — 2026-11-19
+
+Added: `make-factor-with-limit` and `default-entry-limit` in
+`coalton-linalg/dense/indefinite-ldlt`, and an artifact driver, `scripts/check.ps1 -Task
+Indefinite`. [Record](docs/batch4.md#after-review).
+
+Changed, and able to break a caller of 0.4.0: **`make-factor` refuses n above 4096**, where
+n² exceeds the default budget of 16,777,216 entries, with `AnalysisStorageExceeded`. Pass a
+larger budget to `make-factor-with-limit`.
+
 ## 0.4.0 — 2026-11-19
 
 Added:

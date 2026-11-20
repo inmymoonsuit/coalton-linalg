@@ -136,10 +136,27 @@ The library's factors were written to files and checked by a separate NumPy prog
 - **Policy.** Safety 0 is between under 1% and 18% faster than safety 1 on `factor!`. The
   two policies' factor and solution files are identical byte for byte.
 
+## After review
+
+A reviewer of the first delivery found no defect and made three points, each taken up:
+
+- The dimension bound alone refused nothing a host would not already fail to allocate.
+  `make-factor` now refuses n² above `default-entry-limit` (16,777,216, n = 4096) by name,
+  and `make-factor-with-limit` takes the budget from the caller, as sparse analysis does.
+  **A caller of the first delivery that made a factor above n = 4096 now needs the explicit
+  budget.**
+- A comment and the contract gave the scaled determinant's range for same-sign diagonals
+  only. Both now give the range that holds for either sign. No code changed.
+- An artifact driver, `scripts/check.ps1 -Task Indefinite`, writes each system's factor,
+  inertia and solution at named shifts for an independent checker; the contract page has
+  the file protocol. Its regressions cover an exact factor file, shifts from the meta
+  file, a named singular solve, a named factor refusal, and removal of stale artifacts.
+
 ## Limits
 
-- Dense storage and cubic work: this is for small and moderate n. It does not remove a
-  large sparse augmented-system bottleneck.
+- Dense storage and cubic work: this is for small and moderate n. At 70 ms for n = 800 and
+  cubic growth, n = 3000 would take about four seconds; that figure is extrapolated, not
+  measured. It does not remove a large sparse augmented-system bottleneck.
 - The inertia is that of the computed D. Near a threshold the caller's shift and the
   measured reconstruction error decide what a count means; no rank decision is made here.
 - The column search bounds multipliers; no bound on entry growth is claimed for it, and

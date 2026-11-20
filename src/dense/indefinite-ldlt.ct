@@ -3,7 +3,8 @@
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:err #:coalton-linalg/errors))
   (:import-from #:coalton/math #:finite?)
-  (:export #:Factor #:make-factor #:maximum-dimension #:pivot-threshold #:dimension
+  (:export #:Factor #:make-factor #:make-factor-with-limit #:maximum-dimension #:default-entry-limit
+           #:pivot-threshold #:dimension
            #:FactorStatus #:FactorSuccess #:FactorNonFinite #:FactorBadSize #:FactorBadShift
            #:SolveStatus #:SolveSuccess #:SolveInvalidFactor #:SolveBadSize #:SolveSingular
            #:SolveNonFiniteRhs #:SolveNonFiniteResult
@@ -53,14 +54,24 @@
   (declare pivot-threshold F64)
   (define pivot-threshold 0.6403882032022076d0)
 
-  (declare make-factor (UFix -> Factor))
-  (define (make-factor n)
-    "Allocate reusable storage for n-by-n factorizations. Nothing is ready until factor! succeeds."
+  (declare default-entry-limit UFix)
+  (define default-entry-limit 16777216)
+
+  (declare make-factor-with-limit (UFix * UFix -> Factor))
+  (define (make-factor-with-limit n maximum-entries)
+    "Allocate reusable storage for n-by-n factorizations when n * n is within the entry budget."
     (when (> n maximum-dimension)
       (throw (err:AnalysisLimitExceeded n maximum-dimension)))
+    (when (> (* n n) maximum-entries)
+      (throw (err:AnalysisStorageExceeded (into (* n n)) maximum-entries)))
     (MkFactor (FactorStorage n (arr:make (* n n) 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0)
                              (arr:make n (the UFix 0)) (arr:make n (the UFix 0)) (arr:make n 0.0d0)
                              (arr:make 3 (the UFix 0)) (arr:make 4 (the UFix 0)))))
+
+  (declare make-factor (UFix -> Factor))
+  (define (make-factor n)
+    "Allocate reusable storage under default-entry-limit. Nothing is ready until factor! succeeds."
+    (make-factor-with-limit n default-entry-limit))
 
   (declare dimension (Factor -> UFix))
   (define (dimension factor) (.size (storage factor)))
@@ -222,8 +233,8 @@
     (let b = (arr:aref w (+ (+ k 1) (* k n))))
     (let c = (arr:aref w (+ (+ k 1) (* (+ k 1) n))))
     (unless (and (inline (finite? a)) (and (inline (finite? b)) (inline (finite? c)))) (return False))
-    ;; Work with the block divided by b. Its determinant a/b * c/b - 1 lies in [-1, -(1 - threshold^2)],
-    ;; where b * b could overflow or underflow.
+    ;; Work with the block divided by b. Its determinant a/b * c/b - 1 lies strictly between
+    ;; -(1 + threshold^2) and -(1 - threshold^2), where b * b could overflow or underflow.
     (let ar = (/ a b))
     (let cr = (/ c b))
     (let scale = (* b (- (* ar cr) 1.0d0)))

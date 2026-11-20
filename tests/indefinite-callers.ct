@@ -3,7 +3,7 @@
   (:local-nicknames (#:il #:coalton-linalg/dense/indefinite-ldlt)
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:err #:coalton-linalg/errors))
-  (:export #:observe-factor #:observe-solve #:factor-solve-loop #:allocation-error))
+  (:export #:observe-factor #:observe-solve #:factor-solve-loop #:allocation-error #:budget-error))
 (cl:in-package #:coalton-linalg/tests/indefinite-callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -52,10 +52,22 @@
 
   (declare allocation-error (UFix -> UFix))
   (define (allocation-error n)
-    "Test-only codes for make-factor: success 0, dimension limit 3, unexpected 99."
+    "Test-only codes for make-factor: success 0, dimension limit 3, entry budget 4, unexpected 99."
     (catch (progn (il:make-factor n) 0)
       ((the err:LinalgError problem)
        (match problem
          ((err:AnalysisLimitExceeded _ _) 3)
+         ((err:AnalysisStorageExceeded _ _) 4)
          (_ 99)))
-      (_ 99))))
+      (_ 99)))
+
+  (declare budget-error (UFix * UFix -> Integer))
+  (define (budget-error n maximum-entries)
+    "Test-only: 0 on success, the required entry count on a budget refusal, -1 otherwise."
+    (catch (progn (il:make-factor-with-limit n maximum-entries) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisStorageExceeded required budget)
+          (if (== budget maximum-entries) required -1))
+         (_ -1)))
+      (_ -1))))

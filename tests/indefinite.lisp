@@ -463,6 +463,14 @@
   (assert (= 0 (il-caller:allocation-error 3)))
   (assert (= 3 (il-caller:allocation-error (1+ (coalton:coalton il:maximum-dimension)))))
   (assert (= 3 (il-caller:allocation-error most-positive-fixnum)))
+  ;; Within the dimension bound, storage is refused by an entry budget before it is allocated.
+  (assert (= 16777216 (coalton:coalton il:default-entry-limit)))
+  (assert (= 4 (il-caller:allocation-error 4097)) () "The default budget admitted 4097 * 4097 entries.")
+  (assert (= 4 (il-caller:allocation-error (coalton:coalton il:maximum-dimension))))
+  (assert (= 0 (il-caller:budget-error 3 9)))
+  (assert (= 9 (il-caller:budget-error 3 8)) () "A budget of 8 admitted a 3-by-3 factor.")
+  (assert (= 0 (il-caller:budget-error 0 0)))
+  (assert (= 1 (il-caller:budget-error 1 0)))
   (format t "INDEFINITE-LIFETIME-PASS~%"))
 
 (defun run-indefinite-tests ()
