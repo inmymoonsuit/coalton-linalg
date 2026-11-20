@@ -36,9 +36,9 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 12
+## Batches 3 through 13
 
-Batches 3 through 12 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+Batches 3 through 13 are completed, Batch 3 in four steps 3a through 3d, with one addition,
 [6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
 8 were set by a consuming application's measurements; what follows is listed under
 *Next*. [The batch record](docs/batch3a.md)
@@ -188,14 +188,25 @@ growth, and bounds its backward error by one number that holds with underflow.
 [The batch record](docs/batch12.md) holds the controls; [the contract](docs/lu.md) says
 what is claimed and what is not built.
 
+### Batch 13: conjugate gradients
+
+**Completed.** `coalton-linalg/conjugate-gradient` solves a symmetric positive definite
+system through nothing but products with its operator, with or without a
+preconditioner, which may be any solve this library has. Convergence is reported on the
+residual formed from the operator and not on the method's running one, and a direction
+or a preconditioned residual that shows the operator or the preconditioner not positive
+definite ends the call by name. [The batch record](docs/batch13.md) holds the controls;
+[the contract](docs/conjugate-gradient.md) says what a converged call does and does not
+establish.
+
 ### Next
 
 From 2026-11-20 the library develops ahead of any one consumer's measurements, toward
 what solving in CAD and engineering work is likely to need. The order is a consumer's
 ranking of what it would use first:
 
-1. Iterative least squares and minimum norm on an operator, with damping, and conjugate
-   gradients for the definite case.
+1. Iterative least squares and minimum norm on an operator, with damping. Conjugate
+   gradients for the definite case, the other half of this item, is Batch 13.
 2. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
 3. Continuous integration on the pinned toolchain.

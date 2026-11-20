@@ -1,0 +1,44 @@
+(cl:defpackage #:coalton-linalg/examples/matrix-free-solve
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:cg #:coalton-linalg/conjugate-gradient))
+  (:export #:matrix-free-solution))
+(cl:in-package #:coalton-linalg/examples/matrix-free-solve)
+
+(coalton-toplevel
+  (declare constraint-matrix (Void -> csc:Matrix))
+  (define (constraint-matrix)
+    "J, two rows on three unknowns.
+
+    [ 1  1  0 ]
+    [ 0  1  1 ]"
+    (let rows = (arr:make 4 (the UFix 0)))
+    (let columns = (arr:make 4 (the UFix 0)))
+    (let values = (arr:make 4 1.0d0))
+    (arr:set! rows 0 0) (arr:set! columns 0 0)
+    (arr:set! rows 1 0) (arr:set! columns 1 1)
+    (arr:set! rows 2 1) (arr:set! columns 2 1)
+    (arr:set! rows 3 1) (arr:set! columns 3 2)
+    (csc:from-coo 2 3 rows columns values csc:RejectDuplicates))
+
+  (declare matrix-free-solution (Void -> arr:LispArray F64))
+  (define (matrix-free-solution)
+    "Solve (J J^T) y = [3, 0] without forming J J^T; return [2, -1], or an empty vector if the call did not converge.
+
+The operator is two products through a work vector, v -> J (J^T v). J J^T is [[2, 1], [1, 2]],
+which the method never sees: it asks only for products, and reports convergence on the
+residual it forms from them."
+    (let j = (constraint-matrix))
+    (let work = (arr:make 3 0.0d0))
+    (let apply =
+      (fn (v out)
+        (csc:transpose-matvec! j v work)
+        (csc:matvec! j work out)))
+    (let workspace = (cg:make-cg 2 10))
+    (let b = (arr:make 2 0.0d0))
+    (arr:set! b 0 3.0d0)
+    (let y = (arr:make 2 0.0d0))
+    (unless (== (cg:cg! workspace apply b y 1.0d-12) cg:CgConverged)
+      (return (arr:make 0 0.0d0)))
+    y))

@@ -2,6 +2,16 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.13.0 — 2026-11-20
+
+Added: `coalton-linalg/conjugate-gradient`. `cg!` and `pcg!` solve a symmetric positive
+definite system through products with its operator, plain or with a preconditioner the
+caller supplies as a function, to an absolute tolerance on the 2-norm of the residual,
+which is formed from the operator before convergence is reported.
+[Contract](docs/conjugate-gradient.md) · [record](docs/batch13.md).
+
+No existing call changes.
+
 ## 0.12.0 — 2026-11-20
 
 Added: `coalton-linalg/sparse/lu`. `factor!` computes `P A Q = L U` for a square sparse

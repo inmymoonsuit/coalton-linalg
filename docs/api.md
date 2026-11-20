@@ -73,6 +73,26 @@ Constructors and transforming operations return owned storage.
 
 The solution array holds the best iterate seen on every return. A call allocates nothing.
 
+## coalton-linalg/conjugate-gradient
+
+[Contract](conjugate-gradient.md) · [Source](../src/conjugate-gradient.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `CgWorkspace` | Workspace and latest-call history; obtain from make-cg |
+| `make-cg` | UFix * UFix -> CgWorkspace; dimension, step limit |
+| `dimension`, `step-limit` | CgWorkspace -> UFix |
+| `CgStatus` | Outcome type of cg! and pcg! |
+| `CgConverged`, `CgLimit`, `CgNotPositive`, `CgNonFinite`, `CgPreconditionerRefused`, `CgBadSize`, `CgBadTolerance` | CgStatus values |
+| `cg!` | CgWorkspace * (V * V -> Void) * V * V * F64 -> CgStatus; apply, right-hand side, solution, tolerance |
+| `pcg!` | CgWorkspace * (V * V -> Void) * (V * V -> Boolean) * V * V * F64 -> CgStatus; apply, precondition, right-hand side, solution, tolerance |
+| `step-count`, `restart-count` | CgWorkspace -> UFix; of the latest call |
+| `residual-norm` | CgWorkspace -> F64; 2-norm of b − A x for the vector returned, formed from the operator, otherwise -1 |
+| `recurrence-norms` | CgWorkspace -> V; 2-norms of the latest call's running residual |
+
+The operator must be symmetric positive definite and the tolerance is absolute, in the
+2-norm. A call allocates nothing.
+
 ## coalton-linalg/sparse/gram
 
 [Contract](gram.md) · [Source](../src/sparse/gram.ct)

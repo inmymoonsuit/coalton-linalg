@@ -1,0 +1,113 @@
+(cl:defpackage #:coalton-linalg/tests/cg-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:cg #:coalton-linalg/conjugate-gradient)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
+  (:export #:cg-code #:pcg-code #:drifting-operator #:scaling-operator #:diagonal-operator #:diagonal-preconditioner #:scaled-preconditioner
+           #:switching-preconditioner
+           #:cg-loop #:pcg-loop))
+(cl:in-package #:coalton-linalg/tests/cg-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare status-code (cg:CgStatus -> UFix))
+  (define (status-code status)
+    (match status
+      ((cg:CgConverged) 0)
+      ((cg:CgLimit) 1)
+      ((cg:CgNotPositive) 2)
+      ((cg:CgNonFinite) 3)
+      ((cg:CgPreconditionerRefused) 4)
+      ((cg:CgBadSize) 5)
+      ((cg:CgBadTolerance) 6)))
+
+  (declare cg-code (cg:CgWorkspace * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                    * arr:LispArray F64 * arr:LispArray F64 * F64 -> UFix))
+  (define (cg-code workspace apply b x tolerance)
+    "Exhaustively matched outcome: converged 0, limit 1, not positive 2, non-finite 3, preconditioner 4, size 5, tolerance 6."
+    (status-code (cg:cg! workspace apply b x tolerance)))
+
+  (declare pcg-code (cg:CgWorkspace * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                     * (arr:LispArray F64 * arr:LispArray F64 -> Boolean)
+                     * arr:LispArray F64 * arr:LispArray F64 * F64 -> UFix))
+  (define (pcg-code workspace apply precondition b x tolerance)
+    "The same codes for pcg!."
+    (status-code (cg:pcg! workspace apply precondition b x tolerance)))
+
+  (declare drifting-operator ((arr:LispArray F64 * arr:LispArray F64 -> Void) * UFix * F64 * arr:LispArray UFix
+                              -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (drifting-operator apply at factor calls)
+    "The given operator, except that product number at, counted from 0 in calls[0], is multiplied by factor: one wrong product, after which a running residual no longer matches the operator."
+    (fn (v out)
+      (apply v out)
+      (let k = (arr:aref calls 0))
+      (arr:set! calls 0 (+ k 1))
+      (when (== k at)
+        (for ((i 0 (+ i 1))) :while (< i (arr:length out))
+          (arr:set! out i (* factor (arr:aref out i)))))))
+
+  (declare scaling-operator (F64 -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (scaling-operator factor)
+    "v -> factor v, with no check of what it writes."
+    (fn (v out)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length v))
+        (arr:set! out i (* factor (arr:aref v i))))))
+
+  (declare diagonal-operator (arr:LispArray F64 -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (diagonal-operator diagonal)
+    "v -> v multiplied entry by entry by the given diagonal, with no check of what it writes."
+    (fn (v out)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length v))
+        (arr:set! out i (* (arr:aref diagonal i) (arr:aref v i))))))
+
+  (declare switching-preconditioner (arr:LispArray UFix -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (switching-preconditioner calls)
+    "The identity on its first call, counted in calls[0], and minus the identity afterwards."
+    (fn (r z)
+      (let k = (arr:aref calls 0))
+      (arr:set! calls 0 (+ k 1))
+      (for ((i 0 (+ i 1))) :while (< i (arr:length r))
+        (arr:set! z i (if (== k 0) (arr:aref r i) (- 0.0d0 (arr:aref r i)))))
+      True))
+
+  (declare diagonal-preconditioner (arr:LispArray F64 -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (diagonal-preconditioner diagonal)
+    "r -> r divided entry by entry by the given diagonal."
+    (fn (r z)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length r))
+        (arr:set! z i (/ (arr:aref r i) (arr:aref diagonal i))))
+      True))
+
+  (declare scaled-preconditioner (F64 -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (scaled-preconditioner factor)
+    "r -> factor r; with a negative factor, a preconditioner that is not positive definite."
+    (fn (r z)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length r))
+        (arr:set! z i (* factor (arr:aref r i))))
+      True))
+
+  (declare cg-loop (cg:CgWorkspace * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                    * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * F64 * UFix -> UFix))
+  (define (cg-loop workspace apply b start x tolerance count)
+    "A real external caller: solve from the same starting vector each round; count the rounds that did not converge."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((round 0 (+ round 1))) :while (< round count)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length x))
+        (arr:set! x i (arr:aref start i)))
+      (unless (== (cg:cg! workspace apply b x tolerance) cg:CgConverged)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (and (> (cg:step-count workspace) 0) (>= (cg:residual-norm workspace) 0.0d0))
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare pcg-loop (cg:CgWorkspace * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                     * (arr:LispArray F64 * arr:LispArray F64 -> Boolean)
+                     * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * F64 * UFix -> UFix))
+  (define (pcg-loop workspace apply precondition b start x tolerance count)
+    "The same caller with a preconditioner."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((round 0 (+ round 1))) :while (< round count)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length x))
+        (arr:set! x i (arr:aref start i)))
+      (unless (== (cg:pcg! workspace apply precondition b x tolerance) cg:CgConverged)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))

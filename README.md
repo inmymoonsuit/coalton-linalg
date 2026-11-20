@@ -16,6 +16,7 @@ rank, perturbs a pivot or retries. No application code is loaded or required.
 | `coalton-linalg/errors` | Typed exceptions for malformed input and exhausted budgets | [errors](docs/errors.md) | |
 | `coalton-linalg/numeric` | Euclidean and infinity norms that do not overflow early | [primitives](docs/primitives.md) | [1 and 2](docs/batches-1-2.md) |
 | `coalton-linalg/refinement` | Iterative refinement of any approximate solve against an operator the caller applies: stopping rule, stall test, best iterate and residual history | [refinement](docs/refinement.md) | [10](docs/batch10.md) |
+| `coalton-linalg/conjugate-gradient` | Conjugate gradients, plain and preconditioned, for a symmetric positive definite operator the caller applies; convergence reported on the residual formed from the operator | [conjugate gradients](docs/conjugate-gradient.md) | [13](docs/batch13.md) |
 | `coalton-linalg/sparse/csc` | Checked CSC and COO construction, transpose, permutations, products into caller storage | [primitives](docs/primitives.md) | [3b](docs/batch3b.md) |
 | `coalton-linalg/sparse/gram` | AᵀA and AAᵀ on a fixed pattern: analyze once, refill values | [gram](docs/gram.md) | [3c](docs/batch3c.md) |
 | `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, a 1-norm condition estimate, a Cholesky-form entry for positivity proofs, a signed-pivot entry that measures its own growth, and an entry that leaves small pivots out and factors what is kept | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md), [Cholesky form](docs/cholesky-form.md), [signed pivots](docs/quasidefinite.md), [skipped pivots](docs/skipping.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md), [6a](docs/batch6a.md), [7](docs/batch7.md), [7a](docs/batch7a.md), [8](docs/batch8.md), [10](docs/batch10.md), [11](docs/batch11.md) |
@@ -103,7 +104,7 @@ development-mode performance is unverified. See the toolchain notes below.
 ```
 
 The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
-`coalton-linalg/refinement`,
+`coalton-linalg/refinement`, `coalton-linalg/conjugate-gradient`,
 `coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/scaling`,
 `coalton-linalg/sparse/augmented`,
 `coalton-linalg/sparse/spd-ldlt`, `coalton-linalg/sparse/dependent-rows`, `coalton-linalg/sparse/lu`,
@@ -116,8 +117,9 @@ system](examples/minimum-norm.ct), [dependent constraints](examples/dependent-co
 [a rank from singular values](examples/singular-rank.ct),
 [a sparse minimum-norm solve with signed pivots](examples/augmented-minimum-norm.ct),
 [a solve through a scaled matrix](examples/scaled-solve.ct),
-[redundant constraints found and bounded](examples/redundant-rows.ct) and
-[a nonsymmetric solve with row exchanges](examples/nonsymmetric-solve.ct). The
+[redundant constraints found and bounded](examples/redundant-rows.ct),
+[a nonsymmetric solve with row exchanges](examples/nonsymmetric-solve.ct) and
+[a solve with a product that is never formed](examples/matrix-free-solve.ct). The
 [mathematical glossary](CONTEXT.md) explains shared terms.
 
 The main system loads only the library. `/tests`, `/examples`, `/tools`, and
@@ -154,6 +156,7 @@ recorded in the batch records, not rerun by this command.
 | `src/errors.ct` | Typed validation and primitive arithmetic errors |
 | `src/numeric.ct` | Stable norms |
 | `src/refinement.ct` | Iterative refinement against an operator |
+| `src/conjugate-gradient.ct` | Conjugate gradients against an operator, plain and preconditioned |
 | `src/sparse/csc.ct` | Owned sparse matrices and operations |
 | `src/sparse/gram.ct` | Fixed-pattern AᵀA and AAᵀ products |
 | `src/sparse/augmented.ct` | Fixed-pattern augmented matrix of a sparse A |

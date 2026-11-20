@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.12.0"
+  :version "0.13.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -12,6 +12,7 @@
       (funcall compile)))
   :components ((:module "src" :serial t
                 :components ((:ct-file "errors") (:ct-file "numeric") (:ct-file "refinement")
+                             (:ct-file "conjugate-gradient")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
                                            (:ct-file "gram") (:ct-file "scaling") (:ct-file "augmented")
@@ -26,7 +27,8 @@
   :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
                                                 (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints") (:ct-file "singular-rank")
                                                 (:ct-file "augmented-minimum-norm") (:ct-file "scaled-solve")
-                                                (:ct-file "redundant-rows") (:ct-file "nonsymmetric-solve")))))
+                                                (:ct-file "redundant-rows") (:ct-file "nonsymmetric-solve")
+                                                (:ct-file "matrix-free-solve")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -51,6 +53,7 @@
                              (:ct-file "refinement-callers") (:file "refinement")
                              (:ct-file "dependent-rows-callers") (:file "dependent-rows")
                              (:ct-file "lu-callers") (:file "lu")
+                             (:ct-file "cg-callers") (:file "cg")
                              (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))

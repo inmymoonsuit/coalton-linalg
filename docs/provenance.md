@@ -83,6 +83,22 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 13: conjugate gradients
+
+The method of conjugate gradients is that of Hestenes and Stiefel (1952), and its
+preconditioned form is the same method applied to a transformed system; both are
+textbook material and are written here from the recurrences as they are derived on
+[the contract page](conjugate-gradient.md#the-method): the step that minimizes the
+error in the operator's norm along a direction, and the one correction that keeps the
+directions conjugate. Replacing the running residual by one formed from the operator is
+a known remedy for its drift; where it is done here, at the moment the running residual
+claims convergence and at the limit, and the restart that follows a failed confirmation,
+were chosen here. The checks for a direction without positive curvature and for a
+preconditioned residual without a positive product follow from what those quantities
+are. No numerical-library implementation and no algorithm listing was opened. The tests
+recompute the iteration independently and measure residuals and errors in exact
+rational arithmetic.
+
 ## Batch 12: sparse LU with partial pivoting
 
 Gaussian elimination with partial pivoting, and its rounding analysis, are classical. The
