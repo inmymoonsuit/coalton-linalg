@@ -570,15 +570,16 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
       (declare (ignore negative zero))
       (= positive m))))
 
-(defun certify-singular-values (m n entries top-scale bottom-scale)
+(defun certify-singular-values (m n entries top-scale bottom-scale &key first-margin)
   "The worked use of docs/quasidefinite.md. T when the factorization proves that every singular value of the
-source exceeds sqrt(TOP-SCALE BOTTOM-SCALE); NIL when it does not prove it, which is not a proof of the contrary."
+source exceeds sqrt(TOP-SCALE BOTTOM-SCALE); NIL when it does not prove it, which is not a proof of the contrary.
+FIRST-MARGIN replaces the first guess at the margin, which is otherwise a 2^-44 part of TOP-SCALE."
   (let* ((matrix (csc-from-entries m n entries)) (plan (aug:analyze matrix))
          (symbolic (ldlt:analyze-quasidefinite
                     (ldlt:pattern (aug:dimension plan) (aug:column-pointers plan) (aug:row-indices plan)) n))
          (factor (ldlt:symbolic-factor symbolic))
          (out (make-array (aug:entry-count plan) :element-type 'double-float :initial-element 0d0))
-         (margin (* top-scale (scale-float 1d0 -44))))
+         (margin (or first-margin (* top-scale (scale-float 1d0 -44)))))
     (loop repeat 4 do
       (let ((top (+ top-scale margin)) (trailing (+ bottom-scale margin)))
         ;; refill! writes minus its last scalar on the trailing diagonal; the proof wants plus.
@@ -610,6 +611,27 @@ source exceeds sqrt(TOP-SCALE BOTTOM-SCALE); NIL when it does not prove it, whic
       (assert (not (try "one row, threshold above" 1 2 '((0 0 3) (0 1 4)) 4d0 7d0)))
       ;; A threshold exactly at sigma^2 = 25 is not exceeded.
       (assert (not (try "one row, threshold at" 1 2 '((0 0 3) (0 1 4)) 5d0 5d0)))
+      ;; The signs alone are not a proof. For A = [1 1 5] the squared singular value is 27; with
+      ;; t = 3 and s = 9 the statement that it exceeds s t = 27 is false, and yet the computed
+      ;; pivots of [[3 I, A^T], [A, 9]] are three positive and one negative, as if it were true:
+      ;; the last pivot comes out as a small negative number where the exact one is zero.
+      (let* ((entries '((0 0 1) (0 1 1) (0 2 5)))
+             (matrix (csc-from-entries 1 3 entries)) (plan (aug:analyze matrix))
+             (symbolic (ldlt:analyze-quasidefinite
+                        (ldlt:pattern (aug:dimension plan) (aug:column-pointers plan) (aug:row-indices plan)) 3))
+             (out (make-array (aug:entry-count plan) :element-type 'double-float :initial-element 0d0)))
+        (assert (not (exactly-above-p 1 3 entries 27)))
+        (assert (= 0 (qd-caller:raw-error plan (csc:entries matrix) 3d0 -9d0 out)))
+        (assert (= 0 (qd-caller:observe-signed symbolic out 0d0)))
+        (assert (equal '(3 1) (pivot-counts (ldlt:symbolic-factor symbolic))) ()
+                "The trap is not one: the counts without a margin are ~S."
+                (pivot-counts (ldlt:symbolic-factor symbolic)))
+        (assert (not (try "signs alone would certify" 1 3 entries 3d0 9d0)))
+        ;; A first margin below the rounding of 3 and 9 writes the same matrix, so the counts are
+        ;; (3, 1) again: only the comparison of the computed margins with the bound refuses it.
+        (assert (= 3d0 (+ 3d0 (scale-float 1d0 -70))))
+        (assert (not (certify-singular-values 1 3 entries 3d0 9d0 :first-margin (scale-float 1d0 -70))) ()
+                "A margin lost to rounding certified a false statement."))
       ;; Dependent rows have a zero singular value: nothing positive is ever certified.
       (dolist (bottom (list (scale-float 1d0 -60) (scale-float 1d0 -30) 1d-3 1d0))
         (assert (not (try "repeated row" 2 3 '((0 0 1) (0 1 2) (1 0 1) (1 1 2)) 2d0 bottom)))

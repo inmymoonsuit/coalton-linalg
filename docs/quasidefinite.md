@@ -214,6 +214,16 @@ is at least the corresponding eigenvalue of K(s). K(s) therefore has at least m 
 eigenvalues, and it cannot have more. The factor 1 + 4u covers the rounding of the two
 subtractions in step 4.
 
+**The signs alone are not a proof, and a three-entry matrix shows it.** Take
+`A = [1 1 5]`, whose one squared singular value is 27, with t = 3 and s = 9. The statement
+that 27 exceeds s t = 27 is false. Factored without a margin, `[[3 I, Aᵀ], [A, 9]]` gives
+three positive pivots and one negative: the last pivot is zero in exact arithmetic and
+comes out as about −1.8 × 10⁻¹⁵, because 1/3 and 5/3 are rounded. A check that read only
+the counts would have certified a falsehood. Nor is adding a margin enough by itself: a
+margin of 2⁻⁷⁰ is lost when it is added to 3 and to 9, the matrix written is the same, and
+the counts are the same. What refuses it is step 4, which compares the margins as they
+were actually written, here zero, with β. The tests hold this case.
+
 What to know before using it:
 
 - **M is not quasi-definite**, since its trailing block is positive. Nothing guarantees

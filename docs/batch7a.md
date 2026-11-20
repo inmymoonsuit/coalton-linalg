@@ -70,12 +70,23 @@ Both complete serial checks pass on the final tree, `scripts/check.ps1 -Safety 1
 - **Lifetime.** −1 before any factorization, after `factor!`, after `factor-cholesky!` and
   after every refusal; a positive number after a signed factorization.
 - **The certificate.** The procedure of the contract page, written out in the tests, on
-  342 cases: named cases with a known answer, dependent rows at four thresholds, a nearly
+  343 cases: named cases with a known answer, dependent rows at four thresholds, a nearly
   dependent pair on both sides of its smallest singular value, a threshold exactly at a
   singular value, and 54 seeded sources at six thresholds each, from 2⁻⁴⁰ to 40. The truth is the
   exact inertia of `A Aᵀ − s t I` in rational arithmetic. **No certificate was issued for a
-  false statement**: 201 were issued, all true; 141 were withheld, all false; none was
+  false statement**: 201 were issued, all true; 142 were withheld, all false; none was
   withheld though true.
+- **A case the signs get wrong.** For `A = [1 1 5]`, t = 3 and s = 9 the statement is
+  false, since the squared singular value equals s t = 27, and the pivots computed without
+  a margin are nonetheless three positive and one negative. The test asserts that the
+  bare counts are (3, 1), that the certificate is not issued, and that it is not issued
+  when the first margin is small enough to be lost in the addition. **This last was
+  watched to fail**: with the comparison of step 4 removed from the test's certificate,
+  the false statement is certified. Before this case nothing in the roster could tell:
+  with that comparison removed, the other 342 cases still passed, because their first
+  margin already exceeded the rounding. It was found by a
+  search of small integer cases after a consumer observed that none of its own checks
+  could tell a proof that used the bound from one that did not.
 - **Allocation.** The compiled caller of Batch 7, refill, signed factorization and two
   solves: zero bytes over 10,000 calls after 10,000 warm-up calls, at both policies.
 
