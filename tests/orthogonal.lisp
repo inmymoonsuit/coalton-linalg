@@ -479,7 +479,26 @@
   (format t "ORTHOGONAL-ENCAPSULATION-PASS rejected=~D public-control=1~%"
           (length *orthogonal-encapsulation-probes*)))
 
+(defun run-orthogonal-norm-tests ()
+  "The norm helper every reflector is built from must not report a segment holding a NaN as finite. It is
+private, and is called here directly: no factorization was found that hands it such a segment, because every
+entry is checked as it is computed, so this is the only place the case can be reached."
+  (flet ((norm (&rest entries)
+           (let ((w (make-array (length entries) :element-type 'double-float :initial-contents entries)))
+             (coalton-linalg/dense/orthogonal::segment-norm w 0 (length entries) 1))))
+    (assert (= 5d0 (norm 3d0 -4d0)))
+    (assert (= 0d0 (norm 0d0 0d0 0d0)))
+    (let ((nan (not-a-number)) (infinity sb-ext:double-float-positive-infinity))
+      (dolist (entries (list (list nan) (list nan 0d0 0d0) (list 0d0 nan 0d0) (list 0d0 0d0 nan)
+                             (list nan 1d0 2d0) (list 1d0 nan 2d0) (list nan nan) (list infinity nan 0d0)))
+        (let ((value (apply #'norm entries)))
+          (assert (/= value value) () "The norm of ~S came back as ~S." entries value)))
+      (assert (= infinity (norm 1d0 infinity 0d0)))
+      (assert (= infinity (norm infinity 0d0 0d0)))))
+  (format t "ORTHOGONAL-NORM-PASS~%"))
+
 (defun run-orthogonal-tests ()
+  (run-orthogonal-norm-tests)
   (run-orthogonal-exact-tests)
   (run-orthogonal-rank-tests)
   (run-orthogonal-identity-tests)

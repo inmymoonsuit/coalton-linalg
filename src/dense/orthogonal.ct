@@ -170,11 +170,14 @@
   (define (segment-norm w start count stride)
     "Euclidean norm of count entries from start at the given stride, safe against overflow and underflow."
     (let largest = (cell:new 0.0d0))
+    ;; A NaN compares as neither larger nor smaller, so a running maximum can lose one: an
+    ;; entry that is not finite is noted for itself and is what the norm then is.
+    (let unsound = (cell:new 0.0d0))
     (for ((q 0 (+ q 1))) :while (< q count)
       (let v = (abs (arr:aref w (+ start (* q stride)))))
-      ;; A NaN is neither larger nor not larger; the comparison below is written so it is kept.
-      (unless (<= v (cell:read largest)) (cell:write! largest v)))
-    (let top = (cell:read largest))
+      (unless (inline (finite? v)) (cell:write! unsound (+ (cell:read unsound) v)))
+      (when (> v (cell:read largest)) (cell:write! largest v)))
+    (let top = (if (== (cell:read unsound) 0.0d0) (cell:read largest) (cell:read unsound)))
     (cond
       ((or (== top 0.0d0) (not (inline (finite? top)))) top)
       (True
