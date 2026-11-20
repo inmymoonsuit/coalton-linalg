@@ -1,51 +1,87 @@
 # coalton-linalg
 
-An independent numerical linear algebra library in Coalton, initially targeting
-64-bit SBCL. Its first implemented module is sparse, symmetric positive-definite
-LDLᵀ factorization with reusable symbolic analysis. It also provides
-validated rectangular sparse matrices, matrix operations, and stable vector norms.
+An independent numerical linear algebra library written in Coalton, for 64-bit SBCL, in
+double precision. It offers a sparse symmetric positive definite factorization with the
+sparse operations around it, and dense factorizations for the problems that one cannot
+take: indefinite systems, rank-deficient least squares, eigenvalues and singular values.
 
-The library accepts matrices and vectors. Applications own geometry, nonlinear
-iteration, rank policy, units, and integration. No Blender or CAD dependency is
-loaded or required.
+The library takes matrices and vectors and returns factors, solutions and counts.
+Thresholds, rank decisions and iteration belong to the caller: nothing here decides a
+rank, perturbs a pivot or retries. No application code is loaded or required.
 
-## Current scope
+## What it contains
 
-- Owned rectangular CSC/COO construction with explicit duplicate handling.
-- Transpose, row/column permutations, A*x and transpose(A)*x.
-- Caller-buffer matvec! and transpose-matvec!, with measured allocation-free success.
-- Fixed-pattern Gram products AᵀA and AAᵀ: analyze once, refill caller storage without allocating.
-- A lower estimate of the inverse's 1-norm from a prepared factor, for a reciprocal condition estimate.
-- Dense symmetric indefinite LDLᵀ with 1-by-1 and 2-by-2 pivots, solves, and inertia.
-- Dense column-pivoted QR and complete orthogonal decomposition: minimum-norm least squares
-  and a nullspace basis at a rank the caller chooses.
-- Dense symmetric eigenvalues and singular values by Jacobi rotations, for small matrices.
-- Stable Euclidean/infinity norms using Coalton standard numeric primitives.
-- Lower compressed sparse column (CSC) factorization input, double-precision values.
-- Deterministic exact minimum-degree ordering and symbolic factor structure.
-- Factorization of `P (A - shift I) Pᵀ = L D Lᵀ`, without numerical pivoting.
-- Repeated factorization and solves using owned reusable workspace.
-- Explicit refusals, borrowed-factor ownership, and independent numerical checks.
+| Package | What it does | Contract | Record |
+| --- | --- | --- | --- |
+| `coalton-linalg/errors` | Typed exceptions for malformed input and exhausted budgets | [errors](docs/errors.md) | |
+| `coalton-linalg/numeric` | Euclidean and infinity norms that do not overflow early | [primitives](docs/primitives.md) | [1 and 2](docs/batches-1-2.md) |
+| `coalton-linalg/sparse/csc` | Checked CSC and COO construction, transpose, permutations, products into caller storage | [primitives](docs/primitives.md) | [3b](docs/batch3b.md) |
+| `coalton-linalg/sparse/gram` | AᵀA and AAᵀ on a fixed pattern: analyze once, refill values | [gram](docs/gram.md) | [3c](docs/batch3c.md) |
+| `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, and a 1-norm condition estimate | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md) |
+| `coalton-linalg/dense/indefinite-ldlt` | Dense symmetric indefinite LDLᵀ with 1-by-1 and 2-by-2 pivots, solves, and inertia | [indefinite](docs/indefinite-ldlt.md) | [4](docs/batch4.md) |
+| `coalton-linalg/dense/orthogonal` | Dense column-pivoted QR, complete orthogonal decomposition, minimum-norm least squares and a nullspace basis at a rank the caller chooses | [orthogonal](docs/orthogonal.md) | [5](docs/batch5.md) |
+| `coalton-linalg/dense/jacobi` | Dense symmetric eigenvalues, and singular values with a complete right factor, by Jacobi rotations | [jacobi](docs/jacobi.md) | [6](docs/batch6.md) |
 
-This is an early library. Its indefinite factorization is dense; the sparse one is positive definite only. Symbolic analysis uses
-compact adjacency tables and an indexed minimum-degree heap. Storage follows the
-input and factor fill; fill can itself be dense. Analysis defaults to a budget of
-1,048,576 total factor entries (including the implicit diagonal), with explicit
-entry points for a caller-selected budget. See [factorization contract](docs/spd-ldlt.md),
-[primitive contracts](docs/primitives.md), and [roadmap](ROADMAP.md).
+The [interface reference](docs/api.md) indexes every exported symbol. The sparse
+factorization is positive definite only and does no numerical pivoting; the dense routines
+are unblocked and sequential, for small and moderate sizes. The [roadmap](ROADMAP.md) says
+what is and is not planned.
 
-## Review this snapshot
+Conventions the packages share:
 
-Start with the [setup recipe](docs/setup.md), [public interface](docs/api.md),
-and the two executable examples below. The mathematical implementation lives under src/: numeric primitives,
-rectangular CSC operations, sparse ordering, and SPD LDLᵀ.
+- **Allocate once, repeat without allocating.** A handle is made for a size or a pattern
+  and reused. A successful repeated call allocates nothing after warm-up, and each record
+  measures that through a compiled Coalton caller at both safety policies.
+- **Outcomes are values, misuse is an exception.** A refused pivot, a singular factor or an
+  exhausted sweep limit is a constructor of a small enum the caller matches. Malformed
+  structure, wrong dimensions and exceeded storage budgets raise a typed `LinalgError`.
+- **A refusal leaves nothing half-written.** A solve writes its output only after every
+  value is finite, and a refused factorization withdraws whatever stood before. The two
+  operations that work in place say so in their contracts.
+- **Handles are private nominal types.** Their inspection arrays are borrowed views,
+  read-only by contract and rewritten by the next call.
+- **Storage is refused by name**, against an explicit entry budget, before it is allocated.
 
-Review priorities are Coalton idioms and type design; private handles and borrowed
-array semantics; and the representation/calling choices behind repeated
-factor!/solve! calls. The [design review](docs/design.md#coalton-interface-review-2026-11-19)
-records the earlier trade-offs; the [pre-publication revision](docs/revision-2.md)
-settles the factor interface. [Batch 3a](docs/batch3a.md) preserves its numerical
-results and adds compact analysis with explicit resource budgets. F64 remains the only numeric type.
+## How it is checked
+
+Each record states what was run. The pattern is the same throughout:
+
+- **Exact references.** Results are compared with exact rational arithmetic on the stored
+  F64 values: products multiplied out, inertia by exact elimination, minimum-norm solutions
+  from an exact rank factorization, eigenvalues bracketed by exact counts. No floating
+  routine is trusted as the reference for another.
+- **Planted defects.** Each batch from 3c on has a list of one-line source faults, each
+  applied alone and watched to fail the tests. Where a fault was missed, the record says
+  so and what changed.
+- **Compile probes.** External Coalton callers that must be rejected, for private
+  construction, destructuring and field access, beside one that must compile and run.
+- **Outside comparison, afterward.** NumPy and SciPy check generated matrices and give a
+  timing reference, after the implementation exists. The records give the factors by which
+  this library is slower.
+
+[Provenance](docs/provenance.md) names the published method behind each algorithm and says
+what was and was not consulted while writing it.
+
+## Reviewing it
+
+Start with the [interface reference](docs/api.md) and the six compiled examples under
+`examples/`. For a reader who knows Coalton better than this library's authors do, these are
+the places where a second opinion is most wanted:
+
+- **Handle and status representation.** `(repr :transparent)` over a private struct for
+  handles, `(repr :enum)` for outcomes, and latest-call accessors in place of result
+  objects. The reasoning is in [the factorization contract](docs/spd-ldlt.md#representation-choices)
+  and [the design review](docs/design.md#coalton-interface-review-2026-11-19).
+- **Hot loops.** `for` with `:while`, `cell`s as accumulators, `(inline (finite? x))` on
+  every checked value, and the block-compilation settings in the system definition.
+  [The dense factorization](src/dense/indefinite-ldlt.ct) is the shortest complete example.
+- **Where a double is boxed.** One helper returning an F64 allocated 16 bytes a call until
+  it wrote into an array instead, while others in the same file did not;
+  [the Batch 5 record](docs/batch5.md#two-things-found-while-building-it) has the case.
+- **`lisp` forms.** There are few: constants (powers of two and the representable array
+  size) and two calls to `cl:sort` during sparse analysis.
+- **The safety policy** is a reader feature set by the check runner, and every check runs
+  at both settings.
 
 ## Load and use
 
@@ -63,10 +99,12 @@ The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
 `coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/spd-ldlt`,
 `coalton-linalg/dense/indefinite-ldlt`, `coalton-linalg/dense/orthogonal` and
 `coalton-linalg/dense/jacobi`. The [interface reference](docs/api.md) indexes
-all exported symbols and links to their contracts. [A compiled SPD example](examples/spd-solve.ct)
-uses the local nickname `ldlt`; [a sparse example](examples/sparse-operations.ct)
-shows construction and products. The [mathematical glossary](CONTEXT.md) explains
-shared terms.
+all exported symbols and links to their contracts. The compiled examples are
+[an SPD solve](examples/spd-solve.ct), [sparse construction and products](examples/sparse-operations.ct),
+[normal equations](examples/normal-equations.ct), [a minimum-norm solve through an augmented
+system](examples/minimum-norm.ct), [dependent constraints](examples/dependent-constraints.ct)
+and [a rank from singular values](examples/singular-rank.ct). The
+[mathematical glossary](CONTEXT.md) explains shared terms.
 
 The main system loads only the library. `/tests`, `/examples`, `/tools`, and
 `/tools-tests` are separate ASDF systems. Python is only used for independent
@@ -85,15 +123,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check.ps1 -Safety 0
 ```
 
-Run these **serially**. They cover interface and allocation regressions, a Coalton
-caller and examples, fixture tooling, checker controls, all 20 original matrices,
-336 seeded matrices, 96 repeated refactors, independent primitive tests, and 161
-structural cases (13 above the former 4096 cap), plus 416 independent buffered products.
-Generated artifacts stay under `build/`. The scripts rebuild the library for
-each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the latest full runs,
-[compact-analysis measurements](docs/batch3a.md), the
-[initial review evidence](docs/initial-review.md) for fresh-source setup verification, and
-[pinned toolchain details](docs/toolchain.md) for the measurement protocol.
+Run these **serially**; each takes about a minute. They rebuild the library for the
+chosen safety policy and run every roster the batch records describe: interface and
+allocation regressions, compiled Coalton callers and examples, the exact-reference tests of
+each package, the external compile probes, the artifact drivers' own regressions, and the
+independent Python verifiers with their planted controls. Generated artifacts stay under
+`build/`. See the [initial review evidence](docs/initial-review.md) for fresh-source setup
+verification and [pinned toolchain details](docs/toolchain.md) for the measurement protocol.
+The planted source defects are run by hand for each batch, one process at a time, and are
+recorded in the batch records, not rerun by this command.
 
 ## Repository map
 
@@ -104,12 +142,13 @@ each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the
 | `src/sparse/csc.ct` | Owned sparse matrices and operations |
 | `src/sparse/gram.ct` | Fixed-pattern AᵀA and AAᵀ products |
 | `src/sparse/ordering.ct` | Private minimum-degree ordering |
+| `src/sparse/limits.ct`, `src/dense/limits.ct` | Private dimension bounds and entry budgets |
 | `src/sparse/spd-ldlt.ct` | SPD factorization, solves and condition estimate |
 | `src/dense/indefinite-ldlt.ct` | Dense symmetric indefinite factorization and inertia |
 | `src/dense/orthogonal.ct` | Dense pivoted QR, complete orthogonal decomposition, least squares |
 | `src/dense/jacobi.ct` | Dense symmetric eigenvalues and singular values by Jacobi rotations |
 | `tests/` | Interface/runtime tests and small generic fixtures |
-| `tools/` | Optional artifact driver and independent Python verifier |
+| `tools/` | Optional artifact drivers and independent Python verifiers |
 | `examples/` | Executable caller examples, exercised by tests |
 | `scripts/` | Configurable serial checks and inspection |
 | `docs/` | Contracts, derivation, provenance, verification, and design sources |
