@@ -6,13 +6,13 @@
 
 (defun file-lines (path)
   (with-open-file (in path)
-    (loop for line = (read-line in nil nil) while line collect line)))
+    (loop :for line := (read-line in nil nil) :while line :collect line)))
 
 (defun file-numbers (path)
   "Every token of a driver output file read as a number; the `counts` word is skipped."
   (with-open-file (in path)
-    (loop for token = (read-numeric in) while token
-          unless (symbolp token) collect token)))
+    (loop :for token := (read-numeric in) :while token
+          :unless (symbolp token) :collect token)))
 
 (defun expect-numbers (path expected)
   (let ((actual (file-numbers path)))

@@ -25,7 +25,7 @@
 (defun rect-product (a b)
   (let ((inner (array-dimension a 1)))
     (rect (array-dimension a 0) (array-dimension b 1)
-          (lambda (i j) (loop for k below inner sum (* (aref a i k) (aref b k j)))))))
+          (lambda (i j) (loop :for k :below inner :sum (* (aref a i k) (aref b k j)))))))
 
 (defun rect-transpose (a)
   (rect (array-dimension a 1) (array-dimension a 0) (lambda (i j) (aref a j i))))
@@ -56,13 +56,13 @@
          (work (rect m n (lambda (i j) (aref a i j)))) (row 0) (basis '()))
     (dotimes (j n)
       (when (< row m)
-        (let ((p (loop for i from row below m unless (zerop (aref work i j)) return i)))
+        (let ((p (loop :for i :from row :below m :unless (zerop (aref work i j)) :return i)))
           (when p
             (dotimes (c n) (rotatef (aref work p c) (aref work row c)))
-            (loop for i from (1+ row) below m do
+            (loop :for i :from (1+ row) :below m :do
               (let ((factor (/ (aref work i j) (aref work row j))))
                 (unless (zerop factor)
-                  (loop for c from j below n do (decf (aref work i c) (* factor (aref work row c)))))))
+                  (loop :for c :from j :below n :do (decf (aref work i c) (* factor (aref work row c)))))))
             (push j basis)
             (incf row)))))
     (nreverse basis)))
@@ -80,7 +80,7 @@
                (x (rect-product (rect-product (rect-transpose c)
                                               (rational-inverse (rect-product c (rect-transpose c))))
                                 coefficients)))
-          (loop for i below n collect (aref x i 0))))))
+          (loop :for i :below n :collect (aref x i 0))))))
 
 (defun og-q-matrix (decomposition)
   "Q as the exact rationals of the floats apply-q! returns for each unit vector."
@@ -101,7 +101,7 @@
   "An upper bound, as a rational, on the largest Euclidean column norm."
   (let ((worst 0))
     (dotimes (j (array-dimension exact 1))
-      (setf worst (max worst (loop for i below (array-dimension exact 0) sum (expt (aref exact i j) 2)))))
+      (setf worst (max worst (loop :for i :below (array-dimension exact 0) :sum (expt (aref exact i j) 2)))))
     (* (rational (sqrt (coerce worst 'double-float))) (+ 1 (expt 2 -40)))))
 
 (defun check-qr-accuracy (label decomposition exact)
@@ -111,7 +111,7 @@
          (q (og-q-matrix decomposition)) (r (og-r-matrix decomposition))
          (scale (* *unit-roundoff* (largest-column-norm exact))))
     (assert (= steps (min m n)))
-    (assert (equal (sort (coerce perm 'list) #'<) (loop for j below n collect j)) ()
+    (assert (equal (sort (coerce perm 'list) #'<) (loop :for j :below n :collect j)) ()
             "~A: ~S is not a permutation." label perm)
     (let* ((gram (rect-product (rect-transpose q) q))
            (defect (rect-max (rect m m (lambda (i j) (- (aref gram i j) (if (= i j) 1 0)))))))
@@ -138,9 +138,9 @@
       (when (< (1+ k) steps)
         (assert (>= (* (abs (aref r k k)) (+ 1 (expt 2 -40))) (abs (aref r (1+ k) (1+ k)))) ()
                 "~A: |r| grows at ~D." label k))
-      (loop for j from (1+ k) below n do
+      (loop :for j :from (1+ k) :below n :do
         (assert (>= (* (expt (aref r k k) 2) (+ 1 (expt 2 -40)))
-                    (loop for i from k to (min j (1- steps)) sum (expt (aref r i j) 2)))
+                    (loop :for i :from k :to (min j (1- steps)) :sum (expt (aref r i j) 2)))
                 () "~A: column ~D outweighs the pivot at ~D." label j k)))
     (assert (= 0d0 (og:pivot-magnitude decomposition steps)))))
 
@@ -163,13 +163,13 @@
       (assert (and (og:rank-set? decomposition) (= rank (og:selected-rank decomposition))))
       (assert (= 0 (og-caller:observe-solve decomposition rhs x)) () "~A: solve refused." label)
       (let* ((expected (exact-minimum-norm exact exact-b))
-             (size (+ 1 (loop for v in expected maximize (abs v) into w finally (return (or w 0)))))
-             (error (loop for i below n maximize (abs (- (rational (aref x i)) (nth i expected))) into w
-                          finally (return (or w 0))))
+             (size (+ 1 (loop :for v :in expected :maximize (abs v) :into w :finally (return (or w 0)))))
+             (error (loop :for i :below n :maximize (abs (- (rational (aref x i)) (nth i expected))) :into w
+                          :finally (return (or w 0))))
              (residual-squared
-               (loop for i below m sum
-                 (expt (- (nth i exact-b) (loop for j below n sum (* (aref exact i j) (nth j expected)))) 2)))
-             (b-size (+ 1 (loop for v in exact-b maximize (abs v) into w finally (return (or w 0))))))
+               (loop :for i :below m :sum
+                 (expt (- (nth i exact-b) (loop :for j :below n :sum (* (aref exact i j) (nth j expected)))) 2)))
+             (b-size (+ 1 (loop :for v :in exact-b :maximize (abs v) :into w :finally (return (or w 0))))))
         (assert (<= error (* (expt 2 -36) size)) ()
                 "~A: solution error ~E against the exact minimum-norm solution of size ~E." label
                 (float error 1d0) (float size 1d0))
@@ -179,22 +179,22 @@
                 () "~A: residual norm ~S, exact ~S." label (og:solve-residual-norm decomposition)
                 (sqrt (coerce residual-squared 'double-float))))
       ;; The selected nullspace: orthonormal, annihilated by A, and orthogonal to the solution.
-      (let ((basis (loop for index below (- n rank) collect
+      (let ((basis (loop :for index :below (- n rank) :collect
                      (let ((z (zero-vector n)))
                        (assert (= 0 (og-caller:observe-nullspace decomposition index z)))
                        (map 'list #'rational z))))
             (tolerance (expt 2 -40)))
         (assert (= 4 (og-caller:observe-nullspace decomposition (- n rank) (zero-vector n))))
-        (loop for z in basis for index from 0 do
+        (loop :for z :in basis :for index :from 0 :do
           (dotimes (i m)
-            (assert (<= (abs (loop for j below n sum (* (aref exact i j) (nth j z))))
+            (assert (<= (abs (loop :for j :below n :sum (* (aref exact i j) (nth j z))))
                         (* tolerance (+ 1 (rect-max exact))))
                     () "~A: A times nullspace vector ~D is not small in row ~D." label index i))
-          (assert (<= (abs (loop for j below n sum (* (rational (aref x j)) (nth j z))))
-                      (* tolerance (+ 1 (loop for v across x maximize (abs (rational v))))))
+          (assert (<= (abs (loop :for j :below n :sum (* (rational (aref x j)) (nth j z))))
+                      (* tolerance (+ 1 (loop :for v :across x :maximize (abs (rational v))))))
                   () "~A: the solution is not orthogonal to nullspace vector ~D." label index)
-          (loop for other in basis for other-index from 0 do
-            (assert (<= (abs (- (loop for j below n sum (* (nth j z) (nth j other)))
+          (loop :for other :in basis :for other-index :from 0 :do
+            (assert (<= (abs (- (loop :for j :below n :sum (* (nth j z) (nth j other)))
                                 (if (= index other-index) 1 0)))
                         tolerance)
                     () "~A: nullspace vectors ~D and ~D are not orthonormal." label index other-index)))))
@@ -231,13 +231,13 @@
       (check "first column already reduced" '((4 3 0) (0 1 2) (0 0 1)) '(1 2 3))
       ;; Seeded integer matrices of every rank from zero to full, tall, square and wide.
       (let ((state (sb-ext:seed-random-state 20261121)))
-        (loop for (m n) in '((1 1) (2 1) (1 3) (2 2) (3 2) (2 4) (3 3) (5 3) (3 6) (4 4) (6 4) (4 7)
+        (loop :for (m n) :in '((1 1) (2 1) (1 3) (2 2) (3 2) (2 4) (3 3) (5 3) (3 6) (4 4) (6 4) (4 7)
                              (5 5) (7 5) (5 8) (6 6))
-              do (loop for rank from 0 to (min m n) do
+              :do (loop :for rank :from 0 :to (min m n) :do
                    (dotimes (repeat 3)
                      (check (format nil "seeded ~Dx~D rank<=~D #~D" m n rank repeat)
                             (seeded-product state m n rank)
-                            (loop repeat m collect (- (random 9 state) 4))))))))
+                            (loop :repeat m :collect (- (random 9 state) 4))))))))
     (assert (plusp *og-rank-deficient*) () "No rank-deficient case was exercised.")
     (format t "ORTHOGONAL-EXACT-PASS cases=~D rank-deficient=~D worst-orthogonality=~,3F ~
                worst-reconstruction=~,3F worst-solution=~,1F (units of roundoff times scale)~%"
@@ -250,10 +250,10 @@
         (x (zero-vector 3)))
     (assert (= 0 (og:rank-above decomposition 0d0)) () "A rank was reported before any factorization.")
     (assert (= 0 (og-caller:observe-factor decomposition (doubles 1d0 0d0 0d0  0d0 4d0 0d0  0d0 0d0 2d0))))
-    (assert (equalp (list 4d0 2d0 1d0) (loop for k below 3 collect (og:pivot-magnitude decomposition k))))
+    (assert (equalp (list 4d0 2d0 1d0) (loop :for k :below 3 :collect (og:pivot-magnitude decomposition k))))
     (assert (equalp #(1 2 0) (og:factor-permutation decomposition)))
-    (loop for (threshold expected) in '((-1d0 3) (0d0 3) (0.999d0 3) (1d0 2) (1.5d0 2) (2d0 1) (4d0 0) (9d0 0))
-          do (assert (= expected (og:rank-above decomposition threshold)) ()
+    (loop :for (threshold expected) :in '((-1d0 3) (0d0 3) (0.999d0 3) (1d0 2) (1.5d0 2) (2d0 1) (4d0 0) (9d0 0))
+          :do (assert (= expected (og:rank-above decomposition threshold)) ()
                      "Threshold ~S gave rank ~D." threshold (og:rank-above decomposition threshold)))
     ;; A chosen rank below the exact one solves the truncated problem: the smallest pivot's
     ;; column is left out and its right-hand side entry becomes residual.
@@ -288,11 +288,11 @@
     (assert (= 0 (og-caller:observe-factor decomposition (rect-column-major matrix))))
     (check-qr-accuracy "Kahan" decomposition exact)
     (let* ((inverse (rational-inverse exact))
-           (largest (loop for j below n maximize (loop for i below n sum (expt (aref inverse i j) 2))))
+           (largest (loop :for j :below n :maximize (loop :for i :below n :sum (expt (aref inverse i j) 2))))
            (singular-bound (/ 1 (sqrt (coerce largest 'double-float))))
            (last-pivot (og:pivot-magnitude decomposition (1- n)))
            (ratio (/ last-pivot singular-bound)))
-      (assert (equalp (og:factor-permutation decomposition) (coerce (loop for j below n collect j) 'vector)) ()
+      (assert (equalp (og:factor-permutation decomposition) (coerce (loop :for j :below n :collect j) 'vector)) ()
               "Kahan: columns were exchanged: ~S." (og:factor-permutation decomposition))
       (assert (= n (og:rank-above decomposition (* 0.5d0 last-pivot))))
       (assert (> ratio 1000d0) () "Kahan: last pivot ~S over the singular value bound ~S is only ~S."
@@ -474,7 +474,7 @@
             "External caller ~A compiled despite required rejection." (car probe)))
   (dolist (name '("MKDECOMPOSITION" "DECOMPOSITIONSTORAGE"))
     (multiple-value-bind (symbol visibility) (find-symbol name "COALTON-LINALG/DENSE/ORTHOGONAL")
-      (assert (and symbol (eq visibility :internal)) ()
+      (assert (and symbol (eq visibility ':internal)) ()
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "ORTHOGONAL-ENCAPSULATION-PASS rejected=~D public-control=1~%"
           (length *orthogonal-encapsulation-probes*)))

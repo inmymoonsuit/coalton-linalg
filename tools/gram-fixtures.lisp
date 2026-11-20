@@ -29,13 +29,13 @@
   (let ((path (fixture-path directory name ".meta.txt")) (prefix "gram: "))
     (unless (probe-file path) (error "No meta file names a Gram orientation: ~A" name))
     (with-open-file (in path)
-      (loop for line = (read-line in nil nil) while line
-            when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
-              do (let ((rest (subseq line (length prefix))))
-                   (cond ((and (<= 4 (length rest)) (string= "Jt J" rest :end2 4)) (return :ata))
-                         ((and (<= 4 (length rest)) (string= "J Jt" rest :end2 4)) (return :aat))
+      (loop :for line := (read-line in nil nil) :while line
+            :when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
+              :do (let ((rest (subseq line (length prefix))))
+                   (cond ((and (<= 4 (length rest)) (string= "Jt J" rest :end2 4)) (return ':ata))
+                         ((and (<= 4 (length rest)) (string= "J Jt" rest :end2 4)) (return ':aat))
                          (t (error "Unknown Gram orientation in ~A: ~A" name rest))))
-            finally (error "No `gram:` line in the meta file: ~A" name)))))
+            :finally (error "No `gram:` line in the meta file: ~A" name)))))
 
 (defparameter *constructor-spellings*
   '("InvalidStructure" "InvalidDimensions" "InvalidPermutation" "InvalidAliasing" "DuplicateEntry"
@@ -54,7 +54,7 @@
     (with-open-file (out path :direction :output :if-exists :supersede :if-does-not-exist :create)
       (format out "~D ~D~%" (gram:dimension plan) (length ri))
       (dotimes (j (gram:dimension plan))
-        (loop for q from (aref cp j) below (aref cp (1+ j)) do
+        (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
           (format out "~D ~D ~A~%" (aref ri q) j (f64-string (aref vals q))))))))
 
 (defun run-gram-fixtures (input output &key (repeats 20) (allocation-repeats 1000))
@@ -79,13 +79,13 @@
                 (let* ((orientation (gram-orientation input name))
                        (matrix (csc:from-coo m n rows columns vals
                                              (coalton:coalton coalton-linalg/sparse/csc:RejectDuplicates)))
-                       (analyze (if (eq orientation :ata) #'gram:analyze-ata #'gram:analyze-aat))
+                       (analyze (if (eq orientation ':ata) #'gram:analyze-ata #'gram:analyze-aat))
                        (plan (funcall analyze matrix))
                        (source (csc:entries matrix))
                        (first-out (darray (gram:entry-count plan)))
                        (second-out (darray (gram:entry-count plan)))
                        (scaled (map '(simple-array double-float (*)) (lambda (v) (* -0.5d0 v)) source))
-                       (tag (if (eq orientation :ata) "JtJ" "JJt")))
+                       (tag (if (eq orientation ':ata) "JtJ" "JJt")))
                   (gram:refill! plan scaled second-out)
                   (gram:refill! plan source first-out)
                   ;; Scaling every input by -1/2 is exact in binary, so each product is exactly a quarter.
@@ -103,14 +103,16 @@
                     (unless (zerop bytes) (incf failures))
                     (write-line line) (write-line line table))))
             (error (condition)
-              (if (and linalg-error (typep condition linalg-error))
-                  (let ((line (format nil "~A refused ~A" name (refusal-name condition))))
-                    (with-open-file (out (fixture-path output name ".refused.out.txt")
-                                         :direction :output :if-exists :supersede :if-does-not-exist :create)
-                      (write-line (refusal-name condition) out))
-                    (write-line line) (write-line line table))
-                  (progn (incf failures)
-                         (format t "GRAM-DRIVER-ERROR ~A ~A~%" name condition))))))))
+              (cond
+                ((and linalg-error (typep condition linalg-error))
+                 (let ((line (format nil "~A refused ~A" name (refusal-name condition))))
+                   (with-open-file (out (fixture-path output name ".refused.out.txt")
+                                        :direction :output :if-exists :supersede :if-does-not-exist :create)
+                     (write-line (refusal-name condition) out))
+                   (write-line line) (write-line line table)))
+                (t
+                 (incf failures)
+                 (format t "GRAM-DRIVER-ERROR ~A ~A~%" name condition))))))))
     (if (zerop failures)
         (format t "GRAM-FIXTURES-PASS ~D~%" count)
         (error "GRAM-FIXTURES-FAIL ~D of ~D" failures count))))

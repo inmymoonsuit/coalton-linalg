@@ -15,7 +15,7 @@
   "Every stored entry as (row column value) in the matrix's CSC order, with VALUES in place of its own."
   (let ((cp (csc:column-pointers matrix)) (ri (csc:row-indices matrix)) (found '()))
     (dotimes (j (csc:column-count matrix))
-      (loop for q from (aref cp j) below (aref cp (1+ j)) do
+      (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
         (push (list (aref ri q) j (aref values q)) found)))
     (nreverse found)))
 
@@ -44,7 +44,7 @@
            (row-before (largest-by original m #'first)) (column-before (largest-by original n #'second))
            (row-after (largest-by result m #'first)) (column-after (largest-by result n #'second)))
       ;; Each scaled value is the exact product: powers of two change no digit.
-      (loop for (i j v) in original for (nil nil s) in result do
+      (loop :for (i j v) :in original :for (nil nil s) :in result :do
         (assert (= (rational s) (* (rational (aref rows i)) (rational v) (rational (aref columns j)))) ()
                 "~A: entry ~D,~D was scaled to ~S, not the exact product." label i j s))
       ;; A row or column with no nonzero keeps a factor of 1; every other has its largest
@@ -75,17 +75,17 @@
 
 (defun ranged-entries (state m n percent spread)
   "Stored entries whose magnitudes range over 2^-SPREAD to 2^SPREAD, with a few stored zeros."
-  (loop for i below m append
-    (loop for j below n
-          when (< (random 100 state) percent)
-            collect (list i j (if (zerop (random 12 state))
+  (loop :for i :below m :append
+    (loop :for j :below n
+          :when (< (random 100 state) percent)
+            :collect (list i j (if (zerop (random 12 state))
                                   0d0
                                   (* (if (zerop (random 2 state)) 1 -1)
                                      (scale-float (+ 1d0 (random 1d0 state)) (- (random (1+ (* 2 spread)) state) spread))))))))
 
 (defun lower-csc (n dense)
   "The lower triangle of a dense symmetric matrix of doubles as a checked CSC matrix, every diagonal stored."
-  (csc-from-entries n n (loop for j below n append (loop for i from j below n collect (list i j (aref dense i j))))))
+  (csc-from-entries n n (loop :for j :below n :append (loop :for i :from j :below n :collect (list i j (aref dense i j))))))
 
 (defun check-symmetric-scaled (label n dense)
   "Scale a symmetric positive definite matrix by its diagonal and check each claim exactly."
@@ -95,7 +95,7 @@
     (assert (= 0 (sc-caller:symmetric-code matrix values scales)) () "~A: the diagonal was refused." label)
     (assert (every #'power-of-two-p scales) () "~A: scale factors ~S." label scales)
     (assert (= 0 (sc-caller:symmetric-scale-error matrix values scales scaled)))
-    (loop for (i j v) in (stored-entries matrix values) for (nil nil s) in (stored-entries matrix scaled) do
+    (loop :for (i j v) :in (stored-entries matrix values) :for (nil nil s) :in (stored-entries matrix scaled) :do
       (assert (= (rational s) (* (rational (aref scales i)) (rational v) (rational (aref scales j)))) ()
               "~A: entry ~D,~D was scaled to ~S, not the exact product." label i j s)
       (if (= i j)
@@ -124,14 +124,14 @@
     (check-equilibrated "tall" 4 1 (list '(0 0 1d200) '(1 0 -3) (list 2 0 (scale-float 1d0 -200)) '(3 0 7d100)))
     (check-equilibrated "extremes" 2 2 (list (list 0 0 most-positive-double-float) '(0 1 1)
                                              (list 1 1 least-positive-normalized-double-float)))
-    (loop for (m n) in '((2 2) (3 3) (3 5) (5 3) (4 4) (6 6) (5 8) (8 5) (8 8)) do
+    (loop :for (m n) :in '((2 2) (3 3) (3 5) (5 3) (4 4) (6 6) (5 8) (8 5) (8 8)) :do
       (dolist (percent '(30 60 100))
         (dolist (spread '(3 40 300))
           (dotimes (repeat 2)
             (check-equilibrated (format nil "seeded ~Dx~D ~D% spread ~D #~D" m n percent spread repeat)
                                 m n (ranged-entries state m n percent spread))))))
     ;; Symmetric positive definite: Gram matrices of columns that differ by many orders.
-    (loop for n in '(1 2 3 4 6 8) do
+    (loop :for n :in '(1 2 3 4 6 8) :do
       (dolist (spread '(0 10 100))
         (dotimes (repeat 4)
           (let* ((b (make-array (list (+ n 2) n)))
@@ -144,7 +144,7 @@
                 (setf (aref b j j) (* column-scale (1+ (random 4 state))))))
             (dotimes (i n)
               (dotimes (j n)
-                (setf (aref dense i j) (loop for k below (+ n 2) sum (* (aref b k i) (aref b k j))))))
+                (setf (aref dense i j) (loop :for k :below (+ n 2) :sum (* (aref b k i) (aref b k j))))))
             (check-symmetric-scaled (format nil "gram n=~D spread ~D #~D" n spread repeat) n dense)))))
     (multiple-value-bind (scales scaled)
         (check-symmetric-scaled "named" 2 (make-array '(2 2) :element-type 'double-float

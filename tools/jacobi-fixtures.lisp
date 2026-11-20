@@ -13,9 +13,9 @@
   (let ((path (fixture-path directory name ".meta.txt")) (found '()))
     (when (probe-file path)
       (with-open-file (in path)
-        (loop for line = (read-line in nil nil) while line
-              when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
-                do (let ((value (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
+        (loop :for line := (read-line in nil nil) :while line
+              :when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
+                :do (let ((value (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
                                   (read-from-string line nil nil :start (length prefix)))))
                      (unless (realp value) (error "Malformed meta line in ~A: ~A" name line))
                      (push value found)))))
@@ -44,7 +44,7 @@
     (- (sb-ext:get-bytes-consed) before)))
 
 (defun write-values-to (out values)
-  (loop for v across values do (write-line (if (floatp v) (f64-string v) (format nil "~D" v)) out)))
+  (loop :for v :across values :do (write-line (if (floatp v) (f64-string v) (format nil "~D" v)) out)))
 
 (defun run-jacobi-fixtures (input output &key (repeats 20) (allocation-repeats 20))
   "Write each system's values, vectors and sweep count at every named sweep limit, and one line a run."
@@ -75,7 +75,7 @@
                     (error "One name is both a symmetric and a rectangular system: ~A" name))
                   (multiple-value-bind (n a) (read-dense-symmetric input name)
                     (let ((eigen (jc:make-symmetric-eigen n)))
-                      (loop for limit in (meta-sweep-limits input name) for index from 0 do
+                      (loop :for limit :in (meta-sweep-limits input name) :for index :from 0 :do
                         (let* ((thunk (if limit
                                           (lambda () (jc:eigen-with-sweep-limit! eigen a limit))
                                           (lambda () (jc:eigen! eigen a))))
@@ -113,7 +113,7 @@
                   (multiple-value-bind (m n a) (read-dense-rectangular input name)
                     (let ((svd (jc:make-svd m n))
                           (thresholds (meta-prefixed-values input name "threshold: ")))
-                      (loop for limit in (meta-sweep-limits input name) for index from 0 do
+                      (loop :for limit :in (meta-sweep-limits input name) :for index :from 0 :do
                         (let* ((thunk (if limit
                                           (lambda () (jc:svd-with-sweep-limit! svd a limit))
                                           (lambda () (jc:svd! svd a))))

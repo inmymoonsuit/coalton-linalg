@@ -31,8 +31,8 @@
 
 (defun primitive-vector (label actual expected &optional (relative 2d-14))
   (assert (= (length actual) (length expected)) () "~A length differs." label)
-  (loop for a across actual for e across expected
-        do (primitive-close label a e relative)))
+  (loop :for a :across actual :for e :across expected
+        :do (primitive-close label a e relative)))
 
 (defun primitive-dense (m n entries)
   "Build a dense mathematical reference from explicitly supplied (row column value) entries."
@@ -84,10 +84,10 @@
     (let ((position 0))
       (dotimes (column n)
         (assert (<= (aref pointers column) (aref pointers (1+ column)) (length rows)))
-        (loop with previous = -1
-              for q from (aref pointers column) below (aref pointers (1+ column))
-              for row = (aref rows q)
-              do (assert (< previous row m) () "~A is not canonical CSC." label)
+        (loop :with previous := -1
+              :for q :from (aref pointers column) :below (aref pointers (1+ column))
+              :for row := (aref rows q)
+              :do (assert (< previous row m) () "~A is not canonical CSC." label)
                  (setf previous row)
                  (destructuring-bind (er ec ev) (nth position ordered)
                    (assert (= row er) () "~A stored row differs." label)
@@ -149,10 +149,10 @@
 (defun primitive-generated-case ()
   "A deterministic rectangular roster with stored zeros and uneven merge lengths."
   (list 7 11
-        (loop for row below 7 append
-              (loop for column below 11
-                    when (< (mod (+ (* 11 row) (* 7 column)) 5) 2)
-                    collect (list row column
+        (loop :for row :below 7 :append
+              (loop :for column :below 11
+                    :when (< (mod (+ (* 11 row) (* 7 column)) 5) 2)
+                    :collect (list row column
                                   (coerce (- (mod (+ row (* 3 column)) 5) 2) 'double-float))))))
 
 (defun primitive-construction-tests ()
@@ -236,7 +236,7 @@
                                            (list 0 0 (- most-positive-double-float)))
                                  (coalton:coalton csc:SumDuplicates))))
   (destructuring-bind (m n entries) (primitive-generated-case)
-    (let* ((raw (loop for (row column value) in entries append
+    (let* ((raw (loop :for (row column value) :in entries :append
                      (list (list row column 7d0) (list row column value) (list row column -7d0))))
            (scrambled (append (nthcdr 17 raw) (subseq raw 0 17)))
            (matrix (primitive-from-entries m n scrambled (coalton:coalton csc:SumDuplicates))))
@@ -256,8 +256,8 @@
       (let* ((matrix (primitive-from-entries m n (reverse entries)
                                              (coalton:coalton csc:RejectDuplicates)))
              (dense (primitive-dense m n entries))
-             (x (apply #'primitive-doubles (loop for j below n collect (- (* 2 j) 3))))
-             (y (apply #'primitive-doubles (loop for i below m collect (+ i 2))))
+             (x (apply #'primitive-doubles (loop :for j :below n :collect (- (* 2 j) 3))))
+             (y (apply #'primitive-doubles (loop :for i :below m :collect (+ i 2))))
              (x-before (copy-seq x))
              (y-before (copy-seq y))
              (ax (csc:matvec matrix x))
@@ -267,9 +267,9 @@
                                           (list (second entry) (first entry) (third entry)))
                                         entries))
              (rows (apply #'primitive-indices
-                          (if (= m 3) '(2 0 1) (reverse (loop for i below m collect i)))))
+                          (if (= m 3) '(2 0 1) (reverse (loop :for i :below m :collect i)))))
              (columns (apply #'primitive-indices
-                             (if (= n 4) '(2 0 3 1) (reverse (loop for j below n collect j)))))
+                             (if (= n 4) '(2 0 3 1) (reverse (loop :for j :below n :collect j)))))
              (rows-before (copy-seq rows))
              (columns-before (copy-seq columns))
              (permuted (csc:permute matrix rows columns))

@@ -48,7 +48,7 @@
 
 (defun matrix-product (a b)
   (let ((n (array-dimension a 0)))
-    (build-matrix n (lambda (i j) (loop for k below n sum (* (aref a i k) (aref b k j)))))))
+    (build-matrix n (lambda (i j) (loop :for k :below n :sum (* (aref a i k) (aref b k j)))))))
 
 (defun matrix-map (fn a)
   (build-matrix (array-dimension a 0) (lambda (i j) (funcall fn (aref a i j)))))
@@ -58,49 +58,51 @@
 
 (defun matrix-max (a)
   (let ((n (array-dimension a 0)))
-    (loop for i below n maximize (loop for j below n maximize (abs (aref a i j))) into worst
-          finally (return (or worst 0)))))
+    (loop :for i :below n :maximize (loop :for j :below n :maximize (abs (aref a i j))) :into worst
+          :finally (return (or worst 0)))))
 
 (defun matrix-row-sum-norm (a)
   (let ((n (array-dimension a 0)))
-    (loop for i below n maximize (loop for j below n sum (abs (aref a i j))) into worst
-          finally (return (or worst 0)))))
+    (loop :for i :below n :maximize (loop :for j :below n :sum (abs (aref a i j))) :into worst
+          :finally (return (or worst 0)))))
 
 (defun exact-inertia (matrix)
   "Positive, negative and zero eigenvalue counts by exact symmetric elimination (Sylvester's law)."
   (let* ((n (array-dimension matrix 0))
          (a (build-matrix n (lambda (i j) (aref matrix i j))))
-         (live (loop for i below n collect i)) (positive 0) (negative 0) (zero 0))
-    (loop while live do
+         (live (loop :for i :below n :collect i)) (positive 0) (negative 0) (zero 0))
+    (loop :while live :do
       (let ((i (find-if (lambda (i) (/= 0 (aref a i i))) live)))
-        (if i
-            (progn
-              (if (plusp (aref a i i)) (incf positive) (incf negative))
-              (setf live (remove i live))
-              (dolist (p live)
-                (dolist (q live)
-                  (decf (aref a p q) (/ (* (aref a p i) (aref a i q)) (aref a i i))))))
-            ;; Every live diagonal is zero: an off-diagonal b gives the block [[0,b],[b,0]].
-            (let ((pair (loop named found for p in live do
-                          (loop for q in live
-                                when (and (/= p q) (/= 0 (aref a p q)))
-                                  do (return-from found (cons p q))))))
-              (if pair
-                  (let* ((i (car pair)) (j (cdr pair)) (b (aref a i j)))
-                    (incf positive) (incf negative)
-                    (setf live (remove i (remove j live)))
-                    (dolist (p live)
-                      (dolist (q live)
-                        (decf (aref a p q)
-                              (/ (+ (* (aref a p i) (aref a j q)) (* (aref a p j) (aref a i q))) b)))))
-                  (progn (incf zero (length live)) (setf live nil)))))))
+        (cond
+          (i
+           (if (plusp (aref a i i)) (incf positive) (incf negative))
+           (setf live (remove i live))
+           (dolist (p live)
+             (dolist (q live)
+               (decf (aref a p q) (/ (* (aref a p i) (aref a i q)) (aref a i i))))))
+          ;; Every live diagonal is zero: an off-diagonal b gives the block [[0,b],[b,0]].
+          (t
+           (let ((pair (loop :named found :for p :in live :do
+                         (loop :for q :in live
+                               :when (and (/= p q) (/= 0 (aref a p q)))
+                                 :do (return-from found (cons p q))))))
+             (cond
+               (pair
+                (let* ((i (car pair)) (j (cdr pair)) (b (aref a i j)))
+                  (incf positive) (incf negative)
+                  (setf live (remove i (remove j live)))
+                  (dolist (p live)
+                    (dolist (q live)
+                      (decf (aref a p q)
+                            (/ (+ (* (aref a p i) (aref a j q)) (* (aref a p j) (aref a i q))) b))))))
+               (t (incf zero (length live)) (setf live nil))))))))
     (values positive negative zero)))
 
 (defun block-inertia (factor)
   "Eigenvalue signs of the exported block diagonal, each 2-by-2 block by its exact trace and determinant."
   (let ((n (il:dimension factor)) (d (il:factor-diagonal factor)) (e (il:factor-subdiagonal factor))
         (blocks (il:factor-block-sizes factor)) (positive 0) (negative 0) (zero 0))
-    (loop with k = 0 while (< k n) do
+    (loop :with k := 0 :while (< k n) :do
       (if (= 2 (aref blocks k))
           (let* ((a (rational (aref d k))) (b (rational (aref e k))) (c (rational (aref d (1+ k))))
                  (determinant (- (* a c) (* b b))) (trace (+ a c)))
@@ -122,14 +124,14 @@
          (blocks (il:factor-block-sizes factor))
          (threshold (rational (coalton:coalton il:pivot-threshold)))
          (limit (* (/ 1 (- 1 threshold)) (+ 1 (expt 2 -40)))))
-    (assert (equal (sort (coerce perm 'list) #'<) (loop for i below n collect i)) ()
+    (assert (equal (sort (coerce perm 'list) #'<) (loop :for i :below n :collect i)) ()
             "~A: ~S is not a permutation." label perm)
-    (loop with k = 0 while (< k n) do
+    (loop :with k := 0 :while (< k n) :do
       (ecase (aref blocks k)
-        (1 (assert (= 0d0 (aref e k)) () "~A: subdiagonal ~S at a 1-by-1 pivot ~D." label (aref e k) k)
+        ((1) (assert (= 0d0 (aref e k)) () "~A: subdiagonal ~S at a 1-by-1 pivot ~D." label (aref e k) k)
          (incf *il-ones*) (incf k))
-        (2 (assert (and (< (1+ k) n) (= 0 (aref blocks (1+ k))) (= 0d0 (aref e (1+ k)))) ()
-                   "~A: malformed 2-by-2 block at ~D: ~S ~S." label k blocks e)
+        ((2) (assert (and (< (1+ k) n) (= 0 (aref blocks (1+ k))) (= 0d0 (aref e (1+ k)))) ()
+                     "~A: malformed 2-by-2 block at ~D: ~S ~S." label k blocks e)
          (let ((a (abs (rational (aref d k)))) (b (abs (rational (aref e k))))
                (c (abs (rational (aref d (1+ k))))))
            (assert (and (plusp b) (< a (* threshold b)) (< c (* threshold b))) ()
@@ -170,10 +172,10 @@
     (check-factor-structure label factor)
     (let ((perm (il:factor-permutation factor)))
       (multiple-value-bind (product bound) (exported-product factor)
-        (let ((worst (loop for i below n maximize
-                       (loop for j below n maximize
-                         (abs (- (aref exact (aref perm i) (aref perm j)) (aref product i j)))) into w
-                           finally (return (or w 0))))
+        (let ((worst (loop :for i :below n :maximize
+                       (loop :for j :below n :maximize
+                         (abs (- (aref exact (aref perm i) (aref perm j)) (aref product i j)))) :into w
+                           :finally (return (or w 0))))
               (scale (* *unit-roundoff* (+ (matrix-max exact) (matrix-max bound)))))
           (assert (<= worst (* 4 (1+ n) scale)) ()
                   "~A: reconstruction error ~E exceeds ~E." label (float worst 1d0) (float (* 4 (1+ n) scale) 1d0))
@@ -196,16 +198,16 @@
                         (list positive negative 0))
                 (dotimes (i n) (setf (aref b i) (coerce (- (random 9 state) 4) 'double-float)))
                 (assert (= 0 (il-caller:observe-solve factor b x)) () "~A: solve refused." label)
-                (let* ((residual (loop for i below n maximize
-                                   (abs (- (loop for j below n sum (* (aref exact i j) (rational (aref x j))))
-                                           (rational (aref b i)))) into w
-                                       finally (return (or w 0))))
+                (let* ((residual (loop :for i :below n :maximize
+                                   (abs (- (loop :for j :below n :sum (* (aref exact i j) (rational (aref x j))))
+                                           (rational (aref b i)))) :into w
+                                       :finally (return (or w 0))))
                        (scale (* *unit-roundoff*
                                  (+ (* (matrix-row-sum-norm bound)
-                                       (loop for v across x maximize (abs (rational v)) into w
-                                             finally (return (or w 0))))
-                                    (loop for v across b maximize (abs (rational v)) into w
-                                          finally (return (or w 0)))))))
+                                       (loop :for v :across x :maximize (abs (rational v)) :into w
+                                             :finally (return (or w 0))))
+                                    (loop :for v :across b :maximize (abs (rational v)) :into w
+                                          :finally (return (or w 0)))))))
                   (assert (<= residual (* 8 (1+ n) scale)) ()
                           "~A: solve residual ~E exceeds ~E." label (float residual 1d0)
                           (float (* 8 (1+ n) scale) 1d0))
@@ -254,7 +256,7 @@
       ;; Seeded integer matrices; a zero diagonal forces 2-by-2 pivots. One half is not an
       ;; algebraic integer, so the shifted matrices are never exactly singular.
       (let ((state (sb-ext:seed-random-state 20261120)))
-        (loop for n from 1 to 10 do
+        (loop :for n :from 1 :to 10 :do
           (dotimes (repeat 8)
             (dolist (zero-diagonal '(nil t))
               (let ((matrix (seeded-symmetric state n zero-diagonal)))
@@ -262,9 +264,9 @@
                 (check (format nil "seeded n=~D #~D zero-diagonal=~A shifted" n repeat zero-diagonal)
                        matrix 1/2)))))
         ;; Congruences S diag(+-1) S^T with S unit lower triangular: the inertia is the signature's.
-        (loop for n from 2 to 9 do
+        (loop :for n :from 2 :to 9 :do
           (dotimes (repeat 4)
-            (let* ((signs (loop repeat n collect (if (zerop (random 2 state)) 1 -1)))
+            (let* ((signs (loop :repeat n :collect (if (zerop (random 2 state)) 1 -1)))
                    (s (build-matrix n (lambda (i j) (cond ((= i j) 1) ((> i j) (- (random 5 state) 2)) (t 0)))))
                    (matrix (matrix-product
                             (matrix-product s (build-matrix n (lambda (i j) (if (= i j) (nth i signs) 0))))
@@ -297,16 +299,16 @@
   (assert (equal '(1 0 1) (inertia-of '((1 1) (1 1)))))
   (assert (equal '(1 1 1) (inertia-of '((0 1 0) (1 0 2) (0 2 0)))))
   ;; Eigenvalues of the second-difference matrix are 2 - 2 cos(k pi / 7); a shift counts those below it.
-  (let* ((rows (loop for i below 6 collect
-                 (loop for j below 6 collect (cond ((= i j) 2) ((= 1 (abs (- i j))) -1) (t 0)))))
-         (spectrum (loop for k from 1 to 6 collect (- 2 (* 2 (cos (/ (* k pi) 7)))))))
+  (let* ((rows (loop :for i :below 6 :collect
+                 (loop :for j :below 6 :collect (cond ((= i j) 2) ((= 1 (abs (- i j))) -1) (t 0)))))
+         (spectrum (loop :for k :from 1 :to 6 :collect (- 2 (* 2 (cos (/ (* k pi) 7)))))))
     (dolist (shift '(0 1/4 1 2 3 7/2 4))
       (let ((below (count-if (lambda (v) (< v shift)) spectrum)))
         (assert (equal (list (- 6 below) below 0) (inertia-of rows shift)) ()
                 "Shift ~A: inertia ~S, expected ~D below." shift (inertia-of rows shift) below))))
   ;; The augmented matrix [[I, J^T], [J, 0]] of an m-by-n J of rank r has inertia (n, r, m - r).
   (let ((state (sb-ext:seed-random-state 4242)) (full 0))
-    (loop for (m n) in '((1 2) (2 3) (2 5) (3 4) (3 7) (4 6)) do
+    (loop :for (m n) :in '((1 2) (2 3) (2 5) (3 4) (3 7) (4 6)) :do
       (dotimes (repeat 4)
         (let* ((j (let ((a (make-array (list m n))))
                     (dotimes (p m) (dotimes (q n) (setf (aref a p q) (- (random 5 state) 2))))
@@ -317,7 +319,7 @@
                                              ((and (>= p n) (< q n)) (aref j (- p n) q))
                                              ((and (< p n) (>= q n)) (aref j (- q n) p))
                                              (t 0)))))
-               (gram (build-matrix m (lambda (p q) (loop for c below n sum (* (aref j p c) (aref j q c)))))))
+               (gram (build-matrix m (lambda (p q) (loop :for c :below n :sum (* (aref j p c) (aref j q c)))))))
           (multiple-value-bind (rank-positive rank-negative rank-zero) (exact-inertia gram)
             (declare (ignore rank-negative))
             (when (zerop rank-zero)
@@ -326,17 +328,17 @@
                 (assert (equal (list n rank-positive 0)
                                (list (il:positive-count factor) (il:negative-count factor) (il:zero-count factor))))
                 ;; The first n unknowns of K [x; y] = [0; b] are the minimum-norm solution J^T (J J^T)^-1 b.
-                (let* ((b (loop repeat m collect (- (random 7 state) 3)))
+                (let* ((b (loop :repeat m :collect (- (random 7 state) 3)))
                        (rhs (make-array size :element-type 'double-float :initial-element 0d0))
                        (out (make-array size :element-type 'double-float :initial-element 0d0))
                        (inverse (rational-inverse gram))
-                       (multipliers (loop for p below m collect
-                                      (loop for q below m sum (* (aref inverse p q) (nth q b)))))
-                       (expected (loop for c below n collect
-                                   (loop for p below m sum (* (aref j p c) (nth p multipliers))))))
+                       (multipliers (loop :for p :below m :collect
+                                      (loop :for q :below m :sum (* (aref inverse p q) (nth q b)))))
+                       (expected (loop :for c :below n :collect
+                                   (loop :for p :below m :sum (* (aref j p c) (nth p multipliers))))))
                   (dotimes (p m) (setf (aref rhs (+ n p)) (coerce (nth p b) 'double-float)))
                   (assert (= 0 (il-caller:observe-solve factor rhs out)))
-                  (loop for c below n do
+                  (loop :for c :below n :do
                     (assert (<= (abs (- (rational (aref out c)) (nth c expected)))
                                 (* (expt 2 -40) (+ 1 (abs (nth c expected)))))
                             () "Minimum-norm component ~D is ~S, expected ~S." c (aref out c)
@@ -535,7 +537,7 @@
             "External caller ~A compiled despite required rejection." (car probe)))
   (dolist (name '("MKFACTOR" "FACTORSTORAGE"))
     (multiple-value-bind (symbol visibility) (find-symbol name "COALTON-LINALG/DENSE/INDEFINITE-LDLT")
-      (assert (and symbol (eq visibility :internal)) ()
+      (assert (and symbol (eq visibility ':internal)) ()
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "INDEFINITE-ENCAPSULATION-PASS rejected=~D public-control=1~%"
           (length *indefinite-encapsulation-probes*)))

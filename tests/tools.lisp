@@ -24,18 +24,19 @@
          (progn
            (let ((*package* (find-package :coalton-linalg/tools)) (*read-eval* nil))
            (with-open-file (source (merge-pathnames "tools/fixtures.lisp" base))
-             (loop for candidate = (read source nil nil) while candidate
-                   when (and (consp candidate) (eq (first candidate) 'defun)
+             (loop :for candidate := (read source nil nil) :while candidate
+                   :when (and (consp candidate) (eq (first candidate) 'defun)
                              (eq (second candidate) 'read-fixture))
-                     do (setf form candidate) (return))))
+                     :do (setf form candidate) (return))))
            (unless form (error "Fixture reader definition was not found."))
            (labels ((remove-order-guard (tree)
-                      (if (atom tree) tree
-                          (if (and (eq (first tree) 'unless)
-                                   (equal (second tree)
-                                          '(or (> j last-column) (and (= j last-column) (> i last-row)))))
-                              nil
-                              (mapcar #'remove-order-guard tree)))))
+                      (cond
+                        ((atom tree) tree)
+                        ((and (eq (first tree) 'unless)
+                              (equal (second tree)
+                                     '(or (> j last-column) (and (= j last-column) (> i last-row)))))
+                         nil)
+                        (t (mapcar #'remove-order-guard tree)))))
              (eval (remove-order-guard form)))
            (handler-case
                (progn (parser-order-regression dir) (error "MUTANT-NOT-DETECTED"))

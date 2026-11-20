@@ -42,7 +42,7 @@
     (let* ((values (jc:eigenvalues eigen)) (vectors (jc:eigenvectors eigen))
            (v (build-matrix n (lambda (i j) (rational (aref vectors (+ i (* j n)))))))
            (scale (* *unit-roundoff* (max 1 n) (matrix-max exact))))
-      (loop for k from 1 below n do
+      (loop :for k :from 1 :below n :do
         (assert (<= (aref values (1- k)) (aref values k)) () "~A: eigenvalues are not ascending: ~S." label values))
       (let* ((gram (matrix-product (matrix-transpose v) v))
              (defect (matrix-max (build-matrix n (lambda (i j) (- (aref gram i j) (if (= i j) 1 0)))))))
@@ -102,7 +102,7 @@
         (when (> (aref sigma j) kept)
           (dotimes (other n)
             (when (> (aref sigma other) kept)
-              (assert (<= (abs (- (loop for i below m sum (* (aref u i j) (aref u i other)))
+              (assert (<= (abs (- (loop :for i :below m :sum (* (aref u i j) (aref u i other)))
                                   (if (= j other) 1 0)))
                           (* 16 (1+ m) *unit-roundoff*))
                       () "~A: left vectors ~D and ~D are not orthonormal." label j other)))))
@@ -153,14 +153,14 @@
           (assert (< (abs (- (aref (jc:eigenvalues eigen) k) (- 2 (* 2 (cos (/ (* (1+ k) pi) (1+ n)))))))
                      1d-14))))
       (let ((state (sb-ext:seed-random-state 20261123)))
-        (loop for n from 1 to 8 do
+        (loop :for n :from 1 :to 8 :do
           (dotimes (repeat 6)
             (dolist (zero-diagonal '(nil t))
               (check (format nil "seeded n=~D #~D zero-diagonal=~A" n repeat zero-diagonal)
                      (seeded-symmetric state n zero-diagonal)))))
         ;; Positive semidefinite matrices of low rank: exact zero eigenvalues, computed at rounding level.
-        (loop for n from 2 to 7 do
-          (loop for rank from 0 below n do
+        (loop :for n :from 2 :to 7 :do
+          (loop :for rank :from 0 :below n :do
             (let ((factor (seeded-product state 5 n rank)))
               (check (format nil "semidefinite n=~D rank<=~D" n rank)
                      (rect-product (rect-transpose factor) factor))))))
@@ -199,9 +199,9 @@
       (check "no columns" (rect 3 0 (lambda (i j) (declare (ignore i j)) 0)))
       (check "nothing" (rect 0 0 (lambda (i j) (declare (ignore i j)) 0)))
       (let ((state (sb-ext:seed-random-state 20261124)))
-        (loop for (m n) in '((1 1) (2 1) (1 3) (2 2) (3 2) (2 4) (3 3) (5 3) (3 6) (4 4) (6 4) (4 7)
+        (loop :for (m n) :in '((1 1) (2 1) (1 3) (2 2) (3 2) (2 4) (3 3) (5 3) (3 6) (4 4) (6 4) (4 7)
                              (5 5) (7 5) (5 8) (6 6))
-              do (loop for rank from 0 to (min m n) do
+              :do (loop :for rank :from 0 :to (min m n) :do
                    (dotimes (repeat 2)
                      (check (format nil "seeded ~Dx~D rank<=~D #~D" m n rank repeat)
                             (seeded-product state m n rank))))))
@@ -263,11 +263,11 @@
   ;; The two rank-revealing routines agree: the minimum-norm solution through the singular
   ;; vectors equals the one through the orthogonal decomposition.
   (let ((state (sb-ext:seed-random-state 5150)))
-    (loop for (m n rank) in '((5 3 2) (3 6 2) (4 4 3) (6 4 4) (4 7 4)) do
+    (loop :for (m n rank) :in '((5 3 2) (3 6 2) (4 4 3) (6 4 4) (4 7 4)) :do
       (let* ((matrix (seeded-product state m n rank))
              (a (rect-column-major matrix))
              (b (make-array m :element-type 'double-float
-                              :initial-contents (loop repeat m collect (coerce (- (random 9 state) 4) 'double-float))))
+                              :initial-contents (loop :repeat m :collect (coerce (- (random 9 state) 4) 'double-float))))
              (svd (jc:make-svd m n)) (decomposition (og:make-decomposition m n))
              (x (zero-vector n)) (y (zero-vector n)))
         (assert (= 0 (jc-caller:observe-svd svd a)))
@@ -277,7 +277,7 @@
           (assert (= 0 (og-caller:observe-rank decomposition kept)))
           (assert (= 0 (og-caller:observe-solve decomposition b x)))
           (dotimes (j kept)
-            (let ((projection (/ (loop for i below m sum (* (aref (jc:left-vectors svd) (+ i (* j m))) (aref b i)))
+            (let ((projection (/ (loop :for i :below m :sum (* (aref (jc:left-vectors svd) (+ i (* j m))) (aref b i)))
                                  (aref (jc:singular-values svd) j))))
               (dotimes (i n)
                 (incf (aref y i) (* projection (aref (jc:right-vectors svd) (+ i (* j n))))))))
@@ -337,8 +337,8 @@
   ;; Rank thresholds are absolute and strict.
   (let ((svd (jc:make-svd 3 3)))
     (assert (= 0 (jc-caller:observe-svd svd (doubles 1d0 0d0 0d0  0d0 4d0 0d0  0d0 0d0 2d0))))
-    (loop for (threshold expected) in '((-1d0 3) (0d0 3) (0.999d0 3) (1d0 2) (2d0 1) (4d0 0))
-          do (assert (= expected (jc:rank-above svd threshold)) ()
+    (loop :for (threshold expected) :in '((-1d0 3) (0d0 3) (0.999d0 3) (1d0 2) (2d0 1) (4d0 0))
+          :do (assert (= expected (jc:rank-above svd threshold)) ()
                      "Threshold ~S gave rank ~D." threshold (jc:rank-above svd threshold))))
   ;; Storage is refused by name before it is allocated.
   (let ((limit (coalton:coalton jc:maximum-dimension)) (budget (coalton:coalton jc:default-entry-limit)))
@@ -393,7 +393,7 @@
             "External caller ~A compiled despite required rejection." (car probe)))
   (dolist (name '("MKSYMMETRICEIGEN" "EIGENSTORAGE" "MKSVD" "SVDSTORAGE"))
     (multiple-value-bind (symbol visibility) (find-symbol name "COALTON-LINALG/DENSE/JACOBI")
-      (assert (and symbol (eq visibility :internal)) ()
+      (assert (and symbol (eq visibility ':internal)) ()
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "JACOBI-ENCAPSULATION-PASS rejected=~D public-control=1~%" (length *jacobi-encapsulation-probes*)))
 

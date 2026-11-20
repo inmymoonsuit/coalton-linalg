@@ -14,9 +14,9 @@
   (let ((path (fixture-path directory name ".meta.txt")) (prefix "augmented: ") (runs '()))
     (when (probe-file path)
       (with-open-file (in path)
-        (loop for line = (read-line in nil nil) while line
-              when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
-                do (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
+        (loop :for line := (read-line in nil nil) :while line
+              :when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
+                :do (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
                      (with-input-from-string (rest line :start (length prefix))
                        (let ((top (read rest nil nil)) (bottom (read rest nil nil)) (order (read rest nil nil)))
                          (unless (and (realp top) (realp bottom) (symbolp order) order
@@ -49,7 +49,7 @@
     (with-open-file (out path :direction :output :if-exists :supersede :if-does-not-exist :create)
       (format out "~D ~D~%" (aug:dimension plan) (length ri))
       (dotimes (j (aug:dimension plan))
-        (loop for q from (aref cp j) below (aref cp (1+ j)) do
+        (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
           (format out "~D ~D ~A~%" (aref ri q) j (f64-string (aref vals q))))))))
 
 (defparameter *augmented-indexed-suffixes*
@@ -142,14 +142,16 @@
                         (incf index))))
                 (error (condition)
                   (incf count)
-                  (if (and linalg-error (typep condition linalg-error))
-                      (let ((line (format nil "~A refused ~A" name (refusal-name condition))))
-                        (with-open-file (out (fixture-path output name ".refused.out.txt")
-                                             :direction :output :if-exists :supersede :if-does-not-exist :create)
-                          (write-line (refusal-name condition) out))
-                        (write-line line) (write-line line table))
-                      (progn (incf failures)
-                             (format t "AUGMENTED-DRIVER-ERROR ~A ~A~%" name condition)))))))))
+                  (cond
+                    ((and linalg-error (typep condition linalg-error))
+                     (let ((line (format nil "~A refused ~A" name (refusal-name condition))))
+                       (with-open-file (out (fixture-path output name ".refused.out.txt")
+                                            :direction :output :if-exists :supersede :if-does-not-exist :create)
+                         (write-line (refusal-name condition) out))
+                       (write-line line) (write-line line table)))
+                    (t
+                     (incf failures)
+                     (format t "AUGMENTED-DRIVER-ERROR ~A ~A~%" name condition)))))))))
     (if (zerop failures)
         (format t "AUGMENTED-FIXTURES-PASS ~D~%" count)
         (error "AUGMENTED-FIXTURES-FAIL ~D of ~D" failures count))))

@@ -42,7 +42,7 @@
 (defun write-indices (path vector)
   (with-open-file (stream path :direction :output :if-exists :supersede
                                :if-does-not-exist :create)
-    (loop for value across vector do (format stream "~D~%" value))))
+    (loop :for value :across vector :do (format stream "~D~%" value))))
 
 (defun run-case (input-path output-directory)
   "Analyze one pattern and export its public structure plus scoped timing/allocation.

@@ -22,15 +22,15 @@
       (setf (aref present (first entry) (second entry)) 1))
     (dotimes (column dimension)
       (setf (aref pointers column) count)
-      (loop for row from column below dimension
-            when (or (= row column)
-                     (loop for k below inner
-                           thereis (if ata-p
+      (loop :for row :from column :below dimension
+            :when (or (= row column)
+                     (loop :for k :below inner
+                           :thereis (if ata-p
                                        (and (= 1 (aref present k row))
                                             (= 1 (aref present k column)))
                                        (and (= 1 (aref present row k))
                                             (= 1 (aref present column k))))))
-            do (push row rows)
+            :do (push row rows)
                (incf count)))
     (setf (aref pointers dimension) count)
     (values dimension pointers
@@ -44,9 +44,9 @@
          (dimension (if ata-p n m))
          (answer (make-array (length rows) :element-type 'double-float)))
     (dotimes (column dimension answer)
-      (loop for position from (aref pointers column) below (aref pointers (1+ column))
-            for row = (aref rows position)
-            do (let ((total 0))
+      (loop :for position :from (aref pointers column) :below (aref pointers (1+ column))
+            :for row := (aref rows position)
+            :do (let ((total 0))
                  (dotimes (k inner)
                    (incf total
                          (if ata-p
@@ -69,9 +69,9 @@
       (gram-require (<= 0 begin end (length rows)) "~A: pointers are out of range." label)
       (gram-require (< begin end) "~A: a diagonal is missing." label)
       (gram-require (= (aref rows begin) column) "~A: a column does not start at its diagonal." label)
-      (loop for position from begin below end
-            for row = (aref rows position)
-            do (gram-require (<= column row (1- dimension)) "~A: row is outside the lower triangle." label)
+      (loop :for position :from begin :below end
+            :for row := (aref rows position)
+            :do (gram-require (<= column row (1- dimension)) "~A: row is outside the lower triangle." label)
                (when (> position begin)
                  (gram-require (< (aref rows (1- position)) row) "~A: rows are not strictly increasing." label)))))
   (gram-require (equalp pointers expected-pointers) "~A: pointer pattern differs from coordinate intersections." label)
@@ -106,13 +106,13 @@
 
 (defun gram-case-values (entries pass seed)
   "Keep coordinates fixed while replacing values, including a complete zero generation."
-  (loop for (row column value) in entries
-        for index from 0
-        collect (list row column
+  (loop :for (row column value) :in entries
+        :for index :from 0
+        :collect (list row column
                       (case pass
-                        (0 value)
-                        (1 0d0)
-                        (2 (/ (coerce (- (mod (+ seed (* 7 index)) 17) 8) 'double-float) 8d0))))))
+                        ((0) value)
+                        ((1) 0d0)
+                        ((2) (/ (coerce (- (mod (+ seed (* 7 index)) 17) 8) 'double-float) 8d0))))))
 
 (defun gram-explicit-cases ()
   (list
@@ -126,7 +126,7 @@
    (list "disjoint-columns" 5 3 '((0 0 1d0) (4 0 2d0) (1 1 3d0) (3 2 -1d0)))
    (list "exact-cancellation" 2 2 '((0 0 1d0) (1 0 1d0) (0 1 1d0) (1 1 -1d0)))
    (list "wide-gaps" 7 5 '((0 0 2d0) (6 0 -1d0) (0 2 3d0) (4 2 0d0) (6 4 0.25d0)))
-   (list "dense-ones" 4 3 (loop for row below 4 append (loop for column below 3 collect (list row column 1d0))))
+   (list "dense-ones" 4 3 (loop :for row :below 4 :append (loop :for column :below 3 :collect (list row column 1d0))))
    (list "exact-dependent" 3 3 '((0 0 1d0) (0 1 1d0) (0 2 2d0)
                                 (1 0 1d0) (1 2 1d0) (2 0 1d0) (2 2 1d0)))))
 
@@ -144,11 +144,11 @@
       (dotimes (row m)
         (dotimes (column n)
           (when (case family
-                  (0 t)
-                  (1 (<= (abs (- row column)) 1))
-                  (2 (zerop (mod (+ row column) 3)))
-                  (3 (and (not (zerop (mod row 4))) (not (zerop (mod column 3))) (< (next 5) 3)))
-                  (4 (< (next 7) 2)))
+                  ((0) t)
+                  ((1) (<= (abs (- row column)) 1))
+                  ((2) (zerop (mod (+ row column) 3)))
+                  ((3) (and (not (zerop (mod row 4))) (not (zerop (mod column 3))) (< (next 5) 3)))
+                  ((4) (< (next 7) 2)))
             (push (list row column
                         (scale-float (/ (coerce (- (next 33) 16) 'double-float) 8d0) exponent))
                   entries)))))
@@ -282,10 +282,10 @@
   "Independent structural intersections, rational products and ordered-F64 controls."
   (let* ((seed 20261119)
          (cases (append (gram-explicit-cases)
-                        (loop for index below 64 collect (gram-seeded-case index seed)))))
-    (loop for case in cases
-          for ordinal from 0
-          do (gram-run-exact-case case (+ seed (* 104729 ordinal))))
+                        (loop :for index :below 64 :collect (gram-seeded-case index seed)))))
+    (loop :for case :in cases
+          :for ordinal :from 0
+          :do (gram-run-exact-case case (+ seed (* 104729 ordinal))))
     (format t "GRAM-EXACT-PROPERTIES-PASS seed=~D cases=~D orientations=~D refills=~D~%"
             seed (length cases) (* 2 (length cases)) (* 12 (length cases))))
   (gram-rounding-tests)

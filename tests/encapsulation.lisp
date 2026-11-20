@@ -112,7 +112,7 @@
   (dolist (name '("MKNUMERICFACTOR" "MKSYMBOLIC" "NUMERICFACTORSTORAGE" "SYMBOLICSTORAGE"))
     (multiple-value-bind (symbol visibility)
         (find-symbol name "COALTON-LINALG/SPARSE/SPD-LDLT")
-      (assert (and symbol (eq visibility :internal)) ()
+      (assert (and symbol (eq visibility ':internal)) ()
               "Storage constructor ~A must exist and remain internal; visibility is ~S."
               name visibility)))
   (format t "PRIVATE-CONSTRUCTOR-EXPORTS-PASS count=4~%"))

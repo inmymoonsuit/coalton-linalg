@@ -41,7 +41,7 @@
            (ptr (uarray (1+ n))) (rows (uarray nz)) (vals (darray nz))
            (last-row -1) (last-column -1))
       (declare (ignore valid))
-      (loop for q below nz do
+      (loop :for q :below nz :do
         (let ((i (read-numeric in)) (j (read-numeric in)) (v (read-numeric in)))
           (unless (and (integerp i) (integerp j) (<= 0 j i) (< i n) (realp v))
             (error "Malformed matrix entry ~A/~D." name q))
@@ -51,7 +51,7 @@
           (setf (aref rows q) i (aref vals q) (coerce v 'double-float))
           (incf (aref ptr (1+ j)))))
       (when (read-numeric in) (error "Trailing matrix entries: ~A" name))
-      (loop for j below n do (incf (aref ptr (1+ j)) (aref ptr j)))
+      (loop :for j :below n :do (incf (aref ptr (1+ j)) (aref ptr j)))
       (let ((b (darray n)))
         (with-open-file (rhs (fixture-path directory name ".b.txt"))
           (dotimes (i n) (setf (aref b i) (coerce (read-numeric rhs) 'double-float)))
@@ -62,10 +62,10 @@
   (let ((path (fixture-path directory name ".meta.txt")))
     (when (probe-file path)
       (with-open-file (in path)
-        (loop for line = (read-line in nil nil) while line
-              when (and (<= (length prefix) (length line))
+        (loop :for line := (read-line in nil nil) :while line
+              :when (and (<= (length prefix) (length line))
                         (string= prefix line :end2 (length prefix)))
-                return (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
+                :return (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
                          (read-from-string line nil nil :start (length prefix))))))))
 
 (defun f64-string (x)
@@ -73,7 +73,7 @@
 
 (defun write-array-file (path array)
   (with-open-file (out path :direction :output :if-exists :supersede :if-does-not-exist :create)
-    (loop for x across array do
+    (loop :for x :across array :do
       (write-line (if (floatp x) (f64-string x) (format nil "~D" x)) out))))
 
 (defun write-factor-files (output name f &optional (tag ""))
@@ -86,8 +86,8 @@
     (with-open-file (out (fixture-path output name (concatenate 'string tag ".L.out.txt"))
                         :direction :output :if-exists :supersede :if-does-not-exist :create)
       (format out "~D ~D~%" (1- (length cp)) (length ri))
-      (loop for j below (1- (length cp)) do
-        (loop for q from (aref cp j) below (aref cp (1+ j)) do
+      (loop :for j :below (1- (length cp)) :do
+        (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
           (format out "~D ~D ~A~%" (aref ri q) j (f64-string (aref lv q))))))))
 
 (defun residual-check (cp ri vals b x)
@@ -96,7 +96,7 @@
          (bnorm 0d0) (xnorm 0d0) (anorm 0d0) (res 0d0))
     (declare (type double-float bnorm xnorm anorm res))
     (dotimes (j n)
-      (loop for q from (aref cp j) below (aref cp (1+ j)) do
+      (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
         (let ((i (aref ri q)) (v (aref vals q)))
           (incf (aref ax i) (* v (aref x j)))
           (incf (aref rowsums i) (abs v))
@@ -123,18 +123,18 @@
     (dotimes (k n)
       (setf (aref inv (aref perm k)) k)
       (incf (aref rebuilt (+ (* k n) k)) (aref d k))
-      (loop for a from (aref lp k) below (aref lp (1+ k)) do
+      (loop :for a :from (aref lp k) :below (aref lp (1+ k)) :do
         (let ((i (aref lr a)) (ld (* (aref lv a) (aref d k))))
           (incf (aref rebuilt (+ (* i n) k)) ld)
-          (loop for z from (aref lp k) to a do
+          (loop :for z :from (aref lp k) :to a :do
             (incf (aref rebuilt (+ (* i n) (aref lr z))) (* ld (aref lv z)))))))
     (dotimes (j n)
-      (loop for q from (aref cp j) below (aref cp (1+ j)) do
+      (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
         (let* ((perm-i (aref inv (aref ri q))) (pj (aref inv j)) (v (aref vals q)))
           (setf amax (max amax (abs v)))
           (decf (aref rebuilt (+ (* n (max perm-i pj)) (min perm-i pj)))
                 (if (= perm-i pj) (- v shift) v)))))
-    (loop for v of-type double-float across rebuilt do (setf error-max (max error-max (abs v))))
+    (loop :for v :of-type double-float :across rebuilt :do (setf error-max (max error-max (abs v))))
     (if (zerop amax) error-max (/ error-max amax))))
 
 #+win32
@@ -157,8 +157,8 @@
 
 (defun best-ms (thunk repeats)
   (funcall thunk)
-  (loop repeat repeats
-        minimize (let ((start (ticks))) (funcall thunk)
+  (loop :repeat repeats
+        :minimize (let ((start (ticks))) (funcall thunk)
                       (* 1000d0 (/ (- (ticks) start) *qpc-frequency*)))))
 
 (defun bytes-for (thunk repeats)
@@ -189,60 +189,62 @@
             (let* ((s (coalton-linalg/sparse/spd-ldlt:analyze pattern))
                    (result (coalton-linalg/sparse/spd-ldlt:factor! s vals 0d0))
                    (n (length b)))
-              (if (not (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) result))
-                  (progn
-                    (unless (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorNonPositive) result)
-                      (error "Unexpected refusal kind in ~A." name))
-                    (write-array-file (fixture-path output name ".refused.out.txt")
-                                      (vector (coalton-linalg/sparse/spd-ldlt:refused-column s)))
-                    (format t "~A ~D ~D refused ~D~%" name n (length vals)
-                            (coalton-linalg/sparse/spd-ldlt:refused-column s))
-                    (format table "~A ~D ~D refused ~D~%" name n (length vals)
-                            (coalton-linalg/sparse/spd-ldlt:refused-column s)))
-                  (let* ((f (coalton-linalg/sparse/spd-ldlt:symbolic-factor s)) (x (darray n))
-                         (keep (let ((v (meta-number input name "shift that must still factorise with every pivot positive: "))) (when v (coerce v 'double-float))))
-                         (refuse (let ((v (meta-number input name "shift that must be refused: "))) (when v (coerce v 'double-float))))
-                         (reference-fill (meta-number input name "reference fill: "))
-                         (nnzl (+ n (length (coalton-linalg/sparse/spd-ldlt:factor-rows f))))
-                         (factor-thunk (lambda () (coalton-linalg/sparse/spd-ldlt:factor! s vals 0d0)))
-                         (solve-thunk (lambda () (coalton-linalg/sparse/spd-ldlt:solve! f b x))))
-                    (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveSuccess) (funcall solve-thunk)))
-                    (write-factor-files output name f)
-                    (write-array-file (fixture-path output name ".x.out.txt") x)
-                    (let ((res (residual-check cp ri vals b x))
-                          (rebuild (reconstruction-check cp ri vals f))
-                          (kept "NA") (refused "NA"))
-                      (unless (and (<= res 1d-12) (<= rebuild 1d-12)) (incf failures))
-                      (when keep
-                        (setf kept (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (coalton-linalg/sparse/spd-ldlt:factor! s vals keep)))
-                        (if kept
-                            (progn (write-factor-files output name f ".shift-kept")
-                                   (assert (<= (reconstruction-check cp ri vals f keep) 1d-12)))
-                            (incf failures)))
-                      (when refuse
-                        (let ((r (coalton-linalg/sparse/spd-ldlt:factor! s vals refuse)))
-                          (setf refused (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorNonPositive) r))
-                          (if refused
-                              (write-array-file (fixture-path output name ".shift-refused.out.txt")
-                                                (vector (coalton-linalg/sparse/spd-ldlt:refused-column s)))
-                              (incf failures))))
-                      (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (funcall factor-thunk)))
-                      (let ((an-ms (best-ms (lambda () (coalton-linalg/sparse/spd-ldlt:analyze pattern)) repeats))
-                            (fa-ms (best-ms factor-thunk repeats))
-                            (so-ms (best-ms solve-thunk repeats))
-                            (fa-bytes (bytes-for factor-thunk allocation-repeats))
-                            (so-bytes (bytes-for solve-thunk allocation-repeats)))
-                        (with-open-file (allocation (fixture-path output name ".allocation.txt")
-                                                    :direction :output :if-exists :supersede)
-                          (format allocation "repeats ~D~%factor_bytes ~D~%solve_bytes ~D~%"
-                                  allocation-repeats fa-bytes so-bytes))
-                        (unless (and (zerop fa-bytes) (zerop so-bytes)) (incf failures))
-                        (when (and reference-fill
-                                   (> nnzl (* 1.25d0 reference-fill)))
-                          (format t "FILL-TARGET-MISS ~A ~D/~D~%" name nnzl reference-fill))
-                        (let ((line (format nil "~A ~D ~D ~D ~,6F ~,6F ~,6F ~,5E ~,5E ~A ~A"
-                                            name n (length vals) nnzl an-ms fa-ms so-ms res rebuild kept refused)))
-                          (write-line line table)
-                          (write-line line)))))))))))
+              (cond
+                ((not (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) result))
+                 (unless (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorNonPositive) result)
+                   (error "Unexpected refusal kind in ~A." name))
+                 (write-array-file (fixture-path output name ".refused.out.txt")
+                                   (vector (coalton-linalg/sparse/spd-ldlt:refused-column s)))
+                 (format t "~A ~D ~D refused ~D~%" name n (length vals)
+                         (coalton-linalg/sparse/spd-ldlt:refused-column s))
+                 (format table "~A ~D ~D refused ~D~%" name n (length vals)
+                         (coalton-linalg/sparse/spd-ldlt:refused-column s)))
+                (t
+                 (let* ((f (coalton-linalg/sparse/spd-ldlt:symbolic-factor s)) (x (darray n))
+                        (keep (let ((v (meta-number input name "shift that must still factorise with every pivot positive: "))) (when v (coerce v 'double-float))))
+                        (refuse (let ((v (meta-number input name "shift that must be refused: "))) (when v (coerce v 'double-float))))
+                        (reference-fill (meta-number input name "reference fill: "))
+                        (nnzl (+ n (length (coalton-linalg/sparse/spd-ldlt:factor-rows f))))
+                        (factor-thunk (lambda () (coalton-linalg/sparse/spd-ldlt:factor! s vals 0d0)))
+                        (solve-thunk (lambda () (coalton-linalg/sparse/spd-ldlt:solve! f b x))))
+                   (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveSuccess) (funcall solve-thunk)))
+                   (write-factor-files output name f)
+                   (write-array-file (fixture-path output name ".x.out.txt") x)
+                   (let ((res (residual-check cp ri vals b x))
+                         (rebuild (reconstruction-check cp ri vals f))
+                         (kept "NA") (refused "NA"))
+                     (unless (and (<= res 1d-12) (<= rebuild 1d-12)) (incf failures))
+                     (when keep
+                       (setf kept (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (coalton-linalg/sparse/spd-ldlt:factor! s vals keep)))
+                       (cond
+                         (kept
+                          (write-factor-files output name f ".shift-kept")
+                          (assert (<= (reconstruction-check cp ri vals f keep) 1d-12)))
+                         (t (incf failures))))
+                     (when refuse
+                       (let ((r (coalton-linalg/sparse/spd-ldlt:factor! s vals refuse)))
+                         (setf refused (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorNonPositive) r))
+                         (if refused
+                             (write-array-file (fixture-path output name ".shift-refused.out.txt")
+                                               (vector (coalton-linalg/sparse/spd-ldlt:refused-column s)))
+                             (incf failures))))
+                     (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (funcall factor-thunk)))
+                     (let ((an-ms (best-ms (lambda () (coalton-linalg/sparse/spd-ldlt:analyze pattern)) repeats))
+                           (fa-ms (best-ms factor-thunk repeats))
+                           (so-ms (best-ms solve-thunk repeats))
+                           (fa-bytes (bytes-for factor-thunk allocation-repeats))
+                           (so-bytes (bytes-for solve-thunk allocation-repeats)))
+                       (with-open-file (allocation (fixture-path output name ".allocation.txt")
+                                                   :direction :output :if-exists :supersede)
+                         (format allocation "repeats ~D~%factor_bytes ~D~%solve_bytes ~D~%"
+                                 allocation-repeats fa-bytes so-bytes))
+                       (unless (and (zerop fa-bytes) (zerop so-bytes)) (incf failures))
+                       (when (and reference-fill
+                                  (> nnzl (* 1.25d0 reference-fill)))
+                         (format t "FILL-TARGET-MISS ~A ~D/~D~%" name nnzl reference-fill))
+                       (let ((line (format nil "~A ~D ~D ~D ~,6F ~,6F ~,6F ~,5E ~,5E ~A ~A"
+                                           name n (length vals) nnzl an-ms fa-ms so-ms res rebuild kept refused)))
+                         (write-line line table)
+                         (write-line line))))))))))))
     (unless (zerop failures) (error "~D fixture checks failed." failures))
     (format t "FIXTURES-PASS ~D~%" (length paths))))

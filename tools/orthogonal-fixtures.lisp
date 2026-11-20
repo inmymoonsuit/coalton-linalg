@@ -26,18 +26,18 @@
   (let ((path (fixture-path directory name ".meta.txt")) (runs '()))
     (when (probe-file path)
       (with-open-file (in path)
-        (loop for line = (read-line in nil nil) while line do
-          (loop for (prefix kind) in '(("threshold: " :threshold) ("rank: " :rank))
-                when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
-                  do (let ((value (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
+        (loop :for line := (read-line in nil nil) :while line :do
+          (loop :for (prefix kind) :in '(("threshold: " :threshold) ("rank: " :rank))
+                :when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
+                  :do (let ((value (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
                                     (read-from-string line nil nil :start (length prefix)))))
-                       (unless (if (eq kind :rank) (and (integerp value) (>= value 0)) (realp value))
+                       (unless (if (eq kind ':rank) (and (integerp value) (>= value 0)) (realp value))
                          (error "Malformed run line in ~A: ~A" name line))
                        (push (list kind value) runs))))))
-    (or (nreverse runs) (list (list :threshold 1d-10)))))
+    (or (nreverse runs) (list (list ':threshold 1d-10)))))
 
 (defun orthogonal-status-name (status)
-  (loop for (value name) in (list (list (coalton:coalton og:FactorSuccess) "FactorSuccess")
+  (loop :for (value name) :in (list (list (coalton:coalton og:FactorSuccess) "FactorSuccess")
                                   (list (coalton:coalton og:FactorNonFinite) "FactorNonFinite")
                                   (list (coalton:coalton og:FactorBadSize) "FactorBadSize")
                                   (list (coalton:coalton og:RankSuccess) "RankSuccess")
@@ -52,8 +52,8 @@
                                   (list (coalton:coalton og:SolveBadIndex) "SolveBadIndex")
                                   (list (coalton:coalton og:SolveNonFiniteRhs) "SolveNonFiniteRhs")
                                   (list (coalton:coalton og:SolveNonFiniteResult) "SolveNonFiniteResult"))
-        when (eq status value) return name
-        finally (error "Unnamed orthogonal status ~S." status)))
+        :when (eq status value) :return name
+        :finally (error "Unnamed orthogonal status ~S." status)))
 
 (defun write-qr-file (path decomposition)
   "m, n, the permutation, the upper trapezoid R (k by n), then the thin Q (m by k), column-major."
@@ -61,7 +61,7 @@
          (k (og:step-count decomposition)) (work (og:factor-work decomposition)) (column (darray m)))
     (with-open-file (out path :direction :output :if-exists :supersede :if-does-not-exist :create)
       (format out "~D~%~D~%" m n)
-      (loop for v across (og:factor-permutation decomposition) do (format out "~D~%" v))
+      (loop :for v :across (og:factor-permutation decomposition) :do (format out "~D~%" v))
       (dotimes (j n)
         (dotimes (i k)
           (write-line (f64-string (if (<= i j) (aref work (+ i (* j m))) 0d0)) out)))
@@ -70,7 +70,7 @@
         (setf (aref column j) 1d0)
         (unless (eq (og:apply-q! decomposition column) (coalton:coalton og:SolveSuccess))
           (error "Q could not be read back."))
-        (loop for v across column do (write-line (f64-string v) out))))))
+        (loop :for v :across column :do (write-line (f64-string v) out))))))
 
 (defun run-orthogonal-fixtures (input output &key (repeats 20) (allocation-repeats 20))
   "Write each system's QR once and, for every run, its rank, solution, residual and nullspace basis."
@@ -105,8 +105,8 @@
                             (factor-bytes (bytes-for factor-thunk (max 10 allocation-repeats))))
                         (unless (zerop factor-bytes) (incf failures))
                         (write-qr-file (fixture-path output name ".qr.out.txt") decomposition)
-                        (loop for (kind value) in runs for index from 0 do
-                          (let* ((rank (if (eq kind :rank)
+                        (loop :for (kind value) :in runs :for index :from 0 :do
+                          (let* ((rank (if (eq kind ':rank)
                                            value
                                            (og:rank-above decomposition
                                                           (* (coerce value 'double-float)
@@ -128,7 +128,7 @@
                                       (unless (eq (og:nullspace-vector! decomposition j basis)
                                                   (coalton:coalton og:SolveSuccess))
                                         (error "Nullspace vector ~D of ~A could not be read." j name))
-                                      (loop for v across basis do (write-line (f64-string v) out))))
+                                      (loop :for v :across basis :do (write-line (f64-string v) out))))
                                   (with-open-file (out (indexed-path output name index ".run.out.txt")
                                                        :direction :output :if-exists :supersede
                                                        :if-does-not-exist :create)

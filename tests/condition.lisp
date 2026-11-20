@@ -15,7 +15,7 @@
   "Lower CSC of a symmetric matrix given as a list of row lists, every lower entry stored."
   (let ((n (length rows)) (pointers (list 0)) (row-indices '()) (entries '()))
     (dotimes (j n)
-      (loop for i from j below n do
+      (loop :for i :from j :below n :do
         (push i row-indices)
         (push (coerce (nth j (nth i rows)) 'double-float) entries))
       (push (length row-indices) pointers))
@@ -38,7 +38,7 @@
       (dotimes (j n) (setf (aref work i j) (aref matrix i j)))
       (setf (aref work i (+ n i)) 1))
     (dotimes (column n)
-      (let ((pivot (loop for r from column below n unless (zerop (aref work r column)) return r)))
+      (let ((pivot (loop :for r :from column :below n :unless (zerop (aref work r column)) :return r)))
         (unless pivot (error "The reference matrix is exactly singular."))
         (unless (= pivot column)
           (dotimes (j (* 2 n)) (rotatef (aref work pivot j) (aref work column j))))
@@ -55,7 +55,7 @@
 
 (defun rational-norm1 (matrix)
   (let ((n (array-dimension matrix 0)))
-    (loop for j below n maximize (loop for i below n sum (abs (aref matrix i j))))))
+    (loop :for j :below n :maximize (loop :for i :below n :sum (abs (aref matrix i j))))))
 
 (defun estimate-for (rows shift)
   "Factor and estimate through the public interface. Returns estimate, norm, solves, and both exact norms."
@@ -88,16 +88,16 @@
 
 (defun seeded-spd (state n)
   "B^T B + I for a small integer B: exactly representable and positive definite."
-  (let ((b (loop repeat n collect (loop repeat n collect (- (random 7 state) 3)))))
-    (loop for i below n collect
-      (loop for j below n collect
-        (+ (if (= i j) 1 0) (loop for row in b sum (* (nth i row) (nth j row))))))))
+  (let ((b (loop :repeat n :collect (loop :repeat n :collect (- (random 7 state) 3)))))
+    (loop :for i :below n :collect
+      (loop :for j :below n :collect
+        (+ (if (= i j) 1 0) (loop :for row :in b :sum (* (nth i row) (nth j row))))))))
 
 (defun run-condition-tests ()
   ;; Diagonal matrices: the ascent reaches the smallest entry's vertex, so the estimate is exact.
   (dolist (diagonal '((1 2 4 1/8) (8) (1/4 1/4 1/4) (1024 1 1/1024 2 3)))
     (let* ((n (length diagonal))
-           (rows (loop for i below n collect (loop for j below n collect (if (= i j) (nth i diagonal) 0)))))
+           (rows (loop :for i :below n :collect (loop :for j :below n :collect (if (= i j) (nth i diagonal) 0)))))
       (multiple-value-bind (estimate norm solves exact-inverse exact-norm) (estimate-for rows 0d0)
         (declare (ignore solves))
         (assert (= (rational estimate) exact-inverse) () "Diagonal estimate ~S is not exact." estimate)
@@ -122,13 +122,13 @@
   ;; matrices, not a theorem about the estimator.
   (let ((ratios '()))
     (push (check-lower-bound "tridiagonal 6"
-                             (loop for i below 6 collect
-                               (loop for j below 6 collect (cond ((= i j) 2) ((= 1 (abs (- i j))) -1) (t 0))))
+                             (loop :for i :below 6 :collect
+                               (loop :for j :below 6 :collect (cond ((= i j) 2) ((= 1 (abs (- i j))) -1) (t 0))))
                              0d0 1/1000000000 1/2)
           ratios)
     (push (check-lower-bound "shifted 3x3" '((4 -2 0) (-2 5 1) (0 1 3)) 1d0 1/1000000000 1/2) ratios)
     (let ((state (sb-ext:seed-random-state 20261119)) (cases 0))
-      (loop for n from 2 to 7 do
+      (loop :for n :from 2 :to 7 :do
         (dotimes (repeat 8)
           (incf cases)
           (push (check-lower-bound (format nil "seeded n=~D #~D" n repeat) (seeded-spd state n) 0d0
@@ -140,7 +140,7 @@
   (let ((rows '((4 -2 0) (-2 5 1) (0 1 3))))
     (multiple-value-bind (base) (estimate-for rows 0d0)
       (dolist (power '(-200 -3 7 200))
-        (let ((scaled (loop for row in rows collect (loop for v in row collect (* v (expt 2 power))))))
+        (let ((scaled (loop :for row :in rows :collect (loop :for v :in row :collect (* v (expt 2 power))))))
           (multiple-value-bind (estimate) (estimate-for scaled 0d0)
             (assert (= estimate (scale-float base (- power))) ()
                     "Scaling by 2^~D gave ~S; expected ~S exactly." power estimate (scale-float base (- power)))))))
@@ -201,8 +201,8 @@
   (format t "CONDITION-LIFETIME-PASS~%")
   ;; Warmed repeated work through a compiled Coalton caller allocates nothing.
   (multiple-value-bind (n pointers row-indices entries)
-      (dense-lower (loop for i below 12 collect
-                     (loop for j below 12 collect (cond ((= i j) 4) ((= 1 (abs (- i j))) -1) (t 0)))))
+      (dense-lower (loop :for i :below 12 :collect
+                     (loop :for j :below 12 :collect (cond ((= i j) 4) ((= 1 (abs (- i j))) -1) (t 0)))))
     (let ((symbolic (ldlt:analyze (ldlt:pattern n pointers row-indices))))
       (assert (= 0 (condition-caller:estimate-loop symbolic entries 0d0 3)))
       (allocation-check "condition-estimate"

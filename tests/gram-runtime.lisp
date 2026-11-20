@@ -5,9 +5,10 @@
   (sb-ext:add-package-local-nickname "GRAM-CALLER" "COALTON-LINALG/TESTS/GRAM-CALLERS"))
 
 (defun gram-analyze (matrix aat &optional limit)
-  (if aat
-      (if limit (gram:analyze-aat-with-limit matrix limit) (gram:analyze-aat matrix))
-      (if limit (gram:analyze-ata-with-limit matrix limit) (gram:analyze-ata matrix))))
+  (cond
+    (aat (if limit (gram:analyze-aat-with-limit matrix limit) (gram:analyze-aat matrix)))
+    (limit (gram:analyze-ata-with-limit matrix limit))
+    (t (gram:analyze-ata matrix))))
 
 (defun gram-limit-code (matrix aat limit requested)
   (funcall (if aat #'gram-caller:aat-limit-error #'gram-caller:ata-limit-error)
@@ -326,7 +327,7 @@
        (define (probe plan) (arr:length (.scatter plan)))")))
   (dolist (name '("MKGRAMPLAN" "GRAMPLANSTORAGE" "PLAN-STORAGE"))
     (multiple-value-bind (symbol visibility) (find-symbol name "COALTON-LINALG/SPARSE/GRAM")
-      (assert (and symbol (eq visibility :internal)) ()
+      (assert (and symbol (eq visibility ':internal)) ()
               "Gram implementation symbol ~A must remain internal; got ~S." name visibility)))
   (format t "GRAM-ENCAPSULATION-PASS negative-probes=3 public-control=1 private-symbols=3~%"))
 

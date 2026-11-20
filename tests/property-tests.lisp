@@ -15,14 +15,14 @@
       (assert (and (> (aref diagonal i) 0d0)
                    (not (sb-ext:float-infinity-p (aref diagonal i)))))
       (setf (aref lower i i) 1d0)
-      (loop for q from (aref columns i) below (aref columns (1+ i)) do
+      (loop :for q :from (aref columns i) :below (aref columns (1+ i)) :do
         (setf (aref lower (aref rows q) i) (aref values q))))
     (dotimes (i n)
       (dotimes (j n)
         (let* ((expected (aref matrix (aref permutation i) (aref permutation j)))
-               (actual (loop for k below n
-                             sum (* (aref lower i k) (aref diagonal k) (aref lower j k))
-                               of-type double-float)))
+               (actual (loop :for k :below n
+                             :sum (* (aref lower i k) (aref diagonal k) (aref lower j k))
+                               :of-type double-float)))
           (setf largest (max largest (abs expected))
                 error-max (max error-max (abs (- actual expected)))))))
     (assert (<= error-max (* tolerance (max least-positive-normalized-double-float largest))) ()
@@ -60,7 +60,7 @@
               (aref matrix 2 3) e2 (aref matrix 3 2) e2)
         (dotimes (i 4)
           (setf (aref rhs i)
-                (loop for j below 4 sum (* (aref matrix i j) (aref answer j)) of-type double-float)))
+                (loop :for j :below 4 :sum (* (aref matrix i j) (aref answer j)) :of-type double-float)))
         (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (coalton-linalg/sparse/spd-ldlt:factor! symbolic values shift)))
         (check-small-factor matrix factor)
         (fill out 42d0)
@@ -120,8 +120,8 @@
           (dotimes (j 3)
             (setf (aref matrix i j)
                   (+ (* (aref u i) (aref u j)) (* (aref v i) (aref v j))))))
-        (loop for (row col) in '((0 0) (1 0) (2 0) (1 1) (2 1) (2 2))
-              for index from 0 do
+        (loop :for (row col) :in '((0 0) (1 0) (2 0) (1 1) (2 1) (2 2))
+              :for index :from 0 :do
                 (setf (aref values index) (aref matrix row col)))
         (let ((status (coalton-linalg/sparse/spd-ldlt:factor! symbolic values 0d0)))
           (cond
@@ -177,15 +177,15 @@
                  (coalton-linalg/sparse/spd-ldlt:pattern size pointers row-indices)))
              (factor (coalton-linalg/sparse/spd-ldlt:symbolic-factor symbolic)))
         (dotimes (column size)
-          (loop for q from (aref pointers column) below (aref pointers (1+ column))
-                for row = (aref row-indices q)
-                do (setf (aref matrix row column) (aref entries q)
+          (loop :for q :from (aref pointers column) :below (aref pointers (1+ column))
+                :for row := (aref row-indices q)
+                :do (setf (aref matrix row column) (aref entries q)
                          (aref matrix column row) (aref entries q))))
         (flet ((kernel-residual ()
-                 (loop for row below size
-                       collect (loop for column below size
-                                     for x in null-vector
-                                     sum (* (rational (aref matrix row column)) x)))))
+                 (loop :for row :below size
+                       :collect (loop :for column :below size
+                                     :for x :in null-vector
+                                     :sum (* (rational (aref matrix row column)) x)))))
           (assert (= (rational (aref matrix 0 0)) 3))
           (assert (= (- (* (rational (aref matrix 0 0)) (rational (aref matrix 1 1)))
                         (* (rational (aref matrix 0 1)) (rational (aref matrix 1 0))))

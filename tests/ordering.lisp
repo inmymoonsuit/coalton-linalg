@@ -11,7 +11,7 @@ releases one held neighbour, of least degree and then least index. Returns the o
   (let ((adjacent (make-array n :initial-element '())) (alive (make-array n :initial-element t))
         (held (make-array n)) (order '()) (columns '()))
     (dotimes (j n)
-      (loop for q from (1+ (aref pointers j)) below (aref pointers (1+ j)) do
+      (loop :for q :from (1+ (aref pointers j)) :below (aref pointers (1+ j)) :do
         (let ((i (aref rows q)))
           (push j (aref adjacent i))
           (push i (aref adjacent j)))))
@@ -71,7 +71,7 @@ releases one held neighbour, of least degree and then least index. Returns the o
                   "~A, ~D held from ~D: order ~S, reference ~S." label (- n leading) leading perm order)
           (dotimes (k n) (setf (aref position (aref perm k)) k))
           (assert (= n (1- (length lp))))
-          (loop for k below n for column in columns do
+          (loop :for k :below n :for column :in columns :do
             (let ((expected (sort (mapcar (lambda (i) (aref position i)) column) #'<))
                   (actual (coerce (subseq lr (aref lp k) (aref lp (1+ k))) 'list)))
               (assert (equal expected actual) ()
@@ -88,8 +88,8 @@ releases one held neighbour, of least degree and then least index. Returns the o
                         (limit-error (1- entries)))))))))))
 
 (defun seeded-edges (state n percent)
-  (loop for i below n append
-    (loop for j below i when (< (random 100 state) percent) collect (list i j))))
+  (loop :for i :below n :append
+    (loop :for j :below i :when (< (random 100 state) percent) :collect (list i j))))
 
 (defun run-ordering-tests ()
   (setf *ordering-cases* 0 *ordering-entries* 0)
@@ -98,35 +98,35 @@ releases one held neighbour, of least degree and then least index. Returns the o
     (check-ordering "one vertex" 1 '())
     (check-ordering "no edges" 5 '())
     (check-ordering "one edge" 2 '((1 0)))
-    (check-ordering "path" 9 (loop for i from 1 below 9 collect (list i (1- i))))
-    (check-ordering "cycle" 8 (cons '(7 0) (loop for i from 1 below 8 collect (list i (1- i)))))
-    (check-ordering "star, hub first" 9 (loop for i from 1 below 9 collect (list i 0)))
-    (check-ordering "star, hub last" 9 (loop for i below 8 collect (list 8 i)))
-    (check-ordering "complete" 7 (loop for i below 7 append (loop for j below i collect (list i j))))
+    (check-ordering "path" 9 (loop :for i :from 1 :below 9 :collect (list i (1- i))))
+    (check-ordering "cycle" 8 (cons '(7 0) (loop :for i :from 1 :below 8 :collect (list i (1- i)))))
+    (check-ordering "star, hub first" 9 (loop :for i :from 1 :below 9 :collect (list i 0)))
+    (check-ordering "star, hub last" 9 (loop :for i :below 8 :collect (list 8 i)))
+    (check-ordering "complete" 7 (loop :for i :below 7 :append (loop :for j :below i :collect (list i j))))
     (check-ordering "complete less one edge" 7
-                    (remove '(6 0) (loop for i below 7 append (loop for j below i collect (list i j))) :test #'equal))
+                    (remove '(6 0) (loop :for i :below 7 :append (loop :for j :below i :collect (list i j))) :test #'equal))
     (check-ordering "two components" 10
-                    (append (loop for i from 1 below 5 collect (list i 0))
-                            (loop for i from 6 below 10 append (loop for j from 5 below i collect (list i j)))))
+                    (append (loop :for i :from 1 :below 5 :collect (list i 0))
+                            (loop :for i :from 6 :below 10 :append (loop :for j :from 5 :below i :collect (list i j)))))
     (dolist (side '(3 4 5 6))
       (check-ordering (format nil "grid ~D" side) (* side side)
-                      (loop for r below side append
-                        (loop for c below side
-                              append (append (and (< (1+ c) side) (list (list (+ (* r side) c 1) (+ (* r side) c))))
+                      (loop :for r :below side :append
+                        (loop :for c :below side
+                              :append (append (and (< (1+ c) side) (list (list (+ (* r side) c 1) (+ (* r side) c))))
                                              (and (< (1+ r) side) (list (list (+ (* (1+ r) side) c) (+ (* r side) c)))))))))
     ;; Two cliques joined through one vertex, and a clique with a tail: elements that absorb others.
     (check-ordering "bow tie" 9
-                    (append (loop for i below 5 append (loop for j below i collect (list i j)))
-                            (loop for i from 4 below 9 append (loop for j from 4 below i collect (list i j)))))
+                    (append (loop :for i :below 5 :append (loop :for j :below i :collect (list i j)))
+                            (loop :for i :from 4 :below 9 :append (loop :for j :from 4 :below i :collect (list i j)))))
     (check-ordering "clique with a tail" 10
-                    (append (loop for i below 6 append (loop for j below i collect (list i j)))
-                            (loop for i from 6 below 10 collect (list i (1- i)))))
+                    (append (loop :for i :below 6 :append (loop :for j :below i :collect (list i j)))
+                            (loop :for i :from 6 :below 10 :collect (list i (1- i)))))
     ;; A wheel: a hub adjacent to every rim vertex, which leaves the hub in many small elements.
-    (check-ordering "wheel" 41 (append (loop for i from 1 to 40 collect (list i 0))
-                                       (loop for i from 1 to 40 collect (list (1+ (mod i 40)) i))))
+    (check-ordering "wheel" 41 (append (loop :for i :from 1 :to 40 :collect (list i 0))
+                                       (loop :for i :from 1 :to 40 :collect (list (1+ (mod i 40)) i))))
     ;; Two hubs over a path: both are in every element a path vertex leaves.
-    (check-ordering "two hubs" 30 (append (loop for i from 2 below 30 append (list (list i 0) (list i 1)))
-                                          (loop for i from 3 below 30 collect (list i (1- i)))))
+    (check-ordering "two hubs" 30 (append (loop :for i :from 2 :below 30 :append (list (list i 0) (list i 1)))
+                                          (loop :for i :from 3 :below 30 :collect (list i (1- i)))))
     ;; An augmented pattern: columns 0..5, rows 6..9, a hub column and two rows sharing a column.
     (check-ordering "augmented" 10 '((6 0) (7 0) (8 0) (9 0) (6 1) (7 2) (8 3) (9 3) (9 4)))
     ;; Seeded graphs from sparse to nearly complete.

@@ -5,7 +5,7 @@
 (defun probe-idle ()
   (let ((end (+ (get-internal-real-time)
                 (ceiling internal-time-units-per-second 20))))
-    (loop while (< (get-internal-real-time) end)))
+    (loop :while (< (get-internal-real-time) end)))
   0)
 
 (defun probe-batch (thunk count)
@@ -39,9 +39,9 @@
            (flet ((record (slot thunk count)
                     (multiple-value-bind (allocated elapsed) (probe-batch thunk count)
                       (setf (aref bytes slot) allocated (aref ticks slot) elapsed))))
-             (if idle-first
-                 (progn (record 0 #'probe-idle 1) (record 1 factor-thunk 10000))
-                 (progn (record 0 factor-thunk 10000) (record 1 #'probe-idle 1)))
+             (cond
+               (idle-first (record 0 #'probe-idle 1) (record 1 factor-thunk 10000))
+               (t (record 0 factor-thunk 10000) (record 1 #'probe-idle 1)))
              (record 2 factor-thunk 10000)
              (record 3 #'probe-idle 1)
              (record 4 factor-thunk 10000)
@@ -51,9 +51,12 @@
     (format t "RUNTIME-PROBE mode=~A ticks-per-second=~D~%" mode internal-time-units-per-second)
     (dotimes (i 7)
       (format t "slot=~D operation=~A bytes=~D ticks=~D~%"
-              i (case i (0 (if idle-first "idle" "factor"))
-                        (1 (if idle-first "factor" "idle"))
-                        (3 "idle") (5 "allocating-control") (otherwise "factor"))
+              i (case i
+                  ((0) (if idle-first "idle" "factor"))
+                  ((1) (if idle-first "factor" "idle"))
+                  ((3) "idle")
+                  ((5) "allocating-control")
+                  (otherwise "factor"))
               (aref bytes i) (aref ticks i)))
     (assert (plusp (aref bytes 5)) () "Allocating control was not detected.")
     (format t "RUNTIME-PROBE-CONTROL-PASS~%")))

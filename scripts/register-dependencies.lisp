@@ -75,8 +75,8 @@ startup hooks are refused. The ordinary library ASDF system does not call this."
                           (cons library-root "library"))))
       (asdf:initialize-output-translations
        `(:output-translations
-         ,@(loop for (root . namespace) in mappings
-                 collect `(,(namestring root)
+         ,@(loop :for (root . namespace) :in mappings
+                 :collect `(,(namestring root)
                            (,cache-root :implementation ,namespace)))
          (t (,cache-root :implementation "other"))
          :ignore-inherited-configuration))

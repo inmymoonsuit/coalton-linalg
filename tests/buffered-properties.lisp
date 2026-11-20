@@ -79,14 +79,14 @@
     (dotimes (row m)
       (dotimes (column n)
         (when (case family
-                (0 t)
-                (1 (<= (abs (- row column)) 1))
-                (2 (zerop (mod (+ row column) 3)))
-                (3 (and (not (zerop (mod row 4)))
-                        (not (zerop (mod column 5)))
-                        (< (funcall next 5) 3)))
-                (4 (= row column))
-                (5 (< (funcall next 7) 2)))
+                ((0) t)
+                ((1) (<= (abs (- row column)) 1))
+                ((2) (zerop (mod (+ row column) 3)))
+                ((3) (and (not (zerop (mod row 4)))
+                          (not (zerop (mod column 5)))
+                          (< (funcall next 5) 3)))
+                ((4) (= row column))
+                ((5) (< (funcall next 7) 2)))
           (push (list row column
                       (scale-float (/ (coerce (- (funcall next 33) 16) 'double-float)
                                       8d0)
@@ -201,11 +201,11 @@
   "Independent exact products plus separate ordinary-F64 accumulation controls."
   (let* ((seed 20261119)
          (cases (append (buffered-explicit-cases)
-                        (loop for index below 96
-                              collect (buffered-seeded-case index seed)))))
-    (loop for case in cases
-          for ordinal from 0
-          do (buffered-run-exact-case case (+ seed (* 104729 ordinal))))
+                        (loop :for index :below 96
+                              :collect (buffered-seeded-case index seed)))))
+    (loop :for case :in cases
+          :for ordinal :from 0
+          :do (buffered-run-exact-case case (+ seed (* 104729 ordinal))))
     (format t "BUFFERED-EXACT-PROPERTIES-PASS seed=~D cases=~D products=~D~%"
             seed (length cases) (* 4 (length cases))))
   (buffered-rounding-tests)

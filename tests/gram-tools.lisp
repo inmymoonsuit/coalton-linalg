@@ -11,7 +11,7 @@
   "The header and the (row column value) triplets of one written Gram file."
   (with-open-file (in path)
     (let* ((n (read-numeric in)) (nz (read-numeric in)))
-      (list n nz (loop repeat nz collect (list (read-numeric in) (read-numeric in) (read-numeric in)))))))
+      (list n nz (loop :repeat nz :collect (list (read-numeric in) (read-numeric in) (read-numeric in)))))))
 
 (defun expect-gram (output name suffix expected)
   (let ((actual (read-gram-output (fixture-path output name suffix))))

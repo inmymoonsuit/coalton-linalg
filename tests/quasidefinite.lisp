@@ -20,15 +20,15 @@
 underflow term eta N (w + 2) (2 + 2 max|L|). BOUND is |L||D||L^T| and LONGEST the longest row of L."
   (let* ((reach (+ longest 2))
          (relative (/ (* reach *unit-roundoff*) (- 1 (* reach *unit-roundoff*))))
-         (trace (loop for i below n sum (aref bound i i)))
+         (trace (loop :for i :below n :sum (aref bound i i)))
          (steepest (reduce #'max (ldlt:factor-values factor) :key (lambda (v) (abs (rational v))) :initial-value 0)))
     (+ (* relative trace)
        (* (rational least-positive-double-float) (* n reach (+ 2 (* 2 steepest)))))))
 
 (defun exact-frobenius-squared (exact perm product n)
   "The squared Frobenius norm of P K P^T - L D L^T, exactly."
-  (loop for i below n sum
-    (loop for j below n sum (expt (- (aref exact (aref perm i) (aref perm j)) (aref product i j)) 2))))
+  (loop :for i :below n :sum
+    (loop :for j :below n :sum (expt (- (aref exact (aref perm i) (aref perm j)) (aref product i j)) 2))))
 
 (defun csc-from-entries (m n entries)
   "A checked CSC matrix from a list of (row column value); a stored zero stays structural."
@@ -42,10 +42,10 @@ underflow term eta N (w + 2) (2 + 2 max|L|). BOUND is |L||D||L^T| and LONGEST th
 
 (defun seeded-entries (state m n density &key hub)
   "Stored entries of an m-by-n integer matrix; HUB also stores the whole first column."
-  (loop for i below m append
-    (loop for j below n
-          when (or (and hub (= j 0)) (< (random 100 state) density))
-            collect (list i j (let ((v (- (random 7 state) 3))) (if (zerop v) 1 v))))))
+  (loop :for i :below m :append
+    (loop :for j :below n
+          :when (or (and hub (= j 0)) (< (random 100 state) density))
+            :collect (list i j (let ((v (- (random 7 state) 3))) (if (zerop v) 1 v))))))
 
 (defun augmented-exact (m n entries top bottom)
   "[[top I, A^T], [A, -bottom I]] as an exact rational matrix."
@@ -62,7 +62,7 @@ underflow term eta N (w + 2) (2 + 2 max|L|). BOUND is |L||D||L^T| and LONGEST th
   "Every lower entry of a dense symmetric matrix as a lower CSC pattern with its values."
   (let ((n (array-dimension matrix 0)) (pointers (list 0)) (rows '()) (values '()))
     (dotimes (j n)
-      (loop for i from j below n do
+      (loop :for i :from j :below n :do
         (push i rows)
         (push (coerce (aref matrix i j) 'double-float) values))
       (push (length rows) pointers))
@@ -75,7 +75,7 @@ underflow term eta N (w + 2) (2 + 2 max|L|). BOUND is |L||D||L^T| and LONGEST th
         (d (ldlt:factor-diagonal factor))
         (l (build-matrix n (lambda (i j) (if (= i j) 1 0)))))
     (dotimes (k n)
-      (loop for q from (aref lp k) below (aref lp (1+ k)) do
+      (loop :for q :from (aref lp k) :below (aref lp (1+ k)) :do
         (setf (aref l (aref lr q) k) (rational (aref lv q)))))
     (let ((block (build-matrix n (lambda (i j) (if (= i j) (rational (aref d i)) 0)))))
       (values (matrix-product (matrix-product l block) (matrix-transpose l))
@@ -105,7 +105,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
       (dotimes (k n)
         (setf (aref stored k k) t)
         (setf widest (max widest (- (aref lp (1+ k)) (aref lp k))))
-        (loop for q from (aref lp k) below (aref lp (1+ k)) do
+        (loop :for q :from (aref lp k) :below (aref lp (1+ k)) :do
           (setf (aref stored (aref lr q) k) t)
           (incf (aref row-count (aref lr q)))))
       (dotimes (i n) (setf widest (max widest (aref row-count i))))
@@ -113,8 +113,8 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
         ;; Each entry: the exact difference from L D L^T against (products + 2) u |L||D||L^T|,
         ;; the rounding analysis of this kernel, whose products multiply three numbers.
         (dotimes (j n)
-          (loop for i from j below n do
-            (let* ((products (loop for k below j count (and (aref stored i k) (aref stored j k))))
+          (loop :for i :from j :below n :do
+            (let* ((products (loop :for k :below j :count (and (aref stored i k) (aref stored j k))))
                    (residual (abs (- (aref exact (aref perm i) (aref perm j)) (aref product i j))))
                    (allowed (* (+ products 2) *unit-roundoff* (aref bound i j))))
               (assert (<= residual (* allowed (+ 1 (expt 2 -40)))) ()
@@ -157,10 +157,10 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
                   () "~A: solve refused." label)
           (dotimes (k n)
             (let* ((row (aref perm k))
-                   (residual (abs (- (loop for j below n sum (* (aref exact row j) (rational (aref x j))))
+                   (residual (abs (- (loop :for j :below n :sum (* (aref exact row j) (rational (aref x j))))
                                      (rational (aref b row)))))
                    (allowed (* (+ (* 3 widest) 5) *unit-roundoff*
-                               (loop for l below n sum (* (aref bound k l) (abs (rational (aref x (aref perm l)))))))))
+                               (loop :for l :below n :sum (* (aref bound k l) (abs (rational (aref x (aref perm l)))))))))
               (assert (<= residual (* allowed (+ 1 (expt 2 -40)))) ()
                       "~A: solve residual ~E in row ~D exceeds ~E." label (float residual 1d0) row (float allowed 1d0))
               (when (plusp allowed)
@@ -172,7 +172,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
   (let ((position (make-array (+ n m))) (perm (ldlt:factor-permutation factor)))
     (dotimes (k (+ n m)) (setf (aref position (aref perm k)) k))
     (dotimes (i m)
-      (let ((columns (loop for entry in entries when (= i (first entry)) collect (second entry))))
+      (let ((columns (loop :for entry :in entries :when (= i (first entry)) :collect (second entry))))
         (when columns
           (assert (some (lambda (j) (< (aref position j) (aref position (+ n i)))) columns) ()
                   "~A: row ~D is eliminated before every column it touches." label i))))))
@@ -198,7 +198,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
     (let ((stored (make-array (list size size) :initial-element nil))
           (cp (aug:column-pointers plan)) (ri (aug:row-indices plan)))
       (dotimes (j size)
-        (loop for q from (aref cp j) below (aref cp (1+ j)) do
+        (loop :for q :from (aref cp j) :below (aref cp (1+ j)) :do
           (let ((i (aref ri q)))
             (assert (>= i j) () "~A: entry above the diagonal at ~D,~D." label i j)
             (assert (not (aref stored i j)) () "~A: entry ~D,~D stored twice." label i j)
@@ -206,7 +206,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
             (assert (= (rational (aref out q)) (aref exact i j)) ()
                     "~A: plan value ~S at ~D,~D, exact ~S." label (aref out q) i j (aref exact i j)))))
       (dotimes (j size)
-        (loop for i from j below size do
+        (loop :for i :from j :below size :do
           (assert (or (aref stored i j) (zerop (aref exact i j))) ()
                   "~A: nonzero entry ~D,~D is missing from the plan." label i j)))
       (assert (= (count t (make-array (* size size) :displaced-to stored)) (aug:entry-count plan))))
@@ -229,8 +229,8 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
     ;; of its columns is eliminated. Both must reproduce the matrix; only the held order keeps
     ;; the factor small when the trailing block is small.
     (let ((plain-growth 0) (held-growth 0))
-      (loop for (m n) in '((1 1) (1 3) (2 2) (3 2) (2 5) (4 4) (3 6) (6 3) (5 5) (4 7) (7 4) (6 8))
-            do (dolist (hub '(nil t))
+      (loop :for (m n) :in '((1 1) (1 3) (2 2) (3 2) (2 5) (4 4) (3 6) (6 3) (5 5) (4 7) (7 4) (6 8))
+            :do (dolist (hub '(nil t))
                  (let* ((entries (seeded-entries state m n 45 :hub hub))
                         (independent (full-row-rank-p m n entries)))
                    ;; Dependent rows leave pivots of the size of the trailing block after
@@ -270,9 +270,9 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
     ;; Symmetric matrices with a strictly dominant diagonal of mixed signs: no pivot can vanish
     ;; in any order, and the inertia is the signs of the diagonal.
     (let ((dominant 0))
-      (loop for n from 1 to 8 do
+      (loop :for n :from 1 :to 8 :do
         (dotimes (repeat 6)
-          (let* ((signs (loop repeat n collect (if (zerop (random 2 state)) 1 -1)))
+          (let* ((signs (loop :repeat n :collect (if (zerop (random 2 state)) 1 -1)))
                  (off (let ((a (make-array (list n n) :initial-element 0)))
                         (dotimes (i n)
                           (dotimes (j i)
@@ -282,7 +282,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
                         a))
                  (matrix (build-matrix n (lambda (i j)
                                            (if (= i j)
-                                               (* (nth i signs) (1+ (loop for k below n sum (abs (aref off i k)))))
+                                               (* (nth i signs) (1+ (loop :for k :below n :sum (abs (aref off i k)))))
                                                (aref off i j))))))
             (incf dominant)
             (multiple-value-bind (size pointers rows values) (lower-pattern-of matrix)
@@ -376,7 +376,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
 
 (defun run-quasidefinite-lifetime-tests ()
   ;; A zero pivot is the one pivot the signed entry refuses, and it names the column.
-  (loop for (rows column) in '((((0 1) (1 0)) 0) (((1 1) (1 1)) 1) (((1 2) (2 4)) 1)) do
+  (loop :for (rows column) :in '((((0 1) (1 0)) 0) (((1 1) (1 1)) 1) (((1 2) (2 4)) 1)) :do
     (multiple-value-bind (n pointers row-indices values) (lower-pattern-of (rows-matrix rows))
       (let* ((symbolic (ldlt:analyze (ldlt:pattern n pointers row-indices))) (factor (ldlt:symbolic-factor symbolic))
              (out (doubles 9d0 9d0)))
@@ -394,7 +394,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
   (multiple-value-bind (n pointers rows values) (lower-pattern-of (rows-matrix '((1 2 0) (2 -3 1) (0 1 5))))
     (let* ((symbolic (ldlt:analyze (ldlt:pattern n pointers rows))) (factor (ldlt:symbolic-factor symbolic))
            (infinity sb-ext:double-float-positive-infinity))
-      (loop for (attempt expected) in (list (list (lambda () (qd-caller:observe-signed symbolic (doubles 1d0) 0d0)) 3)
+      (loop :for (attempt expected) :in (list (list (lambda () (qd-caller:observe-signed symbolic (doubles 1d0) 0d0)) 3)
                                             (list (lambda () (qd-caller:observe-signed symbolic values infinity)) 4)
                                             (list (lambda () (qd-caller:observe-signed symbolic values (not-a-number))) 4)
                                             (list (lambda () (let ((bad (copy-seq values)))
@@ -406,7 +406,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
                                                                (setf (aref bad 1) 1d200)
                                                                (qd-caller:observe-signed symbolic bad 0d0)))
                                                   2))
-            do (assert (= 0 (qd-caller:observe-signed symbolic values 0d0)))
+            :do (assert (= 0 (qd-caller:observe-signed symbolic values 0d0)))
                (assert (equal '(2 1) (pivot-counts factor)) () "Counts ~S before a refusal." (pivot-counts factor))
                (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:ConditionSuccess)
                            (ldlt:estimate-inverse-norm1! factor)))
@@ -449,7 +449,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
   ;; follows its own column and the hub comes at the end, so the factor has no fill at all. Taking every
   ;; column first, which the held rule must not degenerate into, would join all the rows.
   (let* ((m 12)
-         (entries (loop for i below m append (list (list i 0 1) (list i (1+ i) 2))))
+         (entries (loop :for i :below m :append (list (list i 0 1) (list i (1+ i) 2))))
          (plan (aug:analyze (csc-from-entries m (1+ m) entries)))
          (pattern (ldlt:pattern (aug:dimension plan) (aug:column-pointers plan) (aug:row-indices plan)))
          (held (ldlt:symbolic-factor (ldlt:analyze-quasidefinite pattern (aug:leading-dimension plan)))))
@@ -524,7 +524,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
             "External caller ~A compiled despite required rejection." (car probe)))
   (dolist (name '("MKAUGMENTEDPLAN" "AUGMENTEDPLANSTORAGE"))
     (multiple-value-bind (symbol visibility) (find-symbol name "COALTON-LINALG/SPARSE/AUGMENTED")
-      (assert (and symbol (eq visibility :internal)) ()
+      (assert (and symbol (eq visibility ':internal)) ()
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "QUASIDEFINITE-ENCAPSULATION-PASS rejected=~D public-control=1~%"
           (length *augmented-encapsulation-probes*)))
@@ -565,7 +565,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
       (setf (aref j (first entry) (second entry)) (rational (coerce (third entry) 'double-float))))
     (multiple-value-bind (positive negative zero)
         (exact-inertia (build-matrix m (lambda (a b)
-                                         (- (loop for k below n sum (* (aref j a k) (aref j b k)))
+                                         (- (loop :for k :below n :sum (* (aref j a k) (aref j b k)))
                                             (if (= a b) product 0)))))
       (declare (ignore negative zero))
       (= positive m))))
@@ -580,7 +580,7 @@ FIRST-MARGIN replaces the first guess at the margin, which is otherwise a 2^-44 
          (factor (ldlt:symbolic-factor symbolic))
          (out (make-array (aug:entry-count plan) :element-type 'double-float :initial-element 0d0))
          (margin (or first-margin (* top-scale (scale-float 1d0 -44)))))
-    (loop repeat 4 do
+    (loop :repeat 4 :do
       (let ((top (+ top-scale margin)) (trailing (+ bottom-scale margin)))
         ;; refill! writes minus its last scalar on the trailing diagonal; the proof wants plus.
         (unless (= 0 (qd-caller:raw-error plan (csc:entries matrix) top (- trailing) out))
@@ -643,7 +643,7 @@ FIRST-MARGIN replaces the first guess at the margin, which is otherwise a 2^-44 
         (assert (try "nearly dependent, far below" 2 3 entries 1d0 (scale-float 1d0 -60)))
         (assert (not (try "nearly dependent, above" 2 3 entries 1d0 (scale-float 1d0 -30)))))
       ;; Seeded sources at thresholds from negligible to larger than any singular value.
-      (loop for (m n) in '((1 3) (2 2) (2 4) (3 3) (3 5) (4 4) (4 6) (5 7) (6 6)) do
+      (loop :for (m n) :in '((1 3) (2 2) (2 4) (3 3) (3 5) (4 4) (4 6) (5 7) (6 6)) :do
         (dotimes (repeat 6)
           (let* ((entries (seeded-entries state m n 55 :hub (evenp repeat)))
                  (top (coerce (max 1 (reduce #'max entries :key (lambda (e) (abs (third e))) :initial-value 0))

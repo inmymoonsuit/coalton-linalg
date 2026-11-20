@@ -15,9 +15,9 @@
   "Lower CSC of a dense symmetric matrix, storing the diagonal, every nonzero, and every position KEEP names."
   (let ((n (array-dimension matrix 0)) (pointers (list 0)) (rows '()) (values '()))
     (dotimes (j n)
-      (loop for i from j below n
-            when (or (= i j) (/= 0 (aref matrix i j)) (and keep (funcall keep i j)))
-              do (push i rows)
+      (loop :for i :from j :below n
+            :when (or (= i j) (/= 0 (aref matrix i j)) (and keep (funcall keep i j)))
+              :do (push i rows)
                  (push (coerce (aref matrix i j) 'double-float) values))
       (push (length rows) pointers))
     (values n (apply #'indices (reverse pointers)) (apply #'indices (reverse rows))
@@ -31,7 +31,7 @@
         (stored (make-array (list n n) :initial-element nil)))
     (dotimes (k n)
       (setf (aref g k k) (rational (aref d k)) (aref stored k k) t)
-      (loop for q from (aref lp k) below (aref lp (1+ k)) do
+      (loop :for q :from (aref lp k) :below (aref lp (1+ k)) :do
         (setf (aref g (aref lr q) k) (rational (aref lv q)) (aref stored (aref lr q) k) t)))
     (values g stored)))
 
@@ -71,14 +71,14 @@
           ;; t'_j, the count a proof's bound uses: entries of G in row j left of the diagonal,
           ;; which a caller tallies from the row indices of the stored strict lower triangle.
           (let ((row-counts (make-array n :initial-element 0)))
-            (loop for i across lr do (incf (aref row-counts i)))
+            (loop :for i :across lr :do (incf (aref row-counts i)))
             (dotimes (j n)
-              (assert (= (aref row-counts j) (loop for k below j count (aref stored j k))))))
+              (assert (= (aref row-counts j) (loop :for k :below j :count (aref stored j k))))))
           (dotimes (j n)
-            (loop for i from j below n do
-              (let* ((products (loop for k below j count (and (aref stored i k) (aref stored j k))))
-                     (sum (loop for k to j sum (* (aref g i k) (aref g j k))))
-                     (magnitude (loop for k to j sum (abs (* (aref g i k) (aref g j k)))))
+            (loop :for i :from j :below n :do
+              (let* ((products (loop :for k :below j :count (and (aref stored i k) (aref stored j k))))
+                     (sum (loop :for k :to j :sum (* (aref g i k) (aref g j k))))
+                     (magnitude (loop :for k :to j :sum (abs (* (aref g i k) (aref g j k)))))
                      (residual (abs (- (aref exact (aref perm i) (aref perm j)) sum)))
                      (allowed (* (+ products 2) *unit-roundoff* magnitude)))
                 (when (aref stored i j)
@@ -104,7 +104,7 @@
           (let ((v (- (random 7 state) 3)))
             (setf (aref off i j) v (aref off j i) v)))))
     (build-matrix n (lambda (i j)
-                      (if (= i j) (+ 1 (random 3 state) (loop for k below n sum (abs (aref off i k)))) (aref off i j))))))
+                      (if (= i j) (+ 1 (random 3 state) (loop :for k :below n :sum (abs (aref off i k)))) (aref off i j))))))
 
 (defun run-cholesky-form-tests ()
   (setf *ch-worst-entry* 0 *ch-entries* 0)
@@ -125,13 +125,13 @@
       (check "arrow" (build-matrix 8 (lambda (i j) (cond ((= i j) 9) ((or (= i 0) (= j 0)) 1) (t 0)))))
       ;; A stored zero is part of the structure and takes part as an exact zero.
       (check "stored zero" '((3 0 1) (0 2 0) (1 0 4)) :keep (lambda (i j) (and (= i 1) (= j 0))))
-      (loop for n from 2 to 10 do
+      (loop :for n :from 2 :to 10 :do
         (dolist (density '(20 50 100))
           (dotimes (repeat 3)
             (check (format nil "seeded n=~D density=~D #~D" n density repeat)
                    (seeded-sparse-definite state n density)))))
       ;; Dense positive definite matrices with irrational factors.
-      (loop for n from 2 to 7 do
+      (loop :for n :from 2 :to 7 :do
         (dotimes (repeat 3)
           (check (format nil "gram n=~D #~D" n repeat) (rows-matrix (seeded-spd state n)))))
       ;; A shift taken off the diagonal by the call is the matrix stored with it already taken off.
@@ -146,8 +146,8 @@
     (format t "CHOLESKY-FORM-BOUND-PASS cases=~D entries=~D worst-entry=~,3F of (products + 2) u |G||G^T|~%"
             cases *ch-entries* (float *ch-worst-entry* 1d0)))
   ;; Refusals: a pivot that is not positive, in a named column, and nothing left standing.
-  (loop for (rows shift column) in '((((1 2) (2 1)) 0 1) (((1 1) (1 1)) 0 1) (((4 0) (0 9)) 4 0) (((-1)) 0 0))
-        do (multiple-value-bind (n pointers row-indices values) (symmetric-lower-pattern (rows-matrix rows))
+  (loop :for (rows shift column) :in '((((1 2) (2 1)) 0 1) (((1 1) (1 1)) 0 1) (((4 0) (0 9)) 4 0) (((-1)) 0 0))
+        :do (multiple-value-bind (n pointers row-indices values) (symmetric-lower-pattern (rows-matrix rows))
              (let* ((symbolic (ldlt:analyze (ldlt:pattern n pointers row-indices)))
                     (factor (ldlt:symbolic-factor symbolic)))
                (assert (= 1 (ch-caller:observe-cholesky symbolic values (coerce shift 'double-float))) ()

@@ -2,6 +2,12 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.9.1 — 2026-11-20
+
+Changed: every exported symbol now carries a docstring, including each status value,
+error constructor and exported constant, and the sources follow the Coalton developers'
+published style rules. No call changes meaning and no result changes.
+
 ## 0.9.0 — 2026-11-20
 
 Added: `coalton-linalg/sparse/scaling`. `equilibrate!` gives power-of-two row and column

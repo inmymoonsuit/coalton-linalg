@@ -11,12 +11,12 @@
   (make-array (length contents) :element-type 'double-float :initial-contents contents))
 (defun close-vector-p (actual expected &optional (relative 1d-13))
   (and (= (length actual) (length expected))
-       (loop for a across actual for b across expected
-             always (<= (abs (- a b)) (* relative (max 1d0 (abs b)))))))
+       (loop :for a :across actual :for b :across expected
+             :always (<= (abs (- a b)) (* relative (max 1d0 (abs b)))))))
 (defun same-bits-p (left right)
   (and (= (length left) (length right))
-       (loop for a across left for b across right
-             always (and (= (sb-kernel:double-float-high-bits a) (sb-kernel:double-float-high-bits b))
+       (loop :for a :across left :for b :across right
+             :always (and (= (sb-kernel:double-float-high-bits a) (sb-kernel:double-float-high-bits b))
                          (= (sb-kernel:double-float-low-bits a) (sb-kernel:double-float-low-bits b))))))
 (defun signal-error-p (thunk)
   (handler-case (progn (funcall thunk) nil) (error () t)))
