@@ -18,6 +18,7 @@
   (run-jacobi-tests)
   (run-cholesky-form-tests)
   (run-quasidefinite-tests)
+  (run-ordering-tests)
   (coalton-linalg/tests/typed-errors:run-typed-error-tests)
   (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
   (coalton-linalg/tests/encapsulation:run-status-type-tests)

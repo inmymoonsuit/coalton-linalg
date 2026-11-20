@@ -83,6 +83,29 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 8: faster minimum-degree analysis
+
+**The representation is published; the code was written from its description.** Keeping
+eliminated vertices as sets of neighbours that absorb one another, in place of the
+elimination graph, is the quotient-graph idea of George and Liu, set out in their
+accounts of minimum-degree ordering (1980 and 1989). It was known from descriptions. The
+argument that it reaches the same graph, and that a vertex's two lists fit in the space
+of its initial degree, is written out on [the contract page](spd-ldlt.md#derivation).
+The degree here stays exact; the approximate degree of Amestoy, Davis and Duff (1996),
+which is what makes the well-known ordering codes fast, was deliberately not used, because
+it changes the order.
+
+The row of flags for a vertex of large initial degree was worked out here from a
+measurement: the first version made the hub pattern slower, and [the batch
+record](batch8.md) has the figures. Sorting every column by one pass through the rows is
+the ordinary transpose-twice argument. No ordering code, listing or pseudocode box was
+opened while writing any of it. The tests' reference is a set-based elimination written
+for the tests, run against the earlier code first; the complete check's independent
+verifier is the Python program of Batch 3a.
+
+Whether following a published representation this closely from its description meets
+this repository's clean-room rule is the same open maintainer decision as for Batch 3d.
+
 ## Batch 7: signed pivots and the augmented matrix
 
 **The setting is published; the ordering rule and the growth figure were worked out here.**

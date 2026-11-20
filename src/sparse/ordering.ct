@@ -1,7 +1,6 @@
 (cl:defpackage #:coalton-linalg/sparse/ordering
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:ht #:coalton/hashtable) (#:iter #:coalton/iterator)
                     (#:math #:coalton/math) (#:err #:coalton-linalg/errors))
   (:export #:GraphOrdering #:minimum-degree))
 (cl:in-package #:coalton-linalg/sparse/ordering)
@@ -9,7 +8,7 @@
 
 (coalton-toplevel
   (define-struct GraphOrdering
-    "Private symbolic intermediate. Neighbor columns contain sorted original vertex indices."
+    "Private symbolic intermediate. Column k holds, in no particular order, the original indices of the vertices adjacent to the k-th eliminated vertex when it was eliminated."
     (permutation (arr:LispArray UFix))
     (inverse (arr:LispArray UFix))
     (neighbors (arr:LispArray (arr:LispArray UFix))))
@@ -74,16 +73,54 @@
         (let i = (arr:aref rows q))
         (arr:set! degree i (+ (arr:aref degree i) 1))
         (arr:set! degree j (+ (arr:aref degree j) 1))))
-    (let empty-table = (the (ht:HashTable UFix Unit) (ht:with-capacity 0)))
-    (let graph = (arr:make n empty-table))
+    ;; The elimination graph is never stored. An eliminated vertex leaves an element: the set of
+    ;; vertices it was adjacent to, which are thereby pairwise adjacent. A live vertex is adjacent
+    ;; to its remaining direct neighbours and to every member of every element it belongs to.
+    ;; Each vertex owns one span, as long as its initial degree, of two arrays: its direct
+    ;; neighbours and the elements it belongs to. An update replaces at least one entry of the
+    ;; two lists together by one element, so neither list outgrows the span.
+    (let span = (arr:make (+ n 1) (the UFix 0)))
     (for ((i 0 (+ i 1))) :while (< i n)
-      (when (> (arr:aref degree i) 0)
-        (arr:set! graph i (ht:with-capacity (into (arr:aref degree i))))))
+      (arr:set! span (+ i 1) (+ (arr:aref span i) (arr:aref degree i))))
+    (let total = (arr:aref span n))
+    (let direct = (arr:make total (the UFix 0)))
+    (let direct-count = (arr:make n (the UFix 0)))
     (for ((j 0 (+ j 1))) :while (< j n)
       (for ((q (+ (arr:aref columns j) 1) (+ q 1))) :while (< q (arr:aref columns (+ j 1)))
         (let i = (arr:aref rows q))
-        (ht:set! (arr:aref graph i) j Unit)
-        (ht:set! (arr:aref graph j) i Unit)))
+        (arr:set! direct (+ (arr:aref span i) (arr:aref direct-count i)) j)
+        (arr:set! direct-count i (+ (arr:aref direct-count i) 1))
+        (arr:set! direct (+ (arr:aref span j) (arr:aref direct-count j)) i)
+        (arr:set! direct-count j (+ (arr:aref direct-count j) 1))))
+    ;; A vertex adjacent to more than an eighth of the others is updated often, and reading its
+    ;; long lists each time would cost the square of the size. Such a vertex keeps a row of
+    ;; flags instead: the vertices it is adjacent to now. An update reads the new element
+    ;; against that row, and its degree is the number of flags set. It stays a member of
+    ;; elements like any other vertex. The rows together hold at most eight bytes for each
+    ;; stored neighbour.
+    (let heavy = (arr:make n (the UFix 0)))
+    (let rows-of-flags = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (when (> (* 8 (arr:aref degree i)) n)
+        (cell:write! rows-of-flags (+ (cell:read rows-of-flags) 1))
+        (arr:set! heavy i (cell:read rows-of-flags))))
+    (let flags = (arr:make (* (cell:read rows-of-flags) n) (the U8 0)))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (when (> (arr:aref heavy i) 0)
+        (let row = (* (- (arr:aref heavy i) 1) n))
+        (for ((q (arr:aref span i) (+ q 1))) :while (< q (arr:aref span (+ i 1)))
+          (arr:set! flags (+ row (arr:aref direct q)) 1))))
+    (let joined = (arr:make total (the UFix 0)))
+    (let joined-count = (arr:make n (the UFix 0)))
+    ;; Elements are named by elimination step; an element's members are that step's neighbours.
+    (let absorbed = (arr:make n (the UFix 0)))
+    (let stamp = (arr:make n (the UFix 0)))
+    (let tag = (cell:new (the UFix 0)))
+    (let gathered = (arr:make n (the UFix 0)))
+    ;; Factor entries so far: the diagonal, the columns already emitted, and the edges still
+    ;; live, each of which becomes one entry. The live degrees sum to twice the live edges.
+    (let live-degrees = (cell:new total))
+    (let emitted = (cell:new (the UFix 0)))
     ;; A held vertex's key is its degree plus n + 1, more than any degree, so every free vertex
     ;; precedes every held one and held vertices are still taken, least degree first, when no
     ;; free vertex is left.
@@ -97,7 +134,6 @@
     (let permutation = (arr:make n (the UFix 0)))
     (let inverse = (arr:make n (the UFix 0)))
     (let neighbors = (arr:make n (arr:make 0 (the UFix 0))))
-    (let entries = (cell:new (arr:length rows)))
     (for ((i 0 (+ i 1))) :while (< i n)
       (arr:set! heap i i)
       (arr:set! positions i i))
@@ -114,48 +150,118 @@
         (arr:set! positions last 0)
         (sift-down! heap positions key remaining 0))
       (arr:set! positions v n)
-      (let adj = (arr:make (arr:aref degree v) (the UFix 0)))
-      (let cursor = (cell:new (the UFix 0)))
-      (iter:for-each!
-        (fn (neighbor)
-          (arr:set! adj (cell:read cursor) neighbor)
-          (cell:write! cursor (+ (cell:read cursor) 1))
-          (values))
-        (ht:keys (arr:aref graph v)))
-      (lisp (-> Void) (adj) (cl:sort adj #'cl:<) (cl:values))
+      ;; Gather v's neighbours, each once, and absorb v's elements: the new element contains
+      ;; all their other members.
+      (cell:write! tag (+ (cell:read tag) 1))
+      (let mark = (cell:read tag))
+      (arr:set! stamp v mark)
+      (let count = (cell:new (the UFix 0)))
+      (let base = (arr:aref span v))
+      (if (== (arr:aref heavy v) 0)
+          (progn
+            (for ((q 0 (+ q 1))) :while (< q (arr:aref direct-count v))
+              (let w = (arr:aref direct (+ base q)))
+              (arr:set! stamp w mark)
+              (arr:set! gathered (cell:read count) w)
+              (cell:write! count (+ (cell:read count) 1)))
+            (for ((q 0 (+ q 1))) :while (< q (arr:aref joined-count v))
+              (let e = (arr:aref joined (+ base q)))
+              (arr:set! absorbed e 1)
+              (let members = (arr:aref neighbors e))
+              (for ((p 0 (+ p 1))) :while (< p (arr:length members))
+                (let w = (arr:aref members p))
+                (unless (== (arr:aref stamp w) mark)
+                  (arr:set! stamp w mark)
+                  (arr:set! gathered (cell:read count) w)
+                  (cell:write! count (+ (cell:read count) 1))))))
+          (progn
+            (let row = (* (- (arr:aref heavy v) 1) n))
+            (for ((w 0 (+ w 1))) :while (< w n)
+              (when (== (arr:aref flags (+ row w)) 1)
+                (arr:set! stamp w mark)
+                (arr:set! gathered (cell:read count) w)
+                (cell:write! count (+ (cell:read count) 1))))
+            (for ((q 0 (+ q 1))) :while (< q (arr:aref joined-count v))
+              (arr:set! absorbed (arr:aref joined (+ base q)) 1))))
+      (let d = (cell:read count))
+      (let adj = (arr:make d (the UFix 0)))
+      (for ((a 0 (+ a 1))) :while (< a d)
+        (arr:set! adj a (arr:aref gathered a)))
       (arr:set! permutation k v)
       (arr:set! inverse v k)
       (arr:set! neighbors k adj)
-      (arr:set! graph v empty-table)
-      (for ((a 0 (+ a 1))) :while (< a (arr:length adj))
-        (ht:remove! (arr:aref graph (arr:aref adj a)) v))
-      (for ((a 0 (+ a 1))) :while (< a (arr:length adj))
-        (let i = (arr:aref adj a))
-        (let table = (arr:aref graph i))
-        (for ((b (+ a 1) (+ b 1))) :while (< b (arr:length adj))
-          (let j = (arr:aref adj b))
-          (match (ht:get table j)
-            ((Some _) (values))
-            ((None)
-             (when (>= (cell:read entries) maximum-entries)
-               (throw (err:AnalysisStorageExceeded
-                       (+ (the Integer (into (cell:read entries))) 1)
-                       maximum-entries)))
-             (cell:write! entries (+ (cell:read entries) 1))
-             (ht:set! table j Unit)
-             (ht:set! (arr:aref graph j) i Unit)))))
+      (cell:write! live-degrees (- (cell:read live-degrees) (arr:aref degree v)))
+      (cell:write! emitted (+ (cell:read emitted) d))
       ;; Only one heap key changes before each repair; the other keys remain ordered.
       ;; n stands for no held neighbour seen yet.
       (let chosen = (cell:new n))
-      (for ((a 0 (+ a 1))) :while (< a (arr:length adj))
+      (for ((a 0 (+ a 1))) :while (< a d)
         (let i = (arr:aref adj a))
-        (arr:set! degree i (unwrap-into (ht:count (arr:aref graph i))))
-        (arr:set! key i (+ (arr:aref degree i) (arr:aref hold i)))
+        (let home = (arr:aref span i))
+        (let previous = (arr:aref degree i))
+        (let light = (== (arr:aref heavy i) 0))
+        ;; Its elements: the new one joins. The absorbed ones leave now for a light vertex,
+        ;; whose elements are about to be read, and for a heavy one only when its span is full.
+        (let others = (cell:new (arr:aref joined-count i)))
+        (when (or light (== (cell:read others) (- (arr:aref span (+ i 1)) home)))
+          (cell:write! others 0)
+          (for ((q 0 (+ q 1))) :while (< q (arr:aref joined-count i))
+            (let e = (arr:aref joined (+ home q)))
+            (when (== (arr:aref absorbed e) 0)
+              (arr:set! joined (+ home (cell:read others)) e)
+              (cell:write! others (+ (cell:read others) 1)))))
+        (arr:set! joined (+ home (cell:read others)) k)
+        (arr:set! joined-count i (+ (cell:read others) 1))
+        (if light
+            (progn
+              ;; Direct neighbours inside the new element, and v itself, are dropped: the
+              ;; element stands for them. So a direct neighbour is never a fellow member.
+              (let kept = (cell:new (the UFix 0)))
+              (for ((q 0 (+ q 1))) :while (< q (arr:aref direct-count i))
+                (let w = (arr:aref direct (+ home q)))
+                (unless (== (arr:aref stamp w) mark)
+                  (arr:set! direct (+ home (cell:read kept)) w)
+                  (cell:write! kept (+ (cell:read kept) 1))))
+              (arr:set! direct-count i (cell:read kept))
+              ;; Its degree: the other d - 1 members of the new element, its direct neighbours,
+              ;; and the members of its other elements outside the new one, each counted once.
+              (cell:write! tag (+ (cell:read tag) 1))
+              (let own = (cell:read tag))
+              (let outside = (cell:new (cell:read kept)))
+              (for ((q 0 (+ q 1))) :while (< q (cell:read others))
+                (let members = (arr:aref neighbors (arr:aref joined (+ home q))))
+                (for ((p 0 (+ p 1))) :while (< p (arr:length members))
+                  (let w = (arr:aref members p))
+                  (let seen = (arr:aref stamp w))
+                  (unless (or (== seen mark) (== seen own))
+                    (arr:set! stamp w own)
+                    (cell:write! outside (+ (cell:read outside) 1)))))
+              (arr:set! degree i (+ (- d 1) (cell:read outside))))
+            (progn
+              ;; Its row loses v and gains every member of the new element it did not have.
+              (let row = (* (- (arr:aref heavy i) 1) n))
+              (let reached = (cell:new (- previous 1)))
+              (arr:set! flags (+ row v) 0)
+              ;; Adjacent to every other live vertex already, it has nothing to gain.
+              (when (< (cell:read reached) (- remaining 1))
+                (for ((b 0 (+ b 1))) :while (< b d)
+                  (let w = (arr:aref adj b))
+                  (when (and (/= w i) (== (arr:aref flags (+ row w)) 0))
+                    (arr:set! flags (+ row w) 1)
+                    (cell:write! reached (+ (cell:read reached) 1)))))
+              (arr:set! degree i (cell:read reached))))
+        (let updated = (arr:aref degree i))
+        (cell:write! live-degrees (- (+ (cell:read live-degrees) updated) previous))
+        (arr:set! key i (+ updated (arr:aref hold i)))
         (repair! heap positions key remaining i)
         (when (and (< v leading) (> (arr:aref hold i) 0))
           (when (or (== (cell:read chosen) n)
-                    (< (arr:aref degree i) (arr:aref degree (cell:read chosen))))
+                    (or (< updated (arr:aref degree (cell:read chosen)))
+                        (and (== updated (arr:aref degree (cell:read chosen)))
+                             (< i (cell:read chosen)))))
             (cell:write! chosen i))))
+      (when (> (+ (+ n (cell:read emitted)) (math:quot (cell:read live-degrees) 2)) maximum-entries)
+        (throw (err:AnalysisStorageExceeded (+ (the Integer (into maximum-entries)) 1) maximum-entries)))
       ;; Eliminating a vertex below leading releases one neighbour it held, the one of least
       ;; degree and, among equals, of least index: no two rows are released by the same column.
       (when (< (cell:read chosen) n)

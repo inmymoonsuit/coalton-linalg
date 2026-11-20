@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.7.0"
+  :version "0.7.1"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -45,7 +45,8 @@
                              (:ct-file "orthogonal-callers") (:file "orthogonal")
                              (:ct-file "jacobi-callers") (:file "jacobi")
                              (:ct-file "cholesky-callers") (:file "cholesky-form")
-                             (:ct-file "quasidefinite-callers") (:file "quasidefinite") (:file "suite"))))
+                             (:ct-file "quasidefinite-callers") (:file "quasidefinite") (:file "ordering")
+                             (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))

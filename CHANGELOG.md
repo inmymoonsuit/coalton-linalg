@@ -2,6 +2,13 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.7.1 — 2026-11-20
+
+Changed: sparse analysis is faster and returns exactly what it returned before. On
+thirteen public patterns `analyze` takes between 1.7 and 25 times less; the permutation,
+the factor structure and every refusal are unchanged for every input, and no call changes
+meaning. [Record](docs/batch8.md).
+
 ## 0.7.0 — 2026-11-20
 
 Added:

@@ -36,12 +36,12 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 7
+## Batches 3 through 8
 
-Batches 3 through 7 are completed, Batch 3 in four steps 3a through 3d, with one addition,
-[6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batch 7 and
-what follows it are set by a consuming application's measurements; what follows is listed
-under *Next*. [The batch record](docs/batch3a.md)
+Batches 3 through 8 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+[6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
+8 and what follows them are set by a consuming application's measurements; what follows
+is listed under *Next*. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -120,14 +120,27 @@ factorizations with entrywise bounds, twenty-two planted source controls and an 
 measurement per policy pass. [The batch record](docs/batch7.md) holds the measurements;
 [the contract](docs/quasidefinite.md) the bounds and what growth does and does not say.
 
+### Batch 8: the same elimination order, computed faster
+
+**Completed.** Analysis returns the permutation and structure it returned before, for
+every input, from a representation that does not store the elimination graph: eliminated
+vertices are kept as neighbour sets that absorb one another, a hub keeps a row of flags,
+and columns are sorted by one pass through the rows. On thirteen public patterns
+`analyze` takes between 1.7 and 25 times less, 5.3 times less on the loose grid a
+consumer measured as its cost. An independent set-based elimination agrees on 1,188
+analyses and agreed with the earlier code first; 392 driver output files are unchanged
+byte for byte; twenty-three planted source controls pass. [The batch
+record](docs/batch8.md) holds the measurements and what was tried and removed.
+
 ### Next
 
-In this order, each decided by a measurement and not before it:
+Each decided by a consumer's measurement and not before it:
 
-1. A faster minimum-degree analysis, if a consumer's measurements show analysis on its hot
-   path. The exact analysis takes 10.5 ms on the record's grid system against a 0.36 ms
-   factorization.
-2. Dense fronts in the numeric factor, only if factorization still dominates after that.
+1. The fixed-pattern Gram analysis, which a consumer measured as large as the ordering
+   on long chains.
+2. A further gain in ordering time, which now needs an approximate degree or merged
+   vertices and so a decision about changing the order.
+3. Dense fronts in the numeric factor, only if factorization comes to dominate.
 
 ### Later, when measured need justifies it
 

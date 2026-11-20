@@ -120,19 +120,30 @@ provide the documented refusals; a caller enabling traps changes that behavior.
 Underflow is not diagnosed separately. Bitwise determinism is tested for repeated
 input on the same runtime and policy; cross-platform identity is not promised.
 
-Analysis uses exact minimum degree, not AMD. Its indexed binary heap compares
-(live degree, original index); compact mutable adjacency tables hold the live graph.
-Saved elimination neighbors form the factor structure. Column counts allocate the
-factor arrays; there is no unconditional n-by-n graph and no full-vertex scan per
-pivot. With f = nnz(L) including the diagonal, live analysis storage is O(n + f),
-and retained numeric/symbolic storage is O(nnz(A) + f + n). These are space bounds,
-not total-allocation or speed guarantees. Hash-table capacity and runtime overhead
-matter; garbage collection can keep more than the live data resident.
+Analysis uses exact minimum degree, not an approximate degree. Its indexed binary heap
+compares (live degree, original index). **The elimination graph is not stored.** An
+eliminated vertex leaves its neighbour set, which is also its factor column, as an
+element; a live vertex is adjacent to its remaining direct neighbours and to the members
+of the elements it belongs to, and its degree is counted from those lists with every
+vertex counted once. Elements a vertex belonged to are absorbed by the element its own
+elimination leaves. A vertex adjacent to more than an eighth of the others keeps a row of
+byte flags for its current neighbours instead, because it would otherwise re-read
+hundreds of small elements at every step. [The batch record](batch8.md) has the
+measurements and the reasoning.
 
-Heap work is O((n + f) log n). Pairwise clique formation examines
-O(sum_k degree_k^2) candidate edges, with expected constant-time hash operations.
-Sorting each saved column contributes O(sum_k degree_k log degree_k). Thus dense
-fill can still give cubic analysis time and quadratic storage. Factor work depends
+There is no unconditional n-by-n graph and no full-vertex scan per pivot, except one read
+of a flag row when its vertex is eliminated. With f = nnz(L) including the diagonal, live
+analysis storage is O(n + f): the lists hold two words for each stored off-diagonal entry
+of A in each direction, the flag rows at most eight bytes for each, and the saved columns
+f words. Retained numeric/symbolic storage is O(nnz(A) + f + n). These are space bounds,
+not total-allocation or speed guarantees; garbage collection can keep more than the live
+data resident.
+
+Heap work is O((n + f) log n). An elimination with d neighbours costs, for each of them,
+its remaining direct list and the sizes of its other elements, or d for a flagged vertex.
+That is far below the sum of squared degrees where elements absorb one another, as they
+do in dense fill, and has no better worst-case bound than that sum. The factor's columns
+are sorted by one pass through its rows, in O(n + f). Factor work depends
 on fill; solve is O(n + f). No large sparse indefinite/QR capability is implied.
 
 The default entry budget is `default-analysis-entry-limit = 1048576`. It counts
@@ -173,6 +184,21 @@ Initially connect every structural off-diagonal entry, including zeros. Select
 the live vertex of minimum degree, with smallest original index breaking ties.
 Connect each pair of surviving neighbors and eliminate the vertex. Those
 neighbors form its strict-lower factor column; translate to elimination order.
+
+The analysis does not store that graph, and reaches the same one. Two live vertices are
+adjacent after some eliminations exactly when the original graph joins them by a path
+whose interior vertices are all eliminated: connecting a vertex's neighbours when it goes
+is what makes such a path into an edge, one interior vertex at a time. So a live vertex's
+neighbours are its original live neighbours together with every live vertex it reaches
+through eliminated ones. When v is eliminated its neighbours become pairwise adjacent;
+call that set v's element. If a member w of it is eliminated later, w's neighbours
+include every other member, so w's element contains v's, and v's is no longer needed:
+whatever it joined, w's joins. A live vertex's neighbours are therefore its direct
+neighbours and the members of the elements it belongs to that no later element contains,
+and counting them once each gives its degree exactly. A vertex stops needing a direct
+neighbour in its list once an element holds them both. Each time a vertex joins a new
+element it loses the eliminated vertex from its direct list or an absorbed element from
+its element list, so the two lists together never exceed its initial degree.
 
 For numeric column k, scatter the permuted A column and subtract the shift at k.
 Each previous column j containing row k contributes
