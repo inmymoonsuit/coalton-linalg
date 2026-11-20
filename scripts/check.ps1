@@ -58,6 +58,8 @@ $environment = @{
     COALTON_LINALG_METADATA = (Join-Path $buildRoot 'toolchain-metadata.tsv').Replace('\','/')
     COALTON_LINALG_STRESS_INPUT = (Join-Path $buildRoot 'stress-input').Replace('\','/') + '/'
     COALTON_LINALG_STRESS_OUTPUT = (Join-Path $buildRoot "safety$Safety/stress").Replace('\','/') + '/'
+    COALTON_LINALG_ANALYSIS_INPUT = (Join-Path $buildRoot 'sparse-analysis-input').Replace('\','/') + '/'
+    COALTON_LINALG_ANALYSIS_OUTPUT = (Join-Path $buildRoot "safety$Safety/sparse-analysis").Replace('\','/') + '/'
     COALTON_LINALG_REPEATS = "$Repeats"
     COALTON_LINALG_ALLOCATION_REPEATS = "$AllocationRepeats"
 }
@@ -71,6 +73,11 @@ try {
         $toolchainCheck = Join-Path $libraryRoot 'tools/check-toolchain.py'
         & $Python $toolchainCheck --sbcl-root (Split-Path -Parent $Sbcl) --coalton-root $CoaltonRoot --quicklisp-root $QuicklispRoot
         if ($LASTEXITCODE -ne 0) { throw 'Installed toolchain differs from toolchain.lock.json.' }
+        $analysisVerifier = Join-Path $libraryRoot 'tests/verify_sparse_analysis.py'
+        & $Python $analysisVerifier selftest --json (Join-Path $buildRoot "safety$Safety/analysis-selftest.json")
+        if ($LASTEXITCODE -ne 0) { throw 'Sparse analysis verifier controls failed.' }
+        & $Python $analysisVerifier generate $environment.COALTON_LINALG_ANALYSIS_INPUT --suite all
+        if ($LASTEXITCODE -ne 0) { throw 'Sparse analysis fixture generation failed.' }
         $stress = Join-Path $libraryRoot 'tools/stress.py'
         & $Python $stress generate $environment.COALTON_LINALG_STRESS_INPUT
         if ($LASTEXITCODE -ne 0) { throw 'Stress fixture generation failed.' }
@@ -110,6 +117,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Stress verifier control failed.' }
         & $Python $stress verify $environment.COALTON_LINALG_STRESS_INPUT $environment.COALTON_LINALG_STRESS_OUTPUT --json (Join-Path $environment.COALTON_LINALG_STRESS_OUTPUT 'verification.json')
         if ($LASTEXITCODE -ne 0) { throw 'Stress factor verification failed.' }
+        & $Python $analysisVerifier verify $environment.COALTON_LINALG_ANALYSIS_INPUT $environment.COALTON_LINALG_ANALYSIS_OUTPUT --json (Join-Path $environment.COALTON_LINALG_ANALYSIS_OUTPUT 'verification.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Sparse analysis structural verification failed.' }
         Write-Output "CHECK-PASS safety=$Safety"
     }
 }

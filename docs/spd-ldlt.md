@@ -12,10 +12,15 @@ Duplicates are invalid. Explicit numeric zeros remain structural entries.
 The empty n=0 matrix is supported.
 
 - `analyze(pattern) -> Symbolic` validates the structure and owns its derived
-  data. Malformed structure raises InvalidStructure. Caller pattern arrays are not retained.
+  data, using default-analysis-entry-limit. Malformed structure raises
+  InvalidStructure. Caller pattern arrays are not retained.
 - `analyze-csc(matrix) -> Symbolic` accepts a checked square lower CSC matrix
   with every diagonal present; values remain explicit arguments to factor!.
   A nonsquare matrix raises InvalidDimensions.
+- `analyze-with-limit(pattern, maximum-entries)` and
+  `analyze-csc-with-limit(matrix, maximum-entries)` accept an explicit total nnz(L)
+  budget including the implicit diagonal. Their result and ownership are identical
+  to the default-budget operations.
 - `factor!(symbolic, values, shift) -> FactorStatus` computes
   `P (A - shift I) Pᵀ = L D Lᵀ`. Values follow the original CSC order; a changed
   structure needs a new analysis. Values are not retained.
@@ -103,19 +108,52 @@ provide the documented refusals; a caller enabling traps changes that behavior.
 Underflow is not diagnosed separately. Bitwise determinism is tested for repeated
 input on the same runtime and policy; cross-platform identity is not promised.
 
-Analysis accepts dimensions at most `maximum-analysis-size`, currently 4096.
-Larger dimensions raise `AnalysisLimitExceeded(requested, maximum)` before pattern
-validation, dimension arithmetic or workspace allocation. Comparing the dimension
-first prevents oversized UFix inputs from overflowing n+1 or n*n. This engineering
-cap bounds the adjacency bitmap to 16 MiB; it is not an accuracy threshold, a total
-memory budget or a performance guarantee. Analysis of a nonsquare CSC matrix first
-reports InvalidDimensions. See [typed errors](errors.md).
+Analysis uses exact minimum degree, not AMD. Its indexed binary heap compares
+(live degree, original index); compact mutable adjacency tables hold the live graph.
+Saved elimination neighbors form the factor structure. Column counts allocate the
+factor arrays; there is no unconditional n-by-n graph and no full-vertex scan per
+pivot. With f = nnz(L) including the diagonal, live analysis storage is O(n + f),
+and retained numeric/symbolic storage is O(nnz(A) + f + n). These are space bounds,
+not total-allocation or speed guarantees. Hash-table capacity and runtime overhead
+matter; garbage collection can keep more than the live data resident.
 
-Analysis uses exact minimum degree, not AMD. Its temporary adjacency bitmap takes
-n² bytes, with further ordering/frontier storage. A simple dense-graph worst-case
-time bound is O(n³). Numeric storage follows input and factor structure; factor
-work depends on fill, while solve is O(n + nnz(L)). Factor fill can itself become
-dense. There is no large-scale sparse-analysis claim.
+Heap work is O((n + f) log n). Pairwise clique formation examines
+O(sum_k degree_k^2) candidate edges, with expected constant-time hash operations.
+Sorting each saved column contributes O(sum_k degree_k log degree_k). Thus dense
+fill can still give cubic analysis time and quadratic storage. Factor work depends
+on fill; solve is O(n + f). No large sparse indefinite/QR capability is implied.
+
+The default entry budget is `default-analysis-entry-limit = 1048576`. It counts
+**all factor entries, including n implicit unit diagonals and structural zeros**.
+It is an engineering resource limit, not a rank tolerance, a byte budget or a
+promise that the host can allocate that much storage. Explicit-limit entry points
+accept any UFix budget, including zero for an empty matrix. The effective budget
+is the smaller of that request and maximum-analysis-size, so every resulting
+array length remains representable; refusals report this effective budget. The monotone count is
+input nnz plus distinct fill edges; on success it equals final nnz(L). Before
+inserting an edge that would exceed the budget, analysis throws
+`AnalysisStorageExceeded(required, budget)`. Required is the first observed lower
+bound exceeding the budget, not a prediction of the completed factor's size.
+The required-count payload uses Integer; the effective budget uses UFix.
+No partially analyzed handle is returned.
+
+Validation order is explicit: CSC input must first be square; dimension must then
+be at most `maximum-analysis-size`, the representable dimension bound
+min(array-dimension-limit - 2, floor(most-positive-fixnum / 2)) on supported SBCL.
+The same bound caps the effective entry budget before growth.
+This check precedes n+1 and heap child arithmetic. Exceeding it raises
+`AnalysisLimitExceeded(requested, maximum)`. Next n must fit the entry budget;
+then the complete pattern is validated, then input nnz is checked against the
+budget, before graph allocation. The 4096 engineering dimension cap is removed.
+Normal host allocation failures remain possible inside any entry budget.
+See [typed errors](errors.md).
+
+The elimination tree is recoverable from the smallest strict-lower row of each
+factor column (an empty column is a root). A tree postorder does not replace the
+public minimum-degree permutation. This implementation does not retain a duplicate
+tree or postorder without a traversal consumer; independent structural checks
+verify the tree implied by the factor. A later tree-based factor traversal may
+retain that data with its own measured contract.
 
 ## Derivation
 

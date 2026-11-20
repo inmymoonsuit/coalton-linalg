@@ -1,7 +1,7 @@
 # Public interface reference
 
-This is the symbol index for the four library packages, excluding examples and
-tooling. The linked contracts specify storage, errors, ownership, numerical
+This is the symbol index for the four public library packages, excluding examples,
+tooling and the private sparse/ordering package. The linked contracts specify storage, errors, ownership, numerical
 assumptions, and cost. See the [glossary](../CONTEXT.md) for mathematical terms.
 
 Below, `V` abbreviates `(coalton/lisparray:LispArray F64)`, and `I` abbreviates
@@ -12,7 +12,7 @@ outcomes have distinct named types.
 
 ## coalton-linalg/errors
 
-[Typed error contract](errors.md) · [Source](../src/errors.ct)
+[Typed error contract](errors.md) Â· [Source](../src/errors.ct)
 
 | Export | Type or role |
 | --- | --- |
@@ -20,7 +20,8 @@ outcomes have distinct named types.
 | `InvalidStructure`, `InvalidDimensions`, `InvalidPermutation` | String -> LinalgError |
 | `DuplicateEntry` | UFix * UFix -> LinalgError; row, column |
 | `NonFiniteInput`, `NonFiniteResult` | String -> LinalgError |
-| `AnalysisLimitExceeded` | UFix * UFix -> LinalgError; requested dimension, maximum |
+| `AnalysisLimitExceeded` | UFix * UFix -> LinalgError; requested dimension, representability maximum |
+| `AnalysisStorageExceeded` | Integer * UFix -> LinalgError; required total factor entries, budget |
 
 ## coalton-linalg/numeric
 
@@ -60,12 +61,15 @@ Constructors and transforming operations return owned storage.
 
 | Export | Type or role |
 | --- | --- |
-| `maximum-analysis-size` | UFix; current analysis dimension cap, 4096 |
+| `maximum-analysis-size` | UFix; representability bound for dimensions and effective entry budgets |
+| `default-analysis-entry-limit` | UFix; 1,048,576 total factor entries including the diagonal |
 | `Pattern` | Lower CSC input; constructor UFix * I * I -> Pattern |
 | `Symbolic` | Analysis and reusable workspace; obtain from analyze/analyze-csc |
 | `NumericFactor` | Borrowed factor; obtain from symbolic-factor |
 | `analyze` | Pattern -> Symbolic |
 | `analyze-csc` | coalton-linalg/sparse/csc:Matrix -> Symbolic |
+| `analyze-with-limit` | Pattern * UFix -> Symbolic |
+| `analyze-csc-with-limit` | coalton-linalg/sparse/csc:Matrix * UFix -> Symbolic |
 | `FactorStatus` | Factorization outcome type |
 | `FactorSuccess`, `FactorNonPositive`, `FactorNonFinite`, `FactorBadValues`, `FactorBadShift` | FactorStatus values |
 | `SolveStatus` | Solve outcome type |

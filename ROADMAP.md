@@ -19,8 +19,8 @@ The [Coalton design review](docs/design.md#coalton-interface-review-2026-11-19)
 led to private Symbolic/NumericFactor handles, distinct named factor/solve
 statuses, and explicit factor!/solve! names. External compile probes cover
 construction, destructuring, internal field access, and status-type confusion.
-Cached-result and workspace contracts remain explicit; private handles do not
-enforce read-only array borrowing.
+That snapshot's cached results were removed by the revision below. Private
+handles still do not enforce read-only borrowing of inspection arrays.
 
 The repository now supplies dependency registration, a source acquisition
 manifest, setup instructions, and the maintainer-selected MIT license.
@@ -36,19 +36,57 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batch 3: scalable symbolic factorization
+## Batches 3 through 6
 
-Measure ordering/fill/memory on larger sparse families, replace the unconditional
-n² adjacency bitmap with sparse graph storage, and preserve the deterministic
-ordering contract. Fill can itself become dense; avoid an unconditional linear
-memory promise. Deliver a reviewed first release candidate with measured limits.
+Batch 3a is completed; the remaining steps are planned. [The batch record](docs/batch3a.md)
+reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
+gates](docs/planned-batches.md) incorporate application feedback while preserving
+this library's generic mathematical scope. Each step receives independent review
+and its own measurements. The compact analysis replaces the old 4096-row cap
+with an explicit factor-entry budget and overflow-safe representability limits.
 
-## Batch 4: QR and full-column-rank least squares
+### Batch 3: scalable sparse analysis and repeated operations
 
-Build independently derived Householder transformations, bounded dense QR, and
-full-column-rank rectangular least-squares solving. Verify reconstruction,
-orthogonality, and optimality through independent references. Rank-deficient
-minimum-norm solving and sparse QR require subsequent explicit contracts.
+1. **Completed (3a):** compact graph analysis preserves deterministic exact
+   minimum-degree ordering, uses column counts for allocation, and enforces explicit
+   total-factor-entry budgets. Independent checks cover tree/postorder identities;
+   retaining those data awaits a traversal consumer. The old 4096 cap is removed
+   after measured cases through 65,536. Numeric artifacts are unchanged.
+2. Add allocation-free matvec! and transpose-matvec! with explicit caller-buffer,
+   aliasing, scratch and refusal contracts; share their implementation with the
+   allocating convenience operations.
+3. Add fixed-pattern analysis/refill for A^T A and A A^T, retaining structural
+   zeros, documenting density growth and measuring allocation-free repeated work.
+4. Add a factor-based condition estimate in a named norm. Do not equate a cheap
+   reciprocal 1-norm condition estimate with a singular-value ratio or a rank
+   certificate; the matrix, shift and matching norm must be explicit.
+
+### Batch 4: dense symmetric indefinite LDL^T and inertia
+
+Add stable 1-by-1 and 2-by-2 pivoting, solves and block-correct inertia. Validate
+shifted eigenvalue counts and augmented systems with exact/reference cases.
+Numerical threshold reliability, variable nullity and singular-solve behavior
+have distinct contracts. Dense delivery does not establish large sparse scaling.
+
+### Batch 5: orthogonal decompositions
+
+Build Householder QR and full-rank least squares, then column pivoting and complete
+orthogonal decomposition for rank-deficient minimum-norm least squares. Caller
+rank tolerances remain explicit. This extends and moves the earlier Batch 4 QR
+plan; independent verification is required before Batch 6 exists.
+
+### Batch 6: dense symmetric eigenvalues and SVD
+
+Develop symmetric Jacobi and direct one-sided Jacobi SVD, with bounded work,
+convergence reports and nullspace/subspace bases. Test accuracy under explicit
+assumptions; use these routines as additional cross-checks while retaining
+independent references for rank decisions.
+
+### Later, when measured need justifies it
+
+Lanczos, LSMR, conjugate gradients for SPD systems, sparse QR, sparse indefinite
+factorization, supernodal methods and numeric types beyond F64. Application
+Jacobians and dual-number residual evaluation remain application code.
 
 ## Release work
 

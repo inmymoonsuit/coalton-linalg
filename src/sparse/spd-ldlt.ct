@@ -1,12 +1,13 @@
 (cl:defpackage #:coalton-linalg/sparse/spd-ldlt
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:ord #:coalton-linalg/sparse/ordering)
                     (#:csc #:coalton-linalg/sparse/csc) (#:err #:coalton-linalg/errors))
   (:import-from #:coalton/math #:finite?)
-  (:export #:Pattern #:Symbolic #:NumericFactor #:maximum-analysis-size
+  (:export #:Pattern #:Symbolic #:NumericFactor #:maximum-analysis-size #:default-analysis-entry-limit
            #:FactorStatus #:FactorSuccess #:FactorNonPositive #:FactorNonFinite #:FactorBadValues #:FactorBadShift
            #:SolveStatus #:SolveSuccess #:SolveInvalidFactor #:SolveBadSize #:SolveNonFiniteRhs #:SolveNonFiniteResult
-           #:analyze #:analyze-csc #:factor! #:solve! #:refused-column
+           #:analyze #:analyze-csc #:analyze-with-limit #:analyze-csc-with-limit #:factor! #:solve! #:refused-column
            #:symbolic-factor #:factor-permutation #:factor-columns #:factor-rows
            #:factor-values #:factor-diagonal #:factor-ready?))
 (cl:in-package #:coalton-linalg/sparse/spd-ldlt)
@@ -93,7 +94,12 @@
   (define (factor-ready? f) (== (arr:aref (.state (numeric-storage f)) 0) 1))
 
   (declare maximum-analysis-size UFix)
-  (define maximum-analysis-size 4096)
+  (define maximum-analysis-size
+    (lisp (-> UFix) ()
+      (cl:min (cl:- cl:array-dimension-limit 2) (cl:floor cl:most-positive-fixnum 2))))
+
+  (declare default-analysis-entry-limit UFix)
+  (define default-analysis-entry-limit 1048576)
 
   (declare refuse! (SymbolicStorage * UFix * FactorStatus -> FactorStatus))
   (define (refuse! s column status)
@@ -126,63 +132,43 @@
 
   (declare analyze-csc (csc:Matrix -> Symbolic))
   (define (analyze-csc matrix)
-    "Analyze checked square lower CSC with diagonals; numeric values remain caller-supplied."
+    "Analyze checked square lower CSC using the default total-factor-entry budget."
+    (analyze-csc-with-limit matrix default-analysis-entry-limit))
+
+  (declare analyze-csc-with-limit (csc:Matrix * UFix -> Symbolic))
+  (define (analyze-csc-with-limit matrix maximum-entries)
+    "Analyze square lower CSC with an explicit nnz(L) budget, including the diagonal."
     (unless (== (csc:row-count matrix) (csc:column-count matrix))
       (throw (err:InvalidDimensions "SPD analysis requires a square matrix.")))
-    (analyze (Pattern (csc:row-count matrix)
-                      (csc:column-pointers matrix) (csc:row-indices matrix))))
+    (analyze-with-limit (Pattern (csc:row-count matrix)
+                                (csc:column-pointers matrix) (csc:row-indices matrix))
+                        maximum-entries))
+
   (declare analyze (Pattern -> Symbolic))
   (define (analyze pattern)
-    "Validate and own the pattern. Analysis allocates; factor and solve reuse its storage."
+    "Validate and own the pattern using the default total-factor-entry budget."
+    (analyze-with-limit pattern default-analysis-entry-limit))
+
+  (declare analyze-with-limit (Pattern * UFix -> Symbolic))
+  (define (analyze-with-limit pattern requested-entries)
+    "Analyze with an nnz(L) budget including the diagonal; refuse before exceeding it."
     (let n = (.size pattern))
-    ;; Compare before n+1 or n*n: oversized UFix dimensions must never overflow size arithmetic.
+    ;; Bound n+1 and heap child arithmetic before validation or allocation.
     (when (> n maximum-analysis-size)
       (throw (err:AnalysisLimitExceeded n maximum-analysis-size)))
+    (let maximum-entries = (min requested-entries maximum-analysis-size))
+    (when (> n maximum-entries)
+      (throw (err:AnalysisStorageExceeded (into n) maximum-entries)))
     (validate-pattern pattern)
     (let cp = (.columns pattern))
     (let ri = (.rows pattern))
     (let nnz = (arr:length ri))
-    (let graph = (arr:make (* n n) (the U8 0)))
-    (let alive = (arr:make n (the U8 1)))
-    (let degree = (arr:make n (the UFix 0)))
-    (let perm = (arr:make n (the UFix 0)))
-    (let inverse = (arr:make n (the UFix 0)))
-    (let neighbors = (arr:make n (arr:make 0 (the UFix 0))))
-    (for ((j 0 (+ j 1))) :while (< j n)
-      (for ((q (+ (arr:aref cp j) 1) (+ q 1))) :while (< q (arr:aref cp (+ j 1)))
-        (let i = (arr:aref ri q))
-        (arr:set! graph (+ (* n i) j) 1)
-        (arr:set! graph (+ (* n j) i) 1)
-        (arr:set! degree i (+ 1 (arr:aref degree i)))
-        (arr:set! degree j (+ 1 (arr:aref degree j)))))
-    (for ((k 0 (+ k 1))) :while (< k n)
-      (let chosen = (cell:new n))
-      (let best = (cell:new (+ n 1)))
-      (for ((i 0 (+ i 1))) :while (< i n)
-        (when (and (== (arr:aref alive i) 1) (< (arr:aref degree i) (cell:read best)))
-          (cell:write! chosen i)
-          (cell:write! best (arr:aref degree i))))
-      (let v = (cell:read chosen))
-      (let adj = (arr:make (cell:read best) (the UFix 0)))
-      (let count = (cell:new (the UFix 0)))
-      (for ((i 0 (+ i 1))) :while (< i n)
-        (when (and (== (arr:aref alive i) 1) (== (arr:aref graph (+ (* n v) i)) 1))
-          (arr:set! adj (cell:read count) i)
-          (cell:write! count (+ 1 (cell:read count)))))
-      (arr:set! perm k v)
-      (arr:set! inverse v k)
-      (arr:set! neighbors k adj)
-      (arr:set! alive v 0)
-      (for ((a 0 (+ a 1))) :while (< a (arr:length adj))
-        (let i = (arr:aref adj a))
-        (arr:set! degree i (- (arr:aref degree i) 1))
-        (for ((b (+ a 1) (+ b 1))) :while (< b (arr:length adj))
-          (let j = (arr:aref adj b))
-          (when (== (arr:aref graph (+ (* n i) j)) 0)
-            (arr:set! graph (+ (* n i) j) 1)
-            (arr:set! graph (+ (* n j) i) 1)
-            (arr:set! degree i (+ (arr:aref degree i) 1))
-            (arr:set! degree j (+ (arr:aref degree j) 1))))))
+    (when (> nnz maximum-entries)
+      (throw (err:AnalysisStorageExceeded (into nnz) maximum-entries)))
+    (let ordering = (ord:minimum-degree n cp ri maximum-entries))
+    (let perm = (.permutation ordering))
+    (let inverse = (.inverse ordering))
+    (let neighbors = (.neighbors ordering))
     (let lp = (arr:make (+ n 1) (the UFix 0)))
     (for ((k 0 (+ k 1))) :while (< k n)
       (let adj = (arr:aref neighbors k))

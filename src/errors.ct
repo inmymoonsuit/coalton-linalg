@@ -1,7 +1,7 @@
 (cl:defpackage #:coalton-linalg/errors
   (:use #:coalton #:coalton-prelude)
   (:export #:LinalgError #:InvalidStructure #:InvalidDimensions #:InvalidPermutation
-           #:DuplicateEntry #:NonFiniteInput #:NonFiniteResult #:AnalysisLimitExceeded))
+           #:DuplicateEntry #:NonFiniteInput #:NonFiniteResult #:AnalysisLimitExceeded #:AnalysisStorageExceeded))
 (cl:in-package #:coalton-linalg/errors)
 
 (coalton-toplevel
@@ -15,4 +15,6 @@
     (NonFiniteInput String)
     (NonFiniteResult String)
     (AnalysisLimitExceeded UFix UFix)
-    "Requested analysis dimension, then the supported maximum dimension."))
+    "Requested analysis dimension, then the supported maximum dimension."
+    (AnalysisStorageExceeded Integer UFix)
+    "Required factor entries including the diagonal, then the effective entry budget."))

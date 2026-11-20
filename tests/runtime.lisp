@@ -30,44 +30,139 @@
   (format t "HANDLE-IDENTITY-PASS paths=3 workspaces=2~%"))
 
 (defun resource-limit-tests ()
-  "Exercise the real gate, its precedence and exact supported boundary without giant inputs."
-  (assert (= 4096 (coalton:coalton ldlt:maximum-analysis-size)))
-  (flet ((pattern-error (n pointers rows)
-           (uiop:symbol-call :coalton-linalg/tests/typed-status :analysis-pattern-error
-                             n pointers rows)))
-    (assert (= 7 (pattern-error 4097 (indices) (indices))))
-    (assert (= 7 (pattern-error most-positive-fixnum (indices) (indices))))
-    (assert (= 1 (pattern-error 1 (indices 0) (indices))))
-    (assert (= 0 (pattern-error 0 (indices 0) (indices))))
-    (let* ((n 4097)
-           (pointers (make-array (1+ n) :element-type '(unsigned-byte 62)))
-           (rows (make-array n :element-type '(unsigned-byte 62))))
-      (dotimes (i (1+ n)) (setf (aref pointers i) i))
-      (dotimes (i n) (setf (aref rows i) i))
-      (assert (= 7 (pattern-error n pointers rows)))
-      (let ((matrix (coalton-linalg/sparse/csc:from-csc
-                     n n pointers rows (make-array n :element-type 'double-float :initial-element 1d0))))
-        (assert (= 7 (uiop:symbol-call :coalton-linalg/tests/typed-status
-                                       :analysis-csc-error matrix))))))
-  (let ((rectangle (coalton-linalg/sparse/csc:from-csc
-                     1 2 (indices 0 0 0) (indices) (doubles))))
-    (assert (= 2 (uiop:symbol-call :coalton-linalg/tests/typed-status
-                                   :analysis-csc-error rectangle))))
-  (let* ((n 4096)
-         (pointers (make-array (1+ n) :element-type '(unsigned-byte 62)))
-         (rows (make-array n :element-type '(unsigned-byte 62))))
-    (dotimes (i (1+ n)) (setf (aref pointers i) i))
-    (dotimes (i n) (setf (aref rows i) i))
-    (let* ((symbolic (ldlt:analyze (ldlt:Pattern n pointers rows)))
-           (factor (ldlt:symbolic-factor symbolic)))
-      (assert (= -1 (ldlt:refused-column symbolic)))
-      (assert (not (ldlt:factor-ready? factor)))
-      (assert (equalp rows (ldlt:factor-permutation factor)))
-      (assert (= 0 (length (ldlt:factor-rows factor))))
-      (assert (= (1+ n) (length (ldlt:factor-columns factor))))
-      (assert (every #'zerop (ldlt:factor-columns factor)))))
-  (format t "ANALYSIS-LIMIT-PASS maximum=4096 oversized=4097,max-ufix~%"))
+  "Exercise real representability and entry-budget errors without constructing giant inputs."
+  (let ((maximum (coalton:coalton ldlt:maximum-analysis-size))
+        (default (coalton:coalton ldlt:default-analysis-entry-limit)))
+    (assert (> maximum 8192))
+    (assert (< (1+ maximum) array-dimension-limit))
+    (assert (<= (1+ (* 2 maximum)) most-positive-fixnum))
+    (assert (= default 1048576))
+    (labels ((pattern-error (n pointers rows)
+               (uiop:symbol-call :coalton-linalg/tests/typed-status :analysis-pattern-error
+                                 n pointers rows))
+             (limit-error (n pointers rows limit requested)
+               (uiop:symbol-call :coalton-linalg/tests/typed-status :analysis-pattern-limit-error
+                                 n pointers rows limit requested))
+             (csc-error (matrix)
+               (uiop:symbol-call :coalton-linalg/tests/typed-status :analysis-csc-error matrix))
+             (csc-limit-error (matrix limit requested)
+               (uiop:symbol-call :coalton-linalg/tests/typed-status :analysis-csc-limit-error
+                                 matrix limit requested))
+             (diagonal-pattern (n)
+               (let ((pointers (make-array (1+ n) :element-type '(unsigned-byte 62)))
+                     (rows (make-array n :element-type '(unsigned-byte 62))))
+                 (dotimes (i (1+ n)) (setf (aref pointers i) i))
+                 (dotimes (i n) (setf (aref rows i) i))
+                 (values (ldlt:Pattern n pointers rows) pointers rows)))
+             (check-diagonal (symbolic n)
+               (let ((factor (ldlt:symbolic-factor symbolic)))
+                 (assert (= -1 (ldlt:refused-column symbolic)))
+                 (assert (not (ldlt:factor-ready? factor)))
+                 (assert (= n (length (ldlt:factor-permutation factor))))
+                 (dotimes (i n) (assert (= i (aref (ldlt:factor-permutation factor) i))))
+                 (assert (= 0 (length (ldlt:factor-rows factor))))
+                 (assert (= (1+ n) (length (ldlt:factor-columns factor))))
+                 (assert (every #'zerop (ldlt:factor-columns factor)))))
+             (check-cycle (symbolic)
+               (let ((factor (ldlt:symbolic-factor symbolic)))
+                 ;; Minimum degree chooses 0 first. Its live neighbors 1 and 3
+                 ;; create exactly one fill edge; all later ties choose by index.
+                 (assert (equalp #(0 1 2 3) (ldlt:factor-permutation factor)))
+                 (assert (equalp #(0 2 4 5 5) (ldlt:factor-columns factor)))
+                 (assert (equalp #(1 3 2 3 3) (ldlt:factor-rows factor)))
+                 (assert (= 9 (+ 4 (length (ldlt:factor-rows factor))))))))
+      ;; Both oversized dimensions are refused before inspecting absent arrays,
+      ;; and before the entry budget, including at safety 0.
+      (dolist (n (list (1+ maximum) most-positive-fixnum))
+        (assert (= 7 (pattern-error n (indices) (indices))))
+        (assert (= 7 (limit-error n (indices) (indices) 0 n)))
+        (assert (= 7 (limit-error n (indices) (indices) most-positive-fixnum n))))
+      ;; The representable boundary itself reaches the budget/validation gates.
+      (assert (= 8 (limit-error maximum (indices) (indices) 0 maximum)))
+      (assert (= 1 (limit-error maximum (indices) (indices) most-positive-fixnum maximum)))
+      ;; Implicit diagonals count before validation or dimension-sized workspace.
+      (assert (= 8 (pattern-error (1+ default) (indices) (indices))))
+      (assert (= 1 (pattern-error default (indices) (indices))))
+      (assert (= 8 (limit-error 4 (indices) (indices) 3 4)))
+      (assert (= 1 (limit-error 4 (indices) (indices) 4 4)))
+      (assert (= 1 (pattern-error 1 (indices 0) (indices))))
+      (assert (= 0 (pattern-error 0 (indices 0) (indices))))
+      (assert (= 0 (limit-error 0 (indices 0) (indices) 0 0)))
+      (assert (= 1 (limit-error 0 (indices) (indices) 0 0)))
+      (check-diagonal (ldlt:analyze-with-limit (ldlt:Pattern 0 (indices 0) (indices)) 0) 0)
 
+      (multiple-value-bind (pattern pointers rows) (diagonal-pattern 4)
+        (assert (= 8 (limit-error 4 pointers rows 3 4)))
+        (assert (= 0 (limit-error 4 pointers rows 4 4)))
+        (assert (= 0 (limit-error 4 pointers rows most-positive-fixnum 4)))
+        (check-diagonal (ldlt:analyze-with-limit pattern 4) 4)
+        (check-diagonal (ldlt:analyze-with-limit pattern most-positive-fixnum) 4))
+
+      (let* ((pointers (indices 0 3 5 7 8))
+             (rows (indices 0 1 3 1 2 2 3 3))
+             (pattern (ldlt:Pattern 4 pointers rows))
+             (zero-matrix (coalton-linalg/sparse/csc:from-csc
+                           4 4 pointers rows (make-array 8 :element-type 'double-float :initial-element 0d0))))
+        ;; Structure validation precedes the full input-entry budget check.
+        (assert (= 1 (limit-error 4 pointers (indices 0 1 3 1 2 2 3 4) 7 8)))
+        ;; Valid input has 8 total entries. First new fill requires the ninth.
+        (assert (= 8 (limit-error 4 pointers rows 7 8)))
+        (assert (= 8 (limit-error 4 pointers rows 8 9)))
+        (assert (= 0 (limit-error 4 pointers rows 9 9)))
+        (assert (= 0 (limit-error 4 pointers rows most-positive-fixnum 9)))
+        (assert (= 8 (csc-limit-error zero-matrix 7 8)))
+        (assert (= 8 (csc-limit-error zero-matrix 8 9)))
+        (assert (= 0 (csc-limit-error zero-matrix 9 9)))
+        (check-cycle (ldlt:analyze pattern))
+        (check-cycle (ldlt:analyze-with-limit pattern default))
+        (check-cycle (ldlt:analyze-with-limit pattern 9))
+        (check-cycle (ldlt:analyze-with-limit pattern most-positive-fixnum))
+        (check-cycle (ldlt:analyze-csc zero-matrix))
+        (check-cycle (ldlt:analyze-csc-with-limit zero-matrix 9))
+        (assert (equalp pointers #(0 3 5 7 8)))
+        (assert (equalp rows #(0 1 3 1 2 2 3 3)))
+        (assert (every #'zerop (coalton-linalg/sparse/csc:entries zero-matrix))))
+
+      ;; Complete columns add no fill: existing edges must not consume budget again.
+      (let ((pointers (indices 0 4 7 9 10))
+            (rows (indices 0 1 2 3 1 2 3 2 3 3)))
+        (assert (= 8 (limit-error 4 pointers rows 9 10)))
+        (assert (= 0 (limit-error 4 pointers rows 10 10)))
+        (let ((factor (ldlt:symbolic-factor
+                       (ldlt:analyze-with-limit (ldlt:Pattern 4 pointers rows) 10))))
+          (assert (equalp #(0 1 2 3) (ldlt:factor-permutation factor)))
+          (assert (equalp #(0 3 5 6 6) (ldlt:factor-columns factor)))
+          (assert (equalp #(1 2 3 2 3 3) (ldlt:factor-rows factor)))))
+      (let ((rectangle (coalton-linalg/sparse/csc:from-csc
+                         1 2 (indices 0 0 0) (indices) (doubles)))
+            (missing-diagonal (coalton-linalg/sparse/csc:from-csc
+                               1 1 (indices 0 0) (indices) (doubles)))
+            (empty (coalton-linalg/sparse/csc:from-csc
+                    0 0 (indices 0) (indices) (doubles))))
+        (assert (= 2 (csc-error rectangle)))
+        (assert (= 2 (csc-limit-error rectangle 0 1)))
+        (assert (= 1 (csc-error missing-diagonal)))
+        (assert (= 8 (csc-limit-error missing-diagonal 0 1)))
+        (assert (= 1 (csc-limit-error missing-diagonal 1 1)))
+        (assert (= 0 (csc-limit-error empty 0 0)))
+        (check-diagonal (ldlt:analyze-csc-with-limit empty 0) 0))
+
+      ;; An Integer diagnostic can represent maxUFix+1. This directly tests the
+      ;; exception's payload type, not a fabricated giant-analysis precondition.
+      (assert (uiop:symbol-call :coalton-linalg/tests/typed-status :storage-payload-roundtrip
+                                (1+ most-positive-fixnum) most-positive-fixnum))
+
+      ;; This actual sparse case exceeds the old 4096 cap. No test attempts
+      ;; analysis at the new representability maximum.
+      (multiple-value-bind (pattern pointers rows) (diagonal-pattern 8192)
+        (check-diagonal (ldlt:analyze pattern) 8192)
+        (check-diagonal (ldlt:analyze-with-limit pattern 8192) 8192)
+        (let ((matrix (coalton-linalg/sparse/csc:from-csc
+                       8192 8192 pointers rows
+                       (make-array 8192 :element-type 'double-float :initial-element 1d0))))
+          (check-diagonal (ldlt:analyze-csc-with-limit matrix 8192) 8192))))
+    (format t "ANALYSIS-LIMIT-PASS maximum=~D default-nnzL=~D accepted-diagonal=8192 cycle-nnzL=9~%"
+            maximum default)))
 (defun run-runtime-tests ()
   (let* ((s (ldlt:analyze (ldlt:Pattern 2 (indices 0 2 3) (indices 0 1 1))))
          (a (doubles 4d0 2d0 3d0)))

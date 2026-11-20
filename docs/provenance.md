@@ -64,3 +64,13 @@ entries directly and proves rank using rational arithmetic on the F64 inputs.
 The external review's floating Gram candidates were inspected but not imported:
 all three were full rank as serialized. No external generator or factorization
 code was copied into the library or verifier.
+
+## Batch 3a: compact symbolic analysis
+
+The graph-elimination definition is unchanged. The implementation uses Coalton's
+mutable hash tables for adjacency and an independently written indexed binary
+heap keyed by degree and original index. Standard-library container contracts
+were read; no numerical-library implementation or algorithm listing was used.
+The entry-budget identity is n plus original edges plus distinct fill edges.
+Independent set elimination, analytic graph families and planted artifact defects
+check the resulting structure. This remains an independently derived implementation.

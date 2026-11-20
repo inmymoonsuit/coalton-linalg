@@ -1,0 +1,12 @@
+(load (merge-pathnames "bootstrap.lisp" *load-truename*))
+(load (merge-pathnames "tools/sparse-analysis-tests.lisp" *library-root*))
+(sb-ext:gc :full t)
+(format t "MEASUREMENT-BASELINE~%")
+(finish-output)
+(read-line)
+(coalton-linalg/sparse-analysis-tests:run-case
+  (uiop:getenv "COALTON_LINALG_ANALYSIS_CASE")
+  (uiop:getenv "COALTON_LINALG_ANALYSIS_OUTPUT"))
+(format t "MEASUREMENT-DONE~%")
+(finish-output)
+(read-line)

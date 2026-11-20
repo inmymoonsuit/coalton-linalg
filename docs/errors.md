@@ -15,12 +15,13 @@ codes; callers should match constructors, not text.
 | `DuplicateEntry(row,column)` | A repeated coordinate in canonical CSC or COO with RejectDuplicates; zero-based caller coordinates. |
 | `NonFiniteInput(message)` | Nonfinite entries passed to matrix construction, products or norms. |
 | `NonFiniteResult(message)` | Nonfinite primitive result or duplicate accumulation. |
-| `AnalysisLimitExceeded(requested,maximum)` | Analysis dimension exceeds its documented cap. |
+| `AnalysisLimitExceeded(requested,maximum)` | Analysis dimension exceeds its representability bound; both payloads UFix. |
+| `AnalysisStorageExceeded(required,budget)` | Analysis total factor entries, including the diagonal, exceed the entry budget. Required is an Integer lower bound; budget is the effective UFix budget (capped for representability). |
 
 SPD Pattern validation reports InvalidStructure for repeated rows as well as other
 structural violations. General CSC/COO constructors specifically identify repeated
 coordinates as DuplicateEntry. Where several checks fail, callers should not assume
-an ordering except the documented early SPD dimension cap. No partially constructed
+an ordering except the documented SPD dimension/entry-budget validation order. No partially constructed
 matrix or analysis is returned on an exception.
 
 Factorization and solve have their own FactorStatus and SolveStatus values. Their

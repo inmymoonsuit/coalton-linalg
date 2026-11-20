@@ -3,7 +3,8 @@
   (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
                     (#:arr #:coalton/lisparray) (#:err #:coalton-linalg/errors)
                     (#:csc #:coalton-linalg/sparse/csc))
-  (:export #:exercise-status-branches #:analysis-pattern-error #:analysis-csc-error))
+  (:export #:exercise-status-branches #:analysis-pattern-error #:analysis-csc-error
+           #:analysis-pattern-limit-error #:analysis-csc-limit-error #:storage-payload-roundtrip))
 (cl:in-package #:coalton-linalg/tests/typed-status)
 
 (coalton-toplevel
@@ -70,14 +71,16 @@
       (lisp (-> Void) () (cl:error "Typed solve refusal modified the caller output.")))
     results)
 
-  (declare classify-analysis ((Void -> ldlt:Symbolic) * UFix -> UFix))
-  (define (classify-analysis operation requested)
-    "Observe actual public errors and validate both resource-limit payload fields."
+  (declare classify-analysis ((Void -> ldlt:Symbolic) * UFix * Integer * UFix -> UFix))
+  (define (classify-analysis operation requested expected-storage limit)
+    "Observe real public errors and validate the complete resource diagnostic payload."
     (catch (progn (operation) 0)
       ((the err:LinalgError problem)
        (match problem
          ((err:AnalysisLimitExceeded size maximum)
-          (if (and (== size requested) (== maximum 4096)) 7 77))
+          (if (and (== size requested) (== maximum ldlt:maximum-analysis-size)) 7 77))
+         ((err:AnalysisStorageExceeded minimum budget)
+          (if (and (== minimum expected-storage) (== budget limit)) 8 88))
          ((err:InvalidStructure _) 1)
          ((err:InvalidDimensions _) 2)
          (_ 99)))
@@ -85,8 +88,30 @@
 
   (declare analysis-pattern-error (UFix * arr:LispArray UFix * arr:LispArray UFix -> UFix))
   (define (analysis-pattern-error n pointers rows)
-    (classify-analysis (fn () (ldlt:analyze (ldlt:Pattern n pointers rows))) n))
+    (classify-analysis (fn () (ldlt:analyze (ldlt:Pattern n pointers rows)))
+                       n (into n) ldlt:default-analysis-entry-limit))
 
   (declare analysis-csc-error (csc:Matrix -> UFix))
   (define (analysis-csc-error matrix)
-    (classify-analysis (fn () (ldlt:analyze-csc matrix)) (csc:row-count matrix))))
+    (classify-analysis (fn () (ldlt:analyze-csc matrix))
+                       (csc:row-count matrix) (into (csc:row-count matrix))
+                       ldlt:default-analysis-entry-limit))
+
+  (declare analysis-pattern-limit-error
+    (UFix * arr:LispArray UFix * arr:LispArray UFix * UFix * Integer -> UFix))
+  (define (analysis-pattern-limit-error n pointers rows limit expected-storage)
+    (classify-analysis (fn () (ldlt:analyze-with-limit (ldlt:Pattern n pointers rows) limit))
+                       n expected-storage limit))
+
+  (declare analysis-csc-limit-error (csc:Matrix * UFix * Integer -> UFix))
+  (define (analysis-csc-limit-error matrix limit expected-storage)
+    (classify-analysis (fn () (ldlt:analyze-csc-with-limit matrix limit))
+                       (csc:row-count matrix) expected-storage limit))
+
+  (declare storage-payload-roundtrip (Integer * UFix -> Boolean))
+  (define (storage-payload-roundtrip requested limit)
+    "Test the exception payload type itself; this does not simulate a large public analysis."
+    (catch (throw (err:AnalysisStorageExceeded requested limit))
+      ((err:AnalysisStorageExceeded minimum budget)
+       (and (== minimum requested) (== budget limit)))
+      (_ False))))

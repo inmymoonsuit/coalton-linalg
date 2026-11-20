@@ -13,7 +13,7 @@
   :components ((:module "src" :serial t
                 :components ((:ct-file "errors") (:ct-file "numeric")
                              (:module "sparse" :serial t
-                              :components ((:ct-file "csc") (:ct-file "spd-ldlt")))))))
+                              :components ((:ct-file "csc") (:ct-file "ordering") (:ct-file "spd-ldlt")))))))
 
 (asdf:defsystem "coalton-linalg/examples"
   :description "Runnable public-interface examples."

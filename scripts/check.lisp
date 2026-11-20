@@ -7,12 +7,16 @@
 (asdf:load-system "coalton-linalg/tests" :force t)
 (asdf:load-system "coalton-linalg/tools-tests")
 (load (merge-pathnames "tools/toolchain-metadata.lisp" *library-root*))
+(load (merge-pathnames "tools/sparse-analysis-tests.lisp" *library-root*))
 (load (merge-pathnames "allocation-isolation.lisp" *load-truename*))
 (check-isolation-restoration)
 (call-with-allocation-isolation
   (lambda ()
     (asdf:test-system "coalton-linalg")
     (asdf:test-system "coalton-linalg/tools-tests")
+    (uiop:symbol-call :coalton-linalg/sparse-analysis-tests :run-directory
+      (uiop:getenv "COALTON_LINALG_ANALYSIS_INPUT")
+      (uiop:getenv "COALTON_LINALG_ANALYSIS_OUTPUT"))
     (uiop:symbol-call :coalton-linalg/tools :run-fixtures
       (asdf:system-relative-pathname "coalton-linalg" "tests/fixtures/")
       (uiop:getenv "COALTON_LINALG_OUTPUT") :repeats 1 :allocation-repeats 100)
