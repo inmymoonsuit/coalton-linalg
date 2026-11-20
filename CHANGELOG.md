@@ -2,6 +2,14 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.6.3 — 2026-11-20
+
+Added: `factor-cholesky!` and `cholesky-ready?` in `coalton-linalg/sparse/spd-ldlt`, a
+Cholesky-form numeric entry over the existing analysis, for proofs of positive
+definiteness that are stated for Cholesky's arithmetic. It overwrites the Symbolic's one
+factor and no solve accepts its result. [Contract](docs/cholesky-form.md) ·
+[record](docs/batch6a.md). No existing call changes meaning.
+
 ## 0.6.2 — 2026-11-20
 
 Fixed: **`eigen!` could return wrong eigenvalues as `JacobiSuccess`** for a matrix whose two

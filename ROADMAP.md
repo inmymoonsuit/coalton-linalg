@@ -38,7 +38,9 @@ artifacts. The exact-singular regression demonstrates the computed-pivot contrac
 
 ## Batches 3 through 6
 
-Batches 3 through 6 are completed, Batch 3 in four steps 3a through 3d. Nothing further is planned in detail. [The batch record](docs/batch3a.md)
+Batches 3 through 6 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+[6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. What follows
+them is set by a consuming application's measurements and is listed under *Next*. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -102,6 +104,18 @@ controls and two allocation measurements per policy pass. [The batch
 record](docs/batch6.md) holds the measurements, including how slow these routines are
 against a tridiagonalizing reference; [the contract](docs/jacobi.md) the derivation and
 what is promised against what is only observed.
+
+### Next
+
+In this order, each decided by a measurement and not before it:
+
+1. A sparse route for a wide matrix with a dense column, where A Aᵀ is itself dense: the
+   augmented matrix `[[I, Aᵀ], [A, −δ I]]` factored with pivots of either sign, with a
+   measured growth figure, because no static elimination order makes that factorization
+   accurate on every pattern.
+2. A faster minimum-degree analysis, if a consumer's measurements show analysis on its hot
+   path after item 1.
+3. Dense fronts in the numeric factor, only if factorization still dominates after that.
 
 ### Later, when measured need justifies it
 

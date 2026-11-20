@@ -55,6 +55,10 @@ SolveStatus is a distinct type with these outcomes:
 | SolveNonFiniteRhs | Nonfinite right-hand side |
 | SolveNonFiniteResult | Nonfinite computed solution |
 
+[A Cholesky-form entry](cholesky-form.md), `factor-cholesky!`, computes G with G Gᵀ in
+place of L D Lᵀ over the same analysis, for proofs of positive definiteness; it overwrites
+the factor and no solve accepts it.
+
 After a successful factor, [the condition estimate](condition.md) gives a lower estimate of
 the 1-norm of the inverse of the shifted matrix by solves with the same factor.
 

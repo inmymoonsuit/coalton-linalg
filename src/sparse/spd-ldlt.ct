@@ -4,13 +4,13 @@
                     (#:ord #:coalton-linalg/sparse/ordering)
                     (#:limits #:coalton-linalg/sparse/limits)
                     (#:csc #:coalton-linalg/sparse/csc) (#:err #:coalton-linalg/errors))
-  (:import-from #:coalton/math #:finite?)
+  (:import-from #:coalton/math #:finite? #:sqrt)
   (:export #:Pattern #:Symbolic #:NumericFactor #:maximum-analysis-size #:default-analysis-entry-limit
            #:FactorStatus #:FactorSuccess #:FactorNonPositive #:FactorNonFinite #:FactorBadValues #:FactorBadShift
            #:SolveStatus #:SolveSuccess #:SolveInvalidFactor #:SolveBadSize #:SolveNonFiniteRhs #:SolveNonFiniteResult
            #:analyze #:analyze-csc #:analyze-with-limit #:analyze-csc-with-limit #:factor! #:solve! #:refused-column
            #:symbolic-factor #:factor-permutation #:factor-columns #:factor-rows
-           #:factor-values #:factor-diagonal #:factor-ready?
+           #:factor-values #:factor-diagonal #:factor-ready? #:factor-cholesky! #:cholesky-ready?
            #:ConditionStatus #:ConditionSuccess #:ConditionInvalidFactor #:ConditionNonFiniteResult
            #:estimate-inverse-norm1! #:inverse-norm1-estimate #:estimate-solve-count
            #:maximum-estimate-solves #:shifted-norm1 #:reciprocal-condition1))
@@ -99,6 +99,10 @@
   (define (factor-diagonal f) (.diagonal (numeric-storage f)))
   (declare factor-ready? (NumericFactor -> Boolean))
   (define (factor-ready? f) (== (arr:aref (.state (numeric-storage f)) 0) 1))
+  (declare cholesky-ready? (NumericFactor -> Boolean))
+  (define (cholesky-ready? f)
+    "Whether the storage holds the Cholesky-form factor of the latest factor-cholesky! call, which no solve accepts."
+    (== (arr:aref (.state (numeric-storage f)) 0) 2))
 
   (declare maximum-analysis-size UFix)
   (define maximum-analysis-size limits:maximum-analysis-size)
@@ -273,6 +277,55 @@
         (unless (inline (finite? v)) (return (refuse! s k FactorNonFinite)))
         (arr:set! lv q v)))
     (arr:set! (.state f) 0 1)
+    FactorSuccess)
+
+  (declare factor-cholesky! (Symbolic * arr:LispArray F64 * F64 -> FactorStatus))
+  (define (factor-cholesky! symbolic values shift)
+    "Overwrite the owned storage with G where P (A - shift I) P^T = G G^T, in the arithmetic docs/cholesky-form.md states. For a proof; no solve accepts it."
+    (let s = (symbolic-storage symbolic))
+    (let f = (numeric-storage (.numeric s)))
+    (arr:set! (.state f) 0 0)
+    (arr:set! (.state f) 1 0)
+    (arr:set! (.estimate f) 0 -1.0d0)
+    (arr:set! (.diagnostic s) 0 -1)
+    (unless (== (arr:length values) (.input-count s)) (return FactorBadValues))
+    (unless (inline (finite? shift)) (return FactorBadShift))
+    (let n = (.size f))
+    (let lp = (.columns f))
+    (let lr = (.rows f))
+    (let lv = (.entries f))
+    (let d = (.diagonal f))
+    (let w = (.scratch f))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (arr:set! w k 0.0d0)
+      (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+        (arr:set! w (arr:aref lr q) 0.0d0))
+      (for ((q (arr:aref (.input-columns s) k) (+ q 1)))
+          :while (< q (arr:aref (.input-columns s) (+ k 1)))
+        (let v = (arr:aref values (arr:aref (.input-indices s) q)))
+        (unless (inline (finite? v)) (return (refuse! s k FactorNonFinite)))
+        (arr:set! w (arr:aref (.input-rows s) q) v))
+      (arr:set! w k (- (arr:aref w k) shift))
+      ;; One subtraction of one rounded product for each earlier column j with an entry in row k,
+      ;; in increasing j, and within it for each row i from k down the column.
+      (for ((r (arr:aref (.row-columns s) k) (+ r 1)))
+          :while (< r (arr:aref (.row-columns s) (+ k 1)))
+        (let j = (arr:aref (.row-owners s) r))
+        (let at-k = (arr:aref (.row-positions s) r))
+        (let g-kj = (arr:aref lv at-k))
+        (for ((q at-k (+ q 1))) :while (< q (arr:aref lp (+ j 1)))
+          (let i = (arr:aref lr q))
+          (arr:set! w i (- (arr:aref w i) (* g-kj (arr:aref lv q))))))
+      (let pivot = (arr:aref w k))
+      (unless (inline (finite? pivot)) (return (refuse! s k FactorNonFinite)))
+      (unless (> pivot 0.0d0) (return (refuse! s k FactorNonPositive)))
+      (let root = (sqrt pivot))
+      (arr:set! d k root)
+      (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+        (let v = (/ (arr:aref w (arr:aref lr q)) root))
+        (unless (inline (finite? v)) (return (refuse! s k FactorNonFinite)))
+        (arr:set! lv q v)))
+    (arr:set! (.state f) 0 2)
     FactorSuccess)
 
   (declare solve! (NumericFactor * arr:LispArray F64 * arr:LispArray F64 -> SolveStatus))

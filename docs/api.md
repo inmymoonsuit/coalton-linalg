@@ -77,7 +77,7 @@ plan's dimension, column pointers and row indices.
 
 ## coalton-linalg/sparse/spd-ldlt
 
-[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Source](../src/sparse/spd-ldlt.ct)
+[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Cholesky form](cholesky-form.md) · [Source](../src/sparse/spd-ldlt.ct)
 
 | Export | Type or role |
 | --- | --- |
@@ -100,6 +100,8 @@ plan's dimension, column pointers and row indices.
 | `factor-permutation`, `factor-columns`, `factor-rows` | NumericFactor -> I |
 | `factor-values`, `factor-diagonal` | NumericFactor -> V |
 | `factor-ready?` | NumericFactor -> Boolean |
+| `factor-cholesky!` | Symbolic * V * F64 -> FactorStatus; Cholesky-form factor for a proof, not for solving |
+| `cholesky-ready?` | NumericFactor -> Boolean |
 | `solve!` | NumericFactor * V * V -> SolveStatus |
 | `ConditionStatus` | Condition-estimate outcome type |
 | `ConditionSuccess`, `ConditionInvalidFactor`, `ConditionNonFiniteResult` | ConditionStatus values |

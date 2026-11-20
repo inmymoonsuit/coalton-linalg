@@ -83,6 +83,18 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 6a: Cholesky-form entry
+
+The Cholesky factorization is classical and its column form follows from equating the
+entries of G Gᵀ with the matrix. The entry was written from that identity, over the
+elimination order and structure the library already had. Its purpose is to make a
+published theorem applicable, Rump's verification of positive definiteness (BIT 46, 2006),
+which a consumer cites; the theorem was not used to write the code, and the componentwise
+bound the tests check is the standard rounding analysis of this arithmetic, stated on the
+contract page with its constants. No numerical-library implementation and no algorithm
+listing or pseudocode box was opened while writing it. The tests' reference is the exact
+rational product of the exported factor.
+
 ## Batch 6: Jacobi eigenvalues and singular values
 
 **These are classical published methods.** The rotation that annihilates one off-diagonal
