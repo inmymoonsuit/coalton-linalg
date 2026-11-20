@@ -1,0 +1,172 @@
+(cl:defpackage #:coalton-linalg/refinement
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math) (#:err #:coalton-linalg/errors))
+  (:export #:Refiner #:make-refiner #:dimension #:step-limit
+           #:RefineStatus #:RefineConverged #:RefineStalled #:RefineLimit #:RefineNonFinite
+           #:RefineSolveRefused #:RefineBadSize #:RefineBadTolerance
+           #:refine! #:step-count #:best-step #:residual-count #:residual-norms))
+(cl:in-package #:coalton-linalg/refinement)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+;;; Iterative refinement of an approximate solve against an operator. See docs/refinement.md.
+
+(coalton-toplevel
+  (derive Eq)
+  (repr :enum)
+  (define-type RefineStatus
+    "Outcome of refine!. In every case the solution array holds the iterate of smallest residual norm seen."
+    RefineConverged
+    "A residual norm reached the tolerance."
+    RefineStalled
+    "A step did not bring the residual norm below the stall factor times the one before it."
+    RefineLimit
+    "The step limit was reached with the tolerance not met."
+    RefineNonFinite
+    "The operator, the solve or an update produced a value that was not finite."
+    RefineSolveRefused
+    "The solve function reported that it could not solve."
+    RefineBadSize
+    "The right-hand side or the solution array does not have the refiner's dimension."
+    RefineBadTolerance
+    "The tolerance is negative or not a number, or the stall factor is not positive.")
+
+  (define-struct RefinerStorage
+    "Workspace for one dimension and one step limit, with the history of the latest call."
+    (size UFix)
+    (limit UFix)
+    (residual (arr:LispArray F64))
+    (correction (arr:LispArray F64))
+    (best (arr:LispArray F64))
+    (norms (arr:LispArray F64))
+    (state (arr:LispArray UFix)))
+
+  (repr :transparent)
+  (define-type Refiner
+    "Private handle; make one with make-refiner. Calls sharing a refiner are not reentrant."
+    (MkRefiner RefinerStorage))
+
+  (inline)
+  (declare storage (Refiner -> RefinerStorage))
+  (define (storage refiner) (match refiner ((MkRefiner held) held)))
+
+  (declare make-refiner (UFix * UFix -> Refiner))
+  (define (make-refiner dimension step-limit)
+    "A refiner for vectors of this dimension that takes at most this many correction steps a call. Its storage is three vectors and one norm a step."
+    (MkRefiner (RefinerStorage dimension step-limit
+                               (arr:make dimension 0.0d0) (arr:make dimension 0.0d0) (arr:make dimension 0.0d0)
+                               (arr:make (+ step-limit 1) 0.0d0) (arr:make 3 (the UFix 0)))))
+
+  (declare dimension (Refiner -> UFix))
+  (define (dimension refiner)
+    "The vector length this refiner was made for."
+    (.size (storage refiner)))
+
+  (declare step-limit (Refiner -> UFix))
+  (define (step-limit refiner)
+    "The most correction steps one call takes."
+    (.limit (storage refiner)))
+
+  (declare step-count (Refiner -> UFix))
+  (define (step-count refiner)
+    "Correction steps the latest call applied; 0 before any call."
+    (arr:aref (.state (storage refiner)) 0))
+
+  (declare best-step (Refiner -> UFix))
+  (define (best-step refiner)
+    "Which iterate the latest call returned: 0 is the starting vector, k the one after k corrections."
+    (arr:aref (.state (storage refiner)) 1))
+
+  (declare residual-count (Refiner -> UFix))
+  (define (residual-count refiner)
+    "How many residual norms the latest call recorded: one for the starting vector and one for each step whose residual was formed."
+    (arr:aref (.state (storage refiner)) 2))
+
+  (declare residual-norms (Refiner -> arr:LispArray F64))
+  (define (residual-norms refiner)
+    "Borrowed view: the infinity norms of the residuals of the latest call, entry k for the iterate after k corrections; only the first residual-count entries are meaningful."
+    (.norms (storage refiner)))
+
+  (declare residual-into! ((arr:LispArray F64 * arr:LispArray F64 -> Void) * arr:LispArray F64 * arr:LispArray F64
+                           * arr:LispArray F64 * arr:LispArray F64 * UFix -> Boolean))
+  (define (residual-into! apply b x residual norms slot)
+    "Form residual = b - A x and record its infinity norm in norms[slot]; False when that norm is not finite."
+    (apply x residual)
+    (let largest = (cell:new 0.0d0))
+    ;; A NaN compares as neither larger nor smaller, so a running maximum can lose one. An
+    ;; entry that is not finite is noted for itself, and its magnitude is what is recorded.
+    (let unsound = (cell:new 0.0d0))
+    (let sound = (cell:new True))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length b))
+      (let r = (- (arr:aref b i) (arr:aref residual i)))
+      (arr:set! residual i r)
+      (unless (inline (math:finite? r))
+        (cell:write! sound False)
+        (cell:write! unsound (abs r)))
+      (when (> (abs r) (cell:read largest))
+        (cell:write! largest (abs r))))
+    (arr:set! norms slot (if (cell:read sound) (cell:read largest) (cell:read unsound)))
+    (cell:read sound))
+
+  (declare copy-into! (arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (copy-into! source target)
+    (for ((i 0 (+ i 1))) :while (< i (arr:length source))
+      (arr:set! target i (arr:aref source i))))
+
+  (declare refine! (Refiner
+                    * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                    * (arr:LispArray F64 * arr:LispArray F64 -> Boolean)
+                    * arr:LispArray F64 * arr:LispArray F64 * F64 * F64 -> RefineStatus))
+  (define (refine! refiner apply solve b x tolerance stall)
+    "Improve x as a solution of A x = b: apply writes A v, solve writes an approximate solution of A c = r and says whether it could. Stops when a residual's infinity norm is at most tolerance, when a step leaves it at or above stall times the one before, or at the step limit; x is left holding the best iterate seen. See docs/refinement.md."
+    (let held = (storage refiner))
+    (let state = (.state held))
+    (arr:set! state 0 0)
+    (arr:set! state 1 0)
+    (arr:set! state 2 0)
+    (unless (and (== (arr:length b) (.size held)) (== (arr:length x) (.size held)))
+      (return RefineBadSize))
+    ;; Written so that a NaN in either fails the test.
+    (unless (and (>= tolerance 0.0d0) (> stall 0.0d0))
+      (return RefineBadTolerance))
+    (let residual = (.residual held))
+    (let correction = (.correction held))
+    (let best = (.best held))
+    (let norms = (.norms held))
+    (copy-into! x best)
+    (arr:set! state 2 1)
+    (unless (residual-into! apply b x residual norms 0)
+      (return RefineNonFinite))
+    (let lowest = (cell:new (arr:aref norms 0)))
+    (for ((k 1 (+ k 1))) :while (<= k (.limit held))
+      (when (<= (arr:aref norms (- k 1)) tolerance)
+        (return RefineConverged))
+      (unless (solve residual correction)
+        (copy-into! best x)
+        (return RefineSolveRefused))
+      ;; An operator need not read every entry of x, so the update is checked itself.
+      (let sound = (cell:new True))
+      (for ((i 0 (+ i 1))) :while (< i (arr:length x))
+        (let moved = (+ (arr:aref x i) (arr:aref correction i)))
+        (unless (inline (math:finite? moved))
+          (cell:write! sound False))
+        (arr:set! x i moved))
+      (unless (cell:read sound)
+        (copy-into! best x)
+        (return RefineNonFinite))
+      (arr:set! state 0 k)
+      (arr:set! state 2 (+ k 1))
+      (unless (residual-into! apply b x residual norms k)
+        (copy-into! best x)
+        (return RefineNonFinite))
+      (when (< (arr:aref norms k) (cell:read lowest))
+        (cell:write! lowest (arr:aref norms k))
+        (arr:set! state 1 k)
+        (copy-into! x best))
+      ;; Converged steps are tested at the top of the next round; a stalled one stops here.
+      (when (and (> (arr:aref norms k) tolerance)
+                 (>= (arr:aref norms k) (* stall (arr:aref norms (- k 1)))))
+        (copy-into! best x)
+        (return RefineStalled)))
+    (copy-into! best x)
+    (if (<= (cell:read lowest) tolerance) RefineConverged RefineLimit)))

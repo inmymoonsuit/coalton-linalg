@@ -14,7 +14,7 @@
            #:analyze-quasidefinite #:analyze-quasidefinite-with-limit
            #:analyze #:analyze-csc #:analyze-with-limit #:analyze-csc-with-limit #:factor! #:solve! #:refused-column
            #:symbolic-factor #:factor-permutation #:factor-columns #:factor-rows
-           #:factor-values #:factor-diagonal #:factor-ready? #:factor-cholesky! #:cholesky-ready?
+           #:factor-values #:factor-diagonal #:factor-ready? #:factor-cholesky! #:cholesky-ready? #:solve-cholesky!
            #:ConditionStatus #:ConditionSuccess #:ConditionInvalidFactor #:ConditionNonFiniteResult
            #:estimate-inverse-norm1! #:inverse-norm1-estimate #:estimate-solve-count
            #:maximum-estimate-solves #:shifted-norm1 #:reciprocal-condition1))
@@ -152,7 +152,7 @@
     (== (arr:aref (.state (numeric-storage f)) 0) 1))
   (declare cholesky-ready? (NumericFactor -> Boolean))
   (define (cholesky-ready? f)
-    "Whether the storage holds the Cholesky-form factor of the latest factor-cholesky! call, which no solve accepts."
+    "Whether the storage holds the Cholesky-form factor of the latest factor-cholesky! call, which solve-cholesky! accepts and solve! does not."
     (== (arr:aref (.state (numeric-storage f)) 0) 2))
   (declare positive-pivot-count (NumericFactor -> UFix))
   (define (positive-pivot-count f)
@@ -460,7 +460,7 @@
 
   (declare factor-cholesky! (Symbolic * arr:LispArray F64 * F64 -> FactorStatus))
   (define (factor-cholesky! symbolic values shift)
-    "Overwrite the owned storage with G where P (A - shift I) P^T = G G^T, in the arithmetic docs/cholesky-form.md states. For a proof; no solve accepts it."
+    "Overwrite the owned storage with G where P (A - shift I) P^T = G G^T, in the arithmetic docs/cholesky-form.md states. For a proof; solve-cholesky! solves with it and solve! does not accept it."
     (let s = (symbolic-storage symbolic))
     (let f = (numeric-storage (.numeric s)))
     (arr:set! (.state f) 0 0)
@@ -544,6 +544,44 @@
         (cell:write! acc (- (cell:read acc) (* (arr:aref lv q) (arr:aref w (arr:aref lr q))))))
       (unless (inline (finite? (cell:read acc))) (return SolveNonFiniteResult))
       (arr:set! w k (cell:read acc)))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (arr:set! out (arr:aref perm k) (arr:aref w k)))
+    SolveSuccess)
+
+  (declare solve-cholesky! (NumericFactor * arr:LispArray F64 * arr:LispArray F64 -> SolveStatus))
+  (define (solve-cholesky! factor b out)
+    "Solve (A - shift I) x = b with the standing Cholesky-form factor, the shift being the one factor-cholesky! was given. Solve into out on success; return a named outcome and preserve out on refusal. See docs/cholesky-form.md."
+    (unless (cholesky-ready? factor) (return SolveInvalidFactor))
+    (let f = (numeric-storage factor))
+    (let n = (.size f))
+    (unless (and (== (arr:length b) n) (== (arr:length out) n)) (return SolveBadSize))
+    (let perm = (.permutation f))
+    (let lp = (.columns f))
+    (let lr = (.rows f))
+    (let g = (.entries f))
+    (let d = (.diagonal f))
+    (let w = (.scratch f))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let v = (arr:aref b (arr:aref perm k)))
+      (unless (inline (finite? v)) (return SolveNonFiniteRhs))
+      (arr:set! w k v))
+    ;; G z = P b, a column at a time: the diagonal divides, then the column is taken off the rest.
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let v = (/ (arr:aref w k) (arr:aref d k)))
+      (unless (inline (finite? v)) (return SolveNonFiniteResult))
+      (arr:set! w k v)
+      (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+        (let i = (arr:aref lr q))
+        (arr:set! w i (- (arr:aref w i) (* (arr:aref g q) v)))))
+    ;; G^T y = z, from the last row up.
+    (for ((remaining n (- remaining 1))) :while (> remaining 0)
+      (let k = (- remaining 1))
+      (let acc = (cell:new (arr:aref w k)))
+      (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+        (cell:write! acc (- (cell:read acc) (* (arr:aref g q) (arr:aref w (arr:aref lr q))))))
+      (let v = (/ (cell:read acc) (arr:aref d k)))
+      (unless (inline (finite? v)) (return SolveNonFiniteResult))
+      (arr:set! w k v))
     (for ((k 0 (+ k 1))) :while (< k n)
       (arr:set! out (arr:aref perm k) (arr:aref w k)))
     SolveSuccess)

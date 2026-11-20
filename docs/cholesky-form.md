@@ -1,8 +1,9 @@
 # Cholesky-form factorization, for a proof
 
 Package: `coalton-linalg/sparse/spd-ldlt`. Source: [spd-ldlt.ct](../src/sparse/spd-ldlt.ct).
-State: completed as Batch 6a; verified at safety 1 and safety 0. The
-[batch record](batch6a.md) holds the tests and the controls.
+State: completed as Batch 6a, with its own solve added in Batch 10; verified at safety 1
+and safety 0. The batch records, [6a](batch6a.md) and [10](batch10.md), hold the tests and
+the controls.
 
 ## What it is for
 
@@ -26,12 +27,24 @@ Choosing the shift and checking a theorem's hypotheses is the caller's.**
   `FactorBadShift`.
 - `cholesky-ready?(factor) -> Boolean` says whether the storage holds the G of the latest
   successful call.
+- `solve-cholesky!(factor, b, out) -> SolveStatus` solves **`(A − shift I) x = b`** with
+  that G, the shift being the one the factorization was given. It has the outcomes and
+  the rules of [`solve!`](spd-ldlt.md): `SolveInvalidFactor` when no Cholesky-form factor
+  stands, `SolveBadSize`, `SolveNonFiniteRhs`, `SolveNonFiniteResult`; b and out may be the
+  same array; on any refusal out is unchanged.
 
-**It is not a solving factor.** A Symbolic owns one numeric factor, and this call overwrites
-it. Afterwards `factor-ready?` is false, `solve!` returns `SolveInvalidFactor`, and
-`estimate-inverse-norm1!` returns `ConditionInvalidFactor`, until `factor!` runs again. A
-refused call leaves nothing standing. A successful call allocates nothing after warm-up on
-the measured runtime.
+**It is a factor of the shifted matrix, and it has its own solve.** A Symbolic owns one
+numeric factor, and this call overwrites it. Afterwards `factor-ready?` is false, `solve!`
+returns `SolveInvalidFactor`, and `estimate-inverse-norm1!` returns
+`ConditionInvalidFactor`, until `factor!` runs again; `solve-cholesky!` in turn refuses a
+solving factor. A refused call leaves nothing standing. A successful factorization or
+solve allocates nothing after warm-up on the measured runtime.
+
+**The solve does not change the proof.** `factor-cholesky!` is what it was, operation for
+operation. The solve reads G and writes only its own scratch and the caller's output. A
+caller who has made the proof can therefore solve with the same factor, and where the
+unshifted solution is wanted, [refine](refinement.md) against the unshifted matrix:
+one factorization serves both.
 
 G is read through the existing views, in elimination order: `factor-diagonal` holds the
 diagonal `g[k,k]`, `factor-values` the entries below it, column by column as
@@ -103,9 +116,21 @@ Step 2 rounds once. Where the caller's theorem is about `A − shift I` itself a
 the rounded diagonal, that rounding is the caller's to account for, or the caller passes a
 shift of 0 with the diagonal already formed.
 
+## The solve
+
+`P (A − shift I) Pᵀ = G Gᵀ` to rounding, so the solve is two triangular substitutions
+between a gather and a scatter by P: `G z = P b` a column at a time, each diagonal
+dividing before its column is taken off the rest, then `Gᵀ y = z` from the last row up,
+and `x = Pᵀ y`. With w the longest row or column of G off the diagonal, the computed x
+satisfies, row by row and barring underflow,
+
+    | (A − shift I) x − b |  ≤  γ₍3w+5₎ |G| |Gᵀ| |x|     (rows and columns as permuted),
+
+the factorization's bound and one triangular solve's on each side. The tests check that
+row by row in rational arithmetic.
+
 ## Representation choices
 
 The entry reuses the factor's storage and views instead of adding a second factor to every
-analysis: a proof and a solve are made one after the other, never together. One state value
-distinguishes the three conditions of the storage: nothing, a solving factor, a proof
-factor.
+analysis: one state value distinguishes the three conditions of the storage, nothing, a
+solving factor and a proof factor, and each solve accepts only its own.

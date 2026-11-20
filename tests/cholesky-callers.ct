@@ -2,7 +2,7 @@
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
-  (:export #:observe-cholesky #:cholesky-loop))
+  (:export #:observe-cholesky #:cholesky-loop #:cholesky-solve-loop))
 (cl:in-package #:coalton-linalg/tests/cholesky-callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -28,5 +28,20 @@
       (unless (and (ldlt:cholesky-ready? factor) (not (ldlt:factor-ready? factor)))
         (cell:write! failures (+ (cell:read failures) 1)))
       (unless (== (ldlt:factor! symbolic values 0.0d0) ldlt:FactorSuccess)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare cholesky-solve-loop (ldlt:Symbolic * arr:LispArray F64 * F64 * arr:LispArray F64 * arr:LispArray F64 * UFix
+                                -> UFix))
+  (define (cholesky-solve-loop symbolic values shift rhs out count)
+    "A real external caller: the proof factorization at a shift, then two solves with that same factor."
+    (let failures = (cell:new (the UFix 0)))
+    (let factor = (ldlt:symbolic-factor symbolic))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (ldlt:factor-cholesky! symbolic values shift) ldlt:FactorSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (ldlt:solve-cholesky! factor rhs out) ldlt:SolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (ldlt:solve-cholesky! factor out out) ldlt:SolveSuccess)
         (cell:write! failures (+ (cell:read failures) 1))))
     (cell:read failures)))

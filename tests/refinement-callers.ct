@@ -1,0 +1,114 @@
+(cl:defpackage #:coalton-linalg/tests/refinement-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:rf #:coalton-linalg/refinement)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
+  (:export #:refine-code #:matrix-operator #:gram-operator #:saddle-operator
+           #:factor-solver #:cholesky-solver #:scripted-solver #:refusing-solver #:poison-solver
+           #:refine-loop))
+(cl:in-package #:coalton-linalg/tests/refinement-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare refine-code (rf:Refiner
+                        * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                        * (arr:LispArray F64 * arr:LispArray F64 -> Boolean)
+                        * arr:LispArray F64 * arr:LispArray F64 * F64 * F64 -> UFix))
+  (define (refine-code refiner apply solve b x tolerance stall)
+    "Exhaustively matched outcome: converged 0, stalled 1, limit 2, non-finite 3, solve refused 4, size 5, tolerance 6."
+    (match (rf:refine! refiner apply solve b x tolerance stall)
+      ((rf:RefineConverged) 0)
+      ((rf:RefineStalled) 1)
+      ((rf:RefineLimit) 2)
+      ((rf:RefineNonFinite) 3)
+      ((rf:RefineSolveRefused) 4)
+      ((rf:RefineBadSize) 5)
+      ((rf:RefineBadTolerance) 6)))
+
+  (declare matrix-operator (csc:Matrix -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (matrix-operator matrix)
+    "v -> A v for a stored matrix."
+    (fn (v out) (csc:matvec! matrix v out)))
+
+  (declare gram-operator (csc:Matrix * arr:LispArray F64 -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (gram-operator matrix work)
+    "v -> A (A^T v) as two products through a work vector as long as A has columns; A A^T is never formed."
+    (fn (v out)
+      (csc:transpose-matvec! matrix v work)
+      (csc:matvec! matrix work out)))
+
+  (declare saddle-operator (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64
+                            -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (saddle-operator matrix head tail head-out tail-out)
+    "(x, y) -> (x + A^T y, A x): the unregularized matrix [[I, A^T], [A, 0]], through work vectors for the two parts."
+    (let n = (csc:column-count matrix))
+    (let m = (csc:row-count matrix))
+    (fn (v out)
+      (for ((j 0 (+ j 1))) :while (< j n)
+        (arr:set! head j (arr:aref v j)))
+      (for ((i 0 (+ i 1))) :while (< i m)
+        (arr:set! tail i (arr:aref v (+ n i))))
+      (csc:transpose-matvec! matrix tail head-out)
+      (csc:matvec! matrix head tail-out)
+      (for ((j 0 (+ j 1))) :while (< j n)
+        (arr:set! out j (+ (arr:aref head j) (arr:aref head-out j))))
+      (for ((i 0 (+ i 1))) :while (< i m)
+        (arr:set! out (+ n i) (arr:aref tail-out i)))))
+
+  (declare factor-solver (ldlt:NumericFactor -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (factor-solver factor)
+    "r -> the standing solving factor's solution, and whether it solved."
+    (fn (r out) (== (ldlt:solve! factor r out) ldlt:SolveSuccess)))
+
+  (declare cholesky-solver (ldlt:NumericFactor -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (cholesky-solver factor)
+    "r -> the standing Cholesky-form factor's solution, and whether it solved."
+    (fn (r out) (== (ldlt:solve-cholesky! factor r out) ldlt:SolveSuccess)))
+
+  (declare scripted-solver ((arr:LispArray F64 * arr:LispArray F64 -> Boolean) * arr:LispArray F64 * arr:LispArray UFix
+                            -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (scripted-solver solve script calls)
+    "The given solve with its k-th correction multiplied by script[k] (the last entry thereafter); calls[0] counts the calls."
+    (fn (r out)
+      (let solved = (solve r out))
+      (let k = (arr:aref calls 0))
+      (let factor = (arr:aref script (if (< k (arr:length script)) k (- (arr:length script) 1))))
+      (for ((i 0 (+ i 1))) :while (< i (arr:length out))
+        (arr:set! out i (* factor (arr:aref out i))))
+      (arr:set! calls 0 (+ k 1))
+      solved))
+
+  (declare refusing-solver ((arr:LispArray F64 * arr:LispArray F64 -> Boolean) * UFix * arr:LispArray UFix
+                            -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (refusing-solver solve refuse-at calls)
+    "The given solve, except that call number refuse-at, counted from 0, reports that it could not solve."
+    (fn (r out)
+      (let k = (arr:aref calls 0))
+      (arr:set! calls 0 (+ k 1))
+      (and (solve r out) (/= k refuse-at))))
+
+  (declare poison-solver (UFix * F64 -> (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+  (define (poison-solver index value)
+    "The identity as a solve, except that one entry of every correction is the given value."
+    (fn (r out)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length out))
+        (arr:set! out i (arr:aref r i)))
+      (arr:set! out index value)
+      True))
+
+  (declare refine-loop (rf:Refiner
+                        * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                        * (arr:LispArray F64 * arr:LispArray F64 -> Boolean)
+                        * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * F64 * F64 * UFix -> UFix))
+  (define (refine-loop refiner apply solve b start x tolerance stall count)
+    "A real external caller: refine from the same starting vector each round; count the rounds that did not converge."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((round 0 (+ round 1))) :while (< round count)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length x))
+        (arr:set! x i (arr:aref start i)))
+      (unless (== (rf:refine! refiner apply solve b x tolerance stall) rf:RefineConverged)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (when (== (rf:step-count refiner) 0)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))

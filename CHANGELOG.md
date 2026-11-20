@@ -2,6 +2,20 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.10.0 — 2026-11-20
+
+Added:
+
+- `coalton-linalg/refinement`: `refine!` improves a solution through any approximate solve
+  and an operator the caller applies, stopping on an absolute tolerance in the infinity
+  norm, a caller's stall factor or a step limit, and returning the best iterate seen with
+  its residual history. [Contract](docs/refinement.md) · [record](docs/batch10.md).
+- `solve-cholesky!` in `coalton-linalg/sparse/spd-ldlt`: a solve with the Cholesky-form
+  factor, of the shifted matrix that factor is of. [Contract](docs/cholesky-form.md).
+
+No existing call changes meaning. `factor-cholesky!` is unchanged, operation for
+operation.
+
 ## 0.9.1 — 2026-11-20
 
 Changed: every exported symbol now carries a docstring, including each status value,

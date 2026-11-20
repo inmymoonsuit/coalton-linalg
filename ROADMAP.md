@@ -36,9 +36,9 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 9
+## Batches 3 through 10
 
-Batches 3 through 9 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+Batches 3 through 10 are completed, Batch 3 in four steps 3a through 3d, with one addition,
 [6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
 8 were set by a consuming application's measurements; what follows is listed under
 *Next*. [The batch record](docs/batch3a.md)
@@ -150,26 +150,40 @@ matrices checked exactly, twenty planted source controls and an allocation measu
 per policy pass. [The batch record](docs/batch9.md) holds the controls; [the
 contract](docs/scaling.md) says which solutions each kind of scaling leaves unchanged.
 
+### Batch 10: iterative refinement, and a solve on the Cholesky-form factor
+
+**Completed.** `coalton-linalg/refinement` refines any approximate solve against an
+operator the caller applies: the library forms the residual, stops on an absolute
+tolerance in the infinity norm, on a caller's stall factor or at a step limit, returns
+the best iterate seen and keeps the history. `solve-cholesky!` solves with the proof
+factor, so a proof factorization and a refinement can replace a second factorization.
+Sixty refinements reproduced bit for bit by an independent recomputation, both uses
+checked against exact rational solutions, twenty-two planted source controls and two
+allocation measurements per policy pass. [The batch record](docs/batch10.md) holds the
+controls; [the contract](docs/refinement.md) says what refinement converges to.
+
 ### Next
 
 From 2026-11-20 the library develops ahead of any one consumer's measurements, toward
 what solving in CAD and engineering work is likely to need. The order is a consumer's
 ranking of what it would use first:
 
-1. Iterative refinement as a call: a standing factor's solve refined against an operator
-   the caller applies, with a stopping rule, the best iterate and the residual history.
-2. Dependent rows with a certificate: which rows of a sparse matrix are dependent, and
+1. Dependent rows with a certificate: which rows of a sparse matrix are dependent, and
    what can be proved about it. A written design comes before any code.
-3. Sparse LU with partial pivoting for a square nonsymmetric matrix.
-4. Iterative least squares and minimum norm on an operator, with damping, and conjugate
+2. Sparse LU with partial pivoting for a square nonsymmetric matrix.
+3. Iterative least squares and minimum norm on an operator, with damping, and conjugate
    gradients for the definite case.
-5. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
+4. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
-6. Continuous integration on the pinned toolchain.
+5. Continuous integration on the pinned toolchain.
 
-Waiting on a measurement or a decision: a further gain in ordering time, which needs an
-approximate degree or merged vertices and so a change of order; reuse of an analysis
-across patterns that differ by a few rows; dense fronts in the numeric factor.
+**Measured since, and settled:** a consumer timed its whole first step on its loose grids
+after Batch 8. Analysis fell from 141 to 17 ms and from 272 to 47 ms and is now a sixth
+of that step, so no further ordering work and no reuse of an analysis across patterns is
+warranted. The numeric factorization is now about 97% of its steady step. Dense fronts
+in the numeric factor are therefore justified by measurement; the expected gain without
+vector instructions or a tuned dense kernel is a factor of about one and a half to two,
+and where they sit in this list is a priority decision not yet taken.
 
 ### Later
 

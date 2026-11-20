@@ -10,6 +10,7 @@
 
 (defvar *ch-worst-entry* 0)
 (defvar *ch-entries* 0)
+(defvar *ch-worst-solve* 0)
 
 (defun symmetric-lower-pattern (matrix &key keep)
   "Lower CSC of a dense symmetric matrix, storing the diagonal, every nonzero, and every position KEEP names."
@@ -92,7 +93,30 @@
                 ;; Outside the structure G is zero, and so must the matrix be.
                 (unless (aref stored i j)
                   (assert (zerop (aref exact (aref perm i) (aref perm j))) ()
-                          "~A: a nonzero entry lies outside the factor's structure." label)))))))
+                          "~A: a nonzero entry lies outside the factor's structure." label)))))
+          ;; A solve with the proof factor: each row of the exact residual of (A - shift I) x = b
+          ;; against (3 w + 5) u |G||G^T||x|, w the longest row or column of G off the diagonal.
+          (let* ((state (sb-ext:seed-random-state 5))
+                 (b (make-array n :element-type 'double-float))
+                 (x (make-array n :element-type 'double-float :initial-element 0d0))
+                 (widest (loop :for k :below n
+                               :maximize (max (loop :for i :from (1+ k) :below n :count (aref stored i k))
+                                              (loop :for j :below k :count (aref stored k j))))))
+            (dotimes (i n) (setf (aref b i) (coerce (- (random 9 state) 4) 'double-float)))
+            (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveSuccess) (ldlt:solve-cholesky! factor b x))
+                    () "~A: the proof factor's solve refused." label)
+            (dotimes (k n)
+              (let* ((row (aref perm k))
+                     (residual (abs (- (loop :for j :below n :sum (* (aref exact row j) (rational (aref x j))))
+                                       (rational (aref b row)))))
+                     (allowed (* (+ (* 3 (or widest 0)) 5) *unit-roundoff*
+                                 (loop :for l :below n
+                                       :sum (* (loop :for c :to (min k l) :sum (abs (* (aref g k c) (aref g l c))))
+                                               (abs (rational (aref x (aref perm l)))))))))
+                (assert (<= residual (* allowed (+ 1 (expt 2 -40)))) ()
+                        "~A: solve residual ~E in row ~D exceeds ~E." label (float residual 1d0) row (float allowed 1d0))
+                (when (plusp allowed)
+                  (setf *ch-worst-solve* (max *ch-worst-solve* (/ residual allowed)))))))))
       (values factor symbolic))))
 
 (defun seeded-sparse-definite (state n density)
@@ -107,7 +131,7 @@
                       (if (= i j) (+ 1 (random 3 state) (loop :for k :below n :sum (abs (aref off i k)))) (aref off i j))))))
 
 (defun run-cholesky-form-tests ()
-  (setf *ch-worst-entry* 0 *ch-entries* 0)
+  (setf *ch-worst-entry* 0 *ch-entries* 0 *ch-worst-solve* 0)
   (let ((cases 0) (state (sb-ext:seed-random-state 20261127)))
     (flet ((check (label matrix &rest keys)
              (incf cases)
@@ -144,7 +168,9 @@
                                  (ldlt:factor-diagonal (ldlt:symbolic-factor shifted))))
                     () "A shift is not a stored shift.")))))
     (format t "CHOLESKY-FORM-BOUND-PASS cases=~D entries=~D worst-entry=~,3F of (products + 2) u |G||G^T|~%"
-            cases *ch-entries* (float *ch-worst-entry* 1d0)))
+            cases *ch-entries* (float *ch-worst-entry* 1d0))
+    (format t "CHOLESKY-FORM-SOLVE-PASS cases=~D worst-row=~,3F of (3 w + 5) u |G||G^T||x|~%"
+            cases (float *ch-worst-solve* 1d0)))
   ;; Refusals: a pivot that is not positive, in a named column, and nothing left standing.
   (loop :for (rows shift column) :in '((((1 2) (2 1)) 0 1) (((1 1) (1 1)) 0 1) (((4 0) (0 9)) 4 0) (((-1)) 0 0))
         :do (multiple-value-bind (n pointers row-indices values) (symmetric-lower-pattern (rows-matrix rows))
@@ -182,11 +208,43 @@
               () "The proof call left a solving factor or its estimate standing.")
       (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveInvalidFactor)
                   (ldlt:solve! factor (doubles 2d0 4d0 4d0) out)))
+      ;; The proof factor has its own solve, with the refusals of the other: sizes, a non-finite
+      ;; right-hand side, and an output left alone by each.
+      (let ((invalid (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveInvalidFactor))
+            (bad-size (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveBadSize))
+            (bad-rhs (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveNonFiniteRhs))
+            (solved (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveSuccess)))
+        (assert (equalp out (doubles 9d0 9d0 9d0)))
+        (assert (eq bad-size (ldlt:solve-cholesky! factor (doubles 1d0 1d0) out)))
+        (assert (eq bad-size (ldlt:solve-cholesky! factor (doubles 1d0 1d0 1d0) (doubles 0d0))))
+        (assert (eq bad-rhs (ldlt:solve-cholesky! factor (doubles 1d0 infinity 1d0) out)))
+        (assert (equalp out (doubles 9d0 9d0 9d0)) () "A refused proof solve wrote ~S." out)
+        ;; (A - 0 I) x = b for x = (1, 1, 1), and in place.
+        (assert (eq solved (ldlt:solve-cholesky! factor (doubles 2d0 4d0 4d0) out)))
+        (assert (close-vector-p out (doubles 1d0 1d0 1d0)))
+        (let ((both (doubles 2d0 4d0 4d0)))
+          (assert (eq solved (ldlt:solve-cholesky! factor both both)))
+          (assert (same-bits-p both out) () "The in-place proof solve differs: ~S against ~S." both out))
+        ;; The shift it solves with is the one it was factored with: (A - I) x = b.
+        (assert (= 0 (ch-caller:observe-cholesky symbolic values 1d0)))
+        (assert (eq solved (ldlt:solve-cholesky! factor (doubles 1d0 3d0 3d0) out)))
+        (assert (close-vector-p out (doubles 1d0 1d0 1d0)) () "The shifted proof solve gave ~S." out)
+        ;; A solving factor is not a proof factor, and a refused proof call leaves none.
+        (setf out (doubles 9d0 9d0 9d0))
+        (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (ldlt:factor! symbolic values 0d0)))
+        (assert (eq invalid (ldlt:solve-cholesky! factor (doubles 2d0 4d0 4d0) out)))
+        (assert (= 4 (ch-caller:observe-cholesky symbolic values infinity)))
+        (assert (eq invalid (ldlt:solve-cholesky! factor (doubles 2d0 4d0 4d0) out)))
+        (assert (equalp out (doubles 9d0 9d0 9d0)) () "A proof solve without a proof factor wrote ~S." out))
       (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:FactorSuccess) (ldlt:factor! symbolic values 0d0)))
       (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveSuccess)
                   (ldlt:solve! factor (doubles 2d0 4d0 4d0) out)))
       (assert (close-vector-p out (doubles 1d0 1d0 1d0)))
       ;; Warmed repeated work through a compiled Coalton caller allocates nothing.
       (assert (= 0 (ch-caller:cholesky-loop symbolic values 0.5d0 3)))
-      (allocation-check "cholesky-form" (lambda () (ch-caller:cholesky-loop symbolic values 0.5d0 1)))))
+      (allocation-check "cholesky-form" (lambda () (ch-caller:cholesky-loop symbolic values 0.5d0 1)))
+      (let ((rhs (doubles 2d0 4d0 4d0)) (solution (doubles 0d0 0d0 0d0)))
+        (assert (= 0 (ch-caller:cholesky-solve-loop symbolic values 0.5d0 rhs solution 3)))
+        (allocation-check "cholesky-solve"
+                          (lambda () (ch-caller:cholesky-solve-loop symbolic values 0.5d0 rhs solution 1))))))
   (format t "CHOLESKY-FORM-TESTS-PASS~%"))

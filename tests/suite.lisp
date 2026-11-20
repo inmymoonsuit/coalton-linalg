@@ -20,6 +20,7 @@
   (run-quasidefinite-tests)
   (run-ordering-tests)
   (run-scaling-tests)
+  (run-refinement-tests)
   (coalton-linalg/tests/typed-errors:run-typed-error-tests)
   (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
   (coalton-linalg/tests/encapsulation:run-status-type-tests)

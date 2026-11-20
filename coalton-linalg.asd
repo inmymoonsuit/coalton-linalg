@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.9.1"
+  :version "0.10.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -11,7 +11,7 @@
           (sb-ext:*block-compile-default* :specified))
       (funcall compile)))
   :components ((:module "src" :serial t
-                :components ((:ct-file "errors") (:ct-file "numeric")
+                :components ((:ct-file "errors") (:ct-file "numeric") (:ct-file "refinement")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
                                            (:ct-file "gram") (:ct-file "scaling") (:ct-file "augmented")
@@ -47,6 +47,7 @@
                              (:ct-file "cholesky-callers") (:file "cholesky-form")
                              (:ct-file "quasidefinite-callers") (:file "quasidefinite") (:file "ordering")
                              (:ct-file "scaling-callers") (:file "scaling")
+                             (:ct-file "refinement-callers") (:file "refinement")
                              (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))

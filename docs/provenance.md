@@ -83,6 +83,20 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 10: iterative refinement and the Cholesky-form solve
+
+Iterative refinement is classical, from Wilkinson's work on rounding errors in the 1960s,
+and its convergence as a stationary iteration with matrix `I − B⁻¹ A` is a line of
+algebra, written on [the contract page](refinement.md#derivation). What is specific
+here was decided with the consumer that uses it: the library forms the residual, the
+norm is the infinity norm against an absolute tolerance, the stall factor is the
+caller's, and the vector returned is the best iterate and not the last. The two
+eigenvalue computations on the contract page, for a shifted factor and for the
+regularized augmented matrix, were worked out here. The triangular solves with the
+Cholesky-form factor follow from `G Gᵀ`. No numerical-library implementation and no
+algorithm listing was opened. The tests recompute the iteration independently and
+compare with exact rational solutions.
+
 ## Batch 9: scaling by powers of two
 
 Scaling rows and then columns by their largest magnitudes is classical equilibration,

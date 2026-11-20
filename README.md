@@ -15,9 +15,10 @@ rank, perturbs a pivot or retries. No application code is loaded or required.
 | --- | --- | --- | --- |
 | `coalton-linalg/errors` | Typed exceptions for malformed input and exhausted budgets | [errors](docs/errors.md) | |
 | `coalton-linalg/numeric` | Euclidean and infinity norms that do not overflow early | [primitives](docs/primitives.md) | [1 and 2](docs/batches-1-2.md) |
+| `coalton-linalg/refinement` | Iterative refinement of any approximate solve against an operator the caller applies: stopping rule, stall test, best iterate and residual history | [refinement](docs/refinement.md) | [10](docs/batch10.md) |
 | `coalton-linalg/sparse/csc` | Checked CSC and COO construction, transpose, permutations, products into caller storage | [primitives](docs/primitives.md) | [3b](docs/batch3b.md) |
 | `coalton-linalg/sparse/gram` | AᵀA and AAᵀ on a fixed pattern: analyze once, refill values | [gram](docs/gram.md) | [3c](docs/batch3c.md) |
-| `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, a 1-norm condition estimate, a Cholesky-form entry for positivity proofs, and a signed-pivot entry that measures its own growth | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md), [Cholesky form](docs/cholesky-form.md), [signed pivots](docs/quasidefinite.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md), [6a](docs/batch6a.md), [7](docs/batch7.md), [7a](docs/batch7a.md), [8](docs/batch8.md) |
+| `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, a 1-norm condition estimate, a Cholesky-form entry for positivity proofs, and a signed-pivot entry that measures its own growth | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md), [Cholesky form](docs/cholesky-form.md), [signed pivots](docs/quasidefinite.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md), [6a](docs/batch6a.md), [7](docs/batch7.md), [7a](docs/batch7a.md), [8](docs/batch8.md), [10](docs/batch10.md) |
 | `coalton-linalg/sparse/scaling` | Row and column equilibration, and diagonal scaling of a symmetric positive definite matrix, by powers of two: exact, with the vector maps | [scaling](docs/scaling.md) | [9](docs/batch9.md) |
 | `coalton-linalg/sparse/augmented` | The augmented matrix `[[top I, Aᵀ], [A, −bottom I]]` of a sparse A on a fixed pattern: analyze once, refill values | [signed pivots](docs/quasidefinite.md) | [7](docs/batch7.md) |
 | `coalton-linalg/dense/indefinite-ldlt` | Dense symmetric indefinite LDLᵀ with 1-by-1 and 2-by-2 pivots, solves, and inertia | [indefinite](docs/indefinite-ldlt.md) | [4](docs/batch4.md) |
@@ -100,6 +101,7 @@ development-mode performance is unverified. See the toolchain notes below.
 ```
 
 The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
+`coalton-linalg/refinement`,
 `coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/scaling`,
 `coalton-linalg/sparse/augmented`,
 `coalton-linalg/sparse/spd-ldlt`,
@@ -147,6 +149,7 @@ recorded in the batch records, not rerun by this command.
 | --- | --- |
 | `src/errors.ct` | Typed validation and primitive arithmetic errors |
 | `src/numeric.ct` | Stable norms |
+| `src/refinement.ct` | Iterative refinement against an operator |
 | `src/sparse/csc.ct` | Owned sparse matrices and operations |
 | `src/sparse/gram.ct` | Fixed-pattern AᵀA and AAᵀ products |
 | `src/sparse/augmented.ct` | Fixed-pattern augmented matrix of a sparse A |

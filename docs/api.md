@@ -56,6 +56,23 @@ Constructor argument order is in the contract. Inspection arrays are borrowed
 read-only views by agreement; they are ordinary mutable arrays at runtime.
 Constructors and transforming operations return owned storage.
 
+## coalton-linalg/refinement
+
+[Contract](refinement.md) · [Source](../src/refinement.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `Refiner` | Workspace and latest-call history; obtain from make-refiner |
+| `make-refiner` | UFix * UFix -> Refiner; dimension, step limit |
+| `dimension`, `step-limit` | Refiner -> UFix |
+| `RefineStatus` | Outcome type of refine! |
+| `RefineConverged`, `RefineStalled`, `RefineLimit`, `RefineNonFinite`, `RefineSolveRefused`, `RefineBadSize`, `RefineBadTolerance` | RefineStatus values |
+| `refine!` | Refiner * (V * V -> Void) * (V * V -> Boolean) * V * V * F64 * F64 -> RefineStatus; apply, solve, right-hand side, solution, tolerance, stall factor |
+| `step-count`, `best-step`, `residual-count` | Refiner -> UFix; of the latest call |
+| `residual-norms` | Refiner -> V; infinity norms of the latest call's residuals |
+
+The solution array holds the best iterate seen on every return. A call allocates nothing.
+
 ## coalton-linalg/sparse/gram
 
 [Contract](gram.md) · [Source](../src/sparse/gram.ct)
@@ -100,8 +117,9 @@ plan's dimension, column pointers and row indices.
 | `factor-permutation`, `factor-columns`, `factor-rows` | NumericFactor -> I |
 | `factor-values`, `factor-diagonal` | NumericFactor -> V |
 | `factor-ready?` | NumericFactor -> Boolean |
-| `factor-cholesky!` | Symbolic * V * F64 -> FactorStatus; Cholesky-form factor for a proof, not for solving |
+| `factor-cholesky!` | Symbolic * V * F64 -> FactorStatus; Cholesky-form factor of the shifted matrix, for a proof |
 | `cholesky-ready?` | NumericFactor -> Boolean |
+| `solve-cholesky!` | NumericFactor * V * V -> SolveStatus; solves (A − shift I) x = b with the Cholesky-form factor |
 | `analyze-quasidefinite` | Pattern * UFix -> Symbolic; indices from the second argument on are held back |
 | `analyze-quasidefinite-with-limit` | Pattern * UFix * UFix -> Symbolic; the last argument is the entry budget |
 | `SignedFactorStatus` | Signed factorization outcome type |
