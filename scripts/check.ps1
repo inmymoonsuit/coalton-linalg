@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Test','Fixtures','Gram','Indefinite','Orthogonal','Jacobi','Inspect')][string]$Task = 'Test',
+    [ValidateSet('Test','Fixtures','Gram','Augmented','Indefinite','Orthogonal','Jacobi','Inspect')][string]$Task = 'Test',
     [ValidateSet(0,1)][int]$Safety = 1,
     [string]$Sbcl = '',
     [string]$Python = '',
@@ -46,7 +46,7 @@ if ($Task -eq 'Fixtures' -and
     -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.A.txt' -File -ErrorAction Stop)) {
     throw "No matrix fixtures in $InputFolder"
 }
-if ($Task -eq 'Gram' -and
+if ($Task -in @('Gram','Augmented') -and
     -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.J.txt' -File -ErrorAction Stop)) {
     throw "No rectangular fixtures in $InputFolder"
 }
@@ -105,6 +105,7 @@ try {
         Test { 'check.lisp' }
         Fixtures { 'fixtures.lisp' }
         Gram { 'gram.lisp' }
+        Augmented { 'augmented.lisp' }
         Indefinite { 'indefinite.lisp' }
         Orthogonal { 'orthogonal.lisp' }
         Jacobi { 'jacobi.lisp' }

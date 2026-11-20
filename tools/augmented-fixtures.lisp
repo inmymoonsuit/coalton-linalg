@@ -1,0 +1,153 @@
+(in-package #:coalton-linalg/tools)
+
+;;; Optional artifact driver for the augmented signed-pivot route. For every <name>.J.txt in a
+;;; folder, each `augmented:` line of <name>.meta.txt is one run: the augmented matrix as
+;;; refilled, the signed factor, its growth and pivot counts, and one solve. See
+;;; docs/quasidefinite.md, Artifact driver, for the file protocol.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (sb-ext:add-package-local-nickname "AUG" "COALTON-LINALG/SPARSE/AUGMENTED")
+  (sb-ext:add-package-local-nickname "LDLT" "COALTON-LINALG/SPARSE/SPD-LDLT"))
+
+(defun meta-augmented-runs (directory name)
+  "Every `augmented: <top> <bottom> <held|plain>` line of <name>.meta.txt in order, as (top bottom held-p)."
+  (let ((path (fixture-path directory name ".meta.txt")) (prefix "augmented: ") (runs '()))
+    (when (probe-file path)
+      (with-open-file (in path)
+        (loop for line = (read-line in nil nil) while line
+              when (and (<= (length prefix) (length line)) (string= prefix line :end2 (length prefix)))
+                do (let ((*read-default-float-format* 'double-float) (*read-eval* nil))
+                     (with-input-from-string (rest line :start (length prefix))
+                       (let ((top (read rest nil nil)) (bottom (read rest nil nil)) (order (read rest nil nil)))
+                         (unless (and (realp top) (realp bottom) (symbolp order) order
+                                      (member (symbol-name order) '("HELD" "PLAIN") :test #'string=)
+                                      (null (read rest nil nil)))
+                           (error "Malformed augmented line in ~A: ~A" name line))
+                         (push (list (coerce top 'double-float) (coerce bottom 'double-float)
+                                     (string= (symbol-name order) "HELD"))
+                               runs)))))))
+    (nreverse runs)))
+
+(defun signed-status-name (status)
+  (cond ((eq status (coalton:coalton ldlt:SignedSuccess)) "SignedSuccess")
+        ((eq status (coalton:coalton ldlt:SignedZeroPivot)) "SignedZeroPivot")
+        ((eq status (coalton:coalton ldlt:SignedNonFinite)) "SignedNonFinite")
+        ((eq status (coalton:coalton ldlt:SignedBadValues)) "SignedBadValues")
+        ((eq status (coalton:coalton ldlt:SignedBadShift)) "SignedBadShift")
+        (t (error "Unnamed signed factorization status ~S." status))))
+
+(defun sparse-solve-status-name (status)
+  (cond ((eq status (coalton:coalton ldlt:SolveSuccess)) "SolveSuccess")
+        ((eq status (coalton:coalton ldlt:SolveInvalidFactor)) "SolveInvalidFactor")
+        ((eq status (coalton:coalton ldlt:SolveBadSize)) "SolveBadSize")
+        ((eq status (coalton:coalton ldlt:SolveNonFiniteRhs)) "SolveNonFiniteRhs")
+        ((eq status (coalton:coalton ldlt:SolveNonFiniteResult)) "SolveNonFiniteResult")
+        (t (error "Unnamed solve status ~S." status))))
+
+(defun write-augmented-file (path plan vals)
+  (let ((cp (aug:column-pointers plan)) (ri (aug:row-indices plan)))
+    (with-open-file (out path :direction :output :if-exists :supersede :if-does-not-exist :create)
+      (format out "~D ~D~%" (aug:dimension plan) (length ri))
+      (dotimes (j (aug:dimension plan))
+        (loop for q from (aref cp j) below (aref cp (1+ j)) do
+          (format out "~D ~D ~A~%" (aref ri q) j (f64-string (aref vals q))))))))
+
+(defparameter *augmented-indexed-suffixes*
+  '(".K.out.txt" ".perm.out.txt" ".D.out.txt" ".L.out.txt" ".x.out.txt" ".signed.out.txt"))
+
+(defun run-augmented-fixtures (input output &key (repeats 20) (allocation-repeats 1000))
+  "Write each named run's augmented matrix, signed factor, counts, growth and solution, and one line a run."
+  (ensure-directories-exist (uiop:ensure-directory-pathname output))
+  (let ((paths (sort (directory (merge-pathnames "*.J.txt" (uiop:ensure-directory-pathname input)))
+                     #'string< :key #'namestring))
+        (failures 0) (count 0)
+        (linalg-error (find-symbol "LINALGERROR" "COALTON-LINALG/ERRORS")))
+    (with-open-file (table (merge-pathnames "augmented-table.txt" (uiop:ensure-directory-pathname output))
+                           :direction :output :if-exists :supersede :if-does-not-exist :create)
+      (format table "name run m n order top bottom nnzK nnzL status positive negative growth ~
+                     analyse_ms refill_ms factor_ms solve_ms bytes~%")
+      (dolist (path paths)
+        (let* ((file (file-namestring path))
+               (name (subseq file 0 (- (length file) (length ".J.txt"))))
+               (runs (meta-augmented-runs input name)))
+          (delete-indexed-artifacts output name *augmented-indexed-suffixes*)
+          (let ((stale (fixture-path output name ".refused.out.txt")))
+            (when (probe-file stale) (delete-file stale)))
+          (if (null runs)
+              ;; A folder shared with other drivers: a system that names no run is said to be skipped.
+              (let ((line (format nil "~A skipped" name)))
+                (write-line line) (write-line line table))
+              (handler-case
+                  (multiple-value-bind (m n rows columns vals) (read-rectangular input name)
+                    (let* ((matrix (csc:from-coo m n rows columns vals
+                                                 (coalton:coalton coalton-linalg/sparse/csc:RejectDuplicates)))
+                           (source (csc:entries matrix))
+                           (b (read-right-hand-side input name m))
+                           (plan (aug:analyze matrix))
+                           (size (aug:dimension plan))
+                           (pattern (ldlt:pattern size (aug:column-pointers plan) (aug:row-indices plan)))
+                           (values (darray (aug:entry-count plan)))
+                           (rhs (darray size)) (x (darray size)) (index 0))
+                      (dotimes (i m) (setf (aref rhs (+ n i)) (aref b i)))
+                      (dolist (run runs)
+                        (destructuring-bind (top bottom held) run
+                          (incf count)
+                          (let* ((maker (if held
+                                            (lambda () (ldlt:analyze-quasidefinite pattern (aug:leading-dimension plan)))
+                                            (lambda () (ldlt:analyze pattern))))
+                                 (symbolic (funcall maker))
+                                 (factor (ldlt:symbolic-factor symbolic))
+                                 (order (if held "held" "plain"))
+                                 (entries (+ size (length (ldlt:factor-rows factor)))))
+                            (aug:refill! plan source top bottom values)
+                            (write-augmented-file (indexed-path output name index ".K.out.txt") plan values)
+                            (let* ((status (ldlt:factor-signed! symbolic values 0d0))
+                                   (success (eq status (coalton:coalton ldlt:SignedSuccess)))
+                                   (refused (ldlt:refused-column symbolic))
+                                   (solved (and success (ldlt:solve! factor rhs x))))
+                              (when success
+                                (write-factor-files output name factor (format nil ".~D" index))
+                                (when (eq solved (coalton:coalton ldlt:SolveSuccess))
+                                  (write-array-file (indexed-path output name index ".x.out.txt") x)))
+                              (with-open-file (out (indexed-path output name index ".signed.out.txt")
+                                                   :direction :output :if-exists :supersede :if-does-not-exist :create)
+                                (format out "status ~A~%refused-column ~D~%positive ~D~%negative ~D~%growth ~A~%solve ~A~%"
+                                        (signed-status-name status) refused
+                                        (ldlt:positive-pivot-count factor) (ldlt:negative-pivot-count factor)
+                                        (f64-string (ldlt:factor-growth factor))
+                                        (if success (sparse-solve-status-name solved) "none")))
+                              (let* ((analyse-ms (best-ms maker repeats))
+                                     (refill-thunk (lambda () (aug:refill! plan source top bottom values)))
+                                     (factor-thunk (lambda () (ldlt:factor-signed! symbolic values 0d0)))
+                                     (solve-thunk (lambda () (ldlt:solve! factor rhs x)))
+                                     (refill-ms (best-ms refill-thunk repeats))
+                                     (factor-ms (best-ms factor-thunk repeats))
+                                     (solve-ms (best-ms solve-thunk repeats))
+                                     (bytes (bytes-for (lambda ()
+                                                         (funcall refill-thunk) (funcall factor-thunk)
+                                                         (funcall solve-thunk))
+                                                       (max 1000 allocation-repeats)))
+                                     (line (format nil "~A ~D ~D ~D ~A ~A ~A ~D ~D ~A ~D ~D ~A ~,6F ~,6F ~,6F ~,6F ~D"
+                                                   name index m n order (f64-string top) (f64-string bottom)
+                                                   (aug:entry-count plan) entries (signed-status-name status)
+                                                   (ldlt:positive-pivot-count factor)
+                                                   (ldlt:negative-pivot-count factor)
+                                                   (f64-string (ldlt:factor-growth factor))
+                                                   analyse-ms refill-ms factor-ms solve-ms bytes)))
+                                ;; A refused solve after a refused factorization is part of the measured calls.
+                                (unless (zerop bytes) (incf failures))
+                                (write-line line) (write-line line table)))))
+                        (incf index))))
+                (error (condition)
+                  (incf count)
+                  (if (and linalg-error (typep condition linalg-error))
+                      (let ((line (format nil "~A refused ~A" name (refusal-name condition))))
+                        (with-open-file (out (fixture-path output name ".refused.out.txt")
+                                             :direction :output :if-exists :supersede :if-does-not-exist :create)
+                          (write-line (refusal-name condition) out))
+                        (write-line line) (write-line line table))
+                      (progn (incf failures)
+                             (format t "AUGMENTED-DRIVER-ERROR ~A ~A~%" name condition)))))))))
+    (if (zerop failures)
+        (format t "AUGMENTED-FIXTURES-PASS ~D~%" count)
+        (error "AUGMENTED-FIXTURES-FAIL ~D of ~D" failures count))))

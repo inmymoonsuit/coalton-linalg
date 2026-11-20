@@ -1,0 +1,137 @@
+(cl:defpackage #:coalton-linalg/sparse/augmented
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:limits #:coalton-linalg/sparse/limits)
+                    (#:err #:coalton-linalg/errors))
+  (:import-from #:coalton/math #:finite?)
+  (:export #:AugmentedPlan #:analyze #:analyze-with-limit
+           #:dimension #:leading-dimension #:column-pointers #:row-indices #:entry-count
+           #:refill! #:refill-csc! #:default-analysis-entry-limit #:maximum-analysis-size))
+(cl:in-package #:coalton-linalg/sparse/augmented)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+(coalton-toplevel
+  (define-struct AugmentedPlanStorage
+    "Owns a copy of the source pattern and the lower pattern of the augmented matrix."
+    (source-m UFix)
+    (source-n UFix)
+    (source-columns (arr:LispArray UFix))
+    (source-rows (arr:LispArray UFix))
+    (size UFix)
+    (columns (arr:LispArray UFix))
+    (rows (arr:LispArray UFix)))
+
+  (repr :transparent)
+  (define-type AugmentedPlan
+    "Private analysis handle for [[top I, A^T], [A, -bottom I]]; pattern views are read-only."
+    (MkAugmentedPlan AugmentedPlanStorage))
+
+  (inline)
+  (declare plan-storage (AugmentedPlan -> AugmentedPlanStorage))
+  (define (plan-storage plan) (match plan ((MkAugmentedPlan storage) storage)))
+
+  (declare dimension (AugmentedPlan -> UFix))
+  (define (dimension plan)
+    "Columns plus rows of the source: the order of the augmented matrix."
+    (.size (plan-storage plan)))
+  (declare leading-dimension (AugmentedPlan -> UFix))
+  (define (leading-dimension plan)
+    "Columns of the source: the unknowns of the leading block come first in every vector."
+    (.source-n (plan-storage plan)))
+  (declare column-pointers (AugmentedPlan -> arr:LispArray UFix))
+  (define (column-pointers plan) (.columns (plan-storage plan)))
+  (declare row-indices (AugmentedPlan -> arr:LispArray UFix))
+  (define (row-indices plan) (.rows (plan-storage plan)))
+  (declare entry-count (AugmentedPlan -> UFix))
+  (define (entry-count plan) (arr:length (.rows (plan-storage plan))))
+
+  (declare maximum-analysis-size UFix)
+  (define maximum-analysis-size limits:maximum-analysis-size)
+  (declare default-analysis-entry-limit UFix)
+  (define default-analysis-entry-limit limits:default-analysis-entry-limit)
+
+  (declare analyze-with-limit (csc:Matrix * UFix -> AugmentedPlan))
+  (define (analyze-with-limit matrix requested-limit)
+    "Own the lower pattern of the augmented matrix within a budget of stored entries, both diagonals included."
+    (let m = (csc:row-count matrix))
+    (let n = (csc:column-count matrix))
+    ;; Each dimension is checked before the sum, which then cannot overflow.
+    (limits:check-dimension! m)
+    (limits:check-dimension! n)
+    (let size = (+ n m))
+    (limits:check-dimension! size)
+    (let limit = (limits:effective-entry-limit requested-limit))
+    (let source-cp = (arr:copy (csc:column-pointers matrix)))
+    (let source-ri = (arr:copy (csc:row-indices matrix)))
+    (let stored = (arr:length source-ri))
+    (when (or (> size limit) (> stored (- limit size)))
+      (throw (err:AnalysisStorageExceeded (+ (the Integer (into size)) (into stored)) limit)))
+    (let columns = (arr:make (+ size 1) (the UFix 0)))
+    (let rows = (arr:make (+ size stored) (the UFix 0)))
+    ;; Column j of the leading block: its diagonal, then the source's column j moved below the block.
+    ;; The source is canonical CSC, so the rows stay strictly increasing.
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let start = (arr:aref columns j))
+      (arr:set! rows start j)
+      (for ((q (arr:aref source-cp j) (+ q 1))) :while (< q (arr:aref source-cp (+ j 1)))
+        (arr:set! rows (+ (+ start 1) (- q (arr:aref source-cp j))) (+ n (arr:aref source-ri q))))
+      (arr:set! columns (+ j 1) (+ (+ start 1) (- (arr:aref source-cp (+ j 1)) (arr:aref source-cp j)))))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let start = (arr:aref columns (+ n i)))
+      (arr:set! rows start (+ n i))
+      (arr:set! columns (+ (+ n i) 1) (+ start 1)))
+    (MkAugmentedPlan (AugmentedPlanStorage m n source-cp source-ri size columns rows)))
+
+  (declare analyze (csc:Matrix -> AugmentedPlan))
+  (define (analyze matrix)
+    "Analyze under the default entry budget; stored source zeros stay in the pattern."
+    (analyze-with-limit matrix default-analysis-entry-limit))
+
+  (declare refill! (AugmentedPlan * arr:LispArray F64 * F64 * F64 * arr:LispArray F64 -> Void))
+  (define (refill! plan input-values top bottom output)
+    "Overwrite caller-owned values of [[top I, A^T], [A, -bottom I]] in the plan's lower CSC order. Every check precedes the first write."
+    (let storage = (plan-storage plan))
+    (unless (and (== (arr:length input-values) (arr:length (.source-rows storage)))
+                 (== (arr:length output) (arr:length (.rows storage))))
+      (throw (err:InvalidDimensions "Augmented input or output value count differs from its plan.")))
+    (when (unsafe-pointer-eq? input-values output)
+      (throw (err:InvalidAliasing "Augmented output must be distinct from the input values.")))
+    (unless (and (inline (finite? top)) (inline (finite? bottom)))
+      (throw (err:NonFiniteInput "Augmented diagonal scalars must be finite.")))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length input-values))
+      (unless (inline (finite? (arr:aref input-values q)))
+        (throw (err:NonFiniteInput "Augmented source values must be finite."))))
+    (let n = (.source-n storage))
+    (let columns = (.columns storage))
+    (let source-cp = (.source-columns storage))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let start = (arr:aref columns j))
+      (arr:set! output start top)
+      (for ((q (arr:aref source-cp j) (+ q 1))) :while (< q (arr:aref source-cp (+ j 1)))
+        (arr:set! output (+ (+ start 1) (- q (arr:aref source-cp j))) (arr:aref input-values q))))
+    (let trailing = (- 0.0d0 bottom))
+    (for ((i 0 (+ i 1))) :while (< i (.source-m storage))
+      (arr:set! output (arr:aref columns (+ n i)) trailing)))
+
+  (declare refill-csc! (AugmentedPlan * csc:Matrix * F64 * F64 * arr:LispArray F64 -> Void))
+  (define (refill-csc! plan matrix top bottom output)
+    "Check the source dimensions and every pointer and index against the analyzed pattern, then refill."
+    (let storage = (plan-storage plan))
+    (unless (and (== (csc:row-count matrix) (.source-m storage))
+                 (== (csc:column-count matrix) (.source-n storage)))
+      (throw (err:InvalidDimensions "Augmented source dimensions differ from the analyzed matrix.")))
+    (let expected-cp = (.source-columns storage))
+    (let expected-ri = (.source-rows storage))
+    (let actual-cp = (csc:column-pointers matrix))
+    (let actual-ri = (csc:row-indices matrix))
+    (unless (and (== (arr:length actual-cp) (arr:length expected-cp))
+                 (== (arr:length actual-ri) (arr:length expected-ri)))
+      (throw (err:InvalidStructure "Augmented source pattern differs from the analyzed matrix.")))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length expected-cp))
+      (unless (== (arr:aref actual-cp q) (arr:aref expected-cp q))
+        (throw (err:InvalidStructure "Augmented source column pointers differ from the analyzed matrix."))))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length expected-ri))
+      (unless (== (arr:aref actual-ri q) (arr:aref expected-ri q))
+        (throw (err:InvalidStructure "Augmented source row indices differ from the analyzed matrix."))))
+    (refill! plan (csc:entries matrix) top bottom output)))

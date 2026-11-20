@@ -3,6 +3,11 @@
 Package: `coalton-linalg/sparse/spd-ldlt`. Source:
 [src/sparse/spd-ldlt.ct](../src/sparse/spd-ldlt.ct).
 
+This page is the positive definite contract. The same package has two further numeric
+entries over the same analysis, each with its own page:
+[a Cholesky-form entry for proofs](cholesky-form.md) and
+[a signed-pivot entry for quasi-definite matrices](quasidefinite.md).
+
 ## Interface
 
 `Pattern(size, columns, rows)` describes the lower triangle in zero-based CSC.

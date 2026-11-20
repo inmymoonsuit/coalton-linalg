@@ -2,6 +2,28 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.7.0 — 2026-11-20
+
+Added:
+
+- `factor-signed!` in `coalton-linalg/sparse/spd-ldlt`: L D Lᵀ with pivots of either sign
+  under the order fixed at analysis, for quasi-definite matrices, with `factor-growth`,
+  an exact measure of how much accuracy the factorization kept, and
+  `positive-pivot-count` and `negative-pivot-count`. **Read the growth before using the
+  factor**: no fixed order is accurate on every matrix.
+- `analyze-quasidefinite` and `analyze-quasidefinite-with-limit`: minimum-degree analysis
+  that holds a trailing block of indices back, each released by an eliminated leading
+  index.
+- `coalton-linalg/sparse/augmented`: the matrix `[[top I, Aᵀ], [A, −bottom I]]` of a sparse
+  A on a fixed pattern, analyzed once and refilled without allocating. With the two
+  entries above it gives a regularized minimum-norm solve whose cost follows A's sparsity
+  where A Aᵀ would be dense.
+- A compiled example, `examples/augmented-minimum-norm.ct`.
+
+[Contract](docs/quasidefinite.md) · [record](docs/batch7.md). No existing call changes
+meaning. `factor!` and `factor-cholesky!` now also set the pivot counts and clear the
+growth figure.
+
 ## 0.6.3 — 2026-11-20
 
 Added: `factor-cholesky!` and `cholesky-ready?` in `coalton-linalg/sparse/spd-ldlt`, a

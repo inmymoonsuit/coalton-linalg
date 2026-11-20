@@ -83,6 +83,38 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 7: signed pivots and the augmented matrix
+
+**The setting is published; the ordering rule and the growth figure were worked out here.**
+That a matrix `[[H, Aᵀ], [A, −G]]` with H and G positive definite has an L D Lᵀ
+factorization with diagonal D under every symmetric permutation is Vanderbei's result on
+symmetric quasi-definite matrices (1995), and that such a factorization can be unstable,
+with accuracy governed by the size of the factors, is the analysis of Gill, Saunders and
+Shinnerl (1996). Both were known from their statements; the short proofs on [the contract
+page](quasidefinite.md) were written out here. Regularizing a minimum-norm problem as an
+augmented system with two small diagonal blocks is common practice in sparse least squares
+and optimization.
+
+The signed entry is the library's own L D Lᵀ kernel with one test changed. The growth
+figure follows from an observation made here, that `|L| |D| |Lᵀ|` is a Gram matrix and so
+has its largest entry on its diagonal, which makes the exact figure cost one multiply-add
+an entry. The rounding bounds are the standard componentwise analysis of this arithmetic,
+with constants counted for this kernel and checked exactly by the tests.
+
+The held ordering came from experiment. Plain minimum degree was measured to give growth
+of about two over the trailing diagonal; holding rows until a column of theirs had gone
+was tried, failed on two rows sharing their only column, and became the rule that a column
+releases one row. Orderings that place a constraint after a variable it touches are known
+in the literature on saddle-point matrices, from descriptions only; no ordering code,
+listing or pseudocode box was opened. The experiments used NumPy on public fixtures, with
+orderings written for the experiment, and are summarized in [the batch record](batch7.md).
+The tests' references are exact rational products of the exported factor, exact inertia
+by a separate elimination, and exact residuals, all written for the tests. NumPy was used
+after the implementation as a singular-value reference for the measured solutions.
+
+Whether following published results this closely from their statements meets this
+repository's clean-room rule is the same open maintainer decision as for Batch 3d.
+
 ## Batch 6a: Cholesky-form entry
 
 The Cholesky factorization is classical and its column form follows from equating the

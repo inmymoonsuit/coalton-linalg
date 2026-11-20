@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.6.3"
+  :version "0.7.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -14,7 +14,8 @@
                 :components ((:ct-file "errors") (:ct-file "numeric")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
-                                           (:ct-file "gram") (:ct-file "spd-ldlt")))
+                                           (:ct-file "gram") (:ct-file "augmented")
+                                           (:ct-file "spd-ldlt")))
                              (:module "dense" :serial t
                               :components ((:ct-file "limits") (:ct-file "indefinite-ldlt")
                                            (:ct-file "orthogonal") (:ct-file "jacobi")))))))
@@ -23,7 +24,8 @@
   :description "Runnable public-interface examples."
   :depends-on ("coalton-linalg")
   :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
-                                                (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints") (:ct-file "singular-rank")))))
+                                                (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints") (:ct-file "singular-rank")
+                                                (:ct-file "augmented-minimum-norm")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -42,7 +44,8 @@
                              (:ct-file "indefinite-callers") (:file "indefinite")
                              (:ct-file "orthogonal-callers") (:file "orthogonal")
                              (:ct-file "jacobi-callers") (:file "jacobi")
-                             (:ct-file "cholesky-callers") (:file "cholesky-form") (:file "suite"))))
+                             (:ct-file "cholesky-callers") (:file "cholesky-form")
+                             (:ct-file "quasidefinite-callers") (:file "quasidefinite") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))
@@ -52,17 +55,19 @@
   :depends-on ("coalton-linalg")
   :components ((:module "tools" :serial t :components ((:file "fixtures") (:file "gram-fixtures")
                                                        (:file "indefinite-fixtures") (:file "orthogonal-fixtures")
-                                                       (:file "jacobi-fixtures")))))
+                                                       (:file "jacobi-fixtures") (:file "augmented-fixtures")))))
 
 (asdf:defsystem "coalton-linalg/tools-tests"
   :description "Fixture parser and artifact lifecycle regressions."
   :depends-on ("coalton-linalg/tools")
   :components ((:module "tests" :serial t :components ((:file "tools") (:file "gram-tools") (:file "indefinite-tools")
-                                                       (:file "orthogonal-tools") (:file "jacobi-tools"))))
+                                                       (:file "orthogonal-tools") (:file "jacobi-tools")
+                                                       (:file "augmented-tools"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tools :run-tools-tests)
              (uiop:symbol-call :coalton-linalg/tools :run-gram-tools-tests)
              (uiop:symbol-call :coalton-linalg/tools :run-indefinite-tools-tests)
              (uiop:symbol-call :coalton-linalg/tools :run-orthogonal-tools-tests)
-             (uiop:symbol-call :coalton-linalg/tools :run-jacobi-tools-tests)))
+             (uiop:symbol-call :coalton-linalg/tools :run-jacobi-tools-tests)
+             (uiop:symbol-call :coalton-linalg/tools :run-augmented-tools-tests)))

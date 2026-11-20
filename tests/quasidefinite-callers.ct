@@ -1,0 +1,87 @@
+(cl:defpackage #:coalton-linalg/tests/quasidefinite-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:aug #:coalton-linalg/sparse/augmented)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:observe-signed #:raw-error #:matrix-error #:analysis-error #:held-analysis-error #:step-loop))
+(cl:in-package #:coalton-linalg/tests/quasidefinite-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare signed-code (ldlt:SignedFactorStatus -> UFix))
+  (define (signed-code status)
+    (match status
+      ((ldlt:SignedSuccess) 0)
+      ((ldlt:SignedZeroPivot) 1)
+      ((ldlt:SignedNonFinite) 2)
+      ((ldlt:SignedBadValues) 3)
+      ((ldlt:SignedBadShift) 4)))
+
+  (declare observe-signed (ldlt:Symbolic * arr:LispArray F64 * F64 -> UFix))
+  (define (observe-signed symbolic values shift)
+    "Exhaustively matched outcome: success 0, zero pivot 1, non-finite 2, values 3, shift 4."
+    (signed-code (ldlt:factor-signed! symbolic values shift)))
+
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure 1, dimensions 2, input 5, dimension limit 7, storage 8, alias 9."
+    (match problem
+      ((err:InvalidStructure _) 1)
+      ((err:InvalidDimensions _) 2)
+      ((err:NonFiniteInput _) 5)
+      ((err:AnalysisLimitExceeded _ _) 7)
+      ((err:AnalysisStorageExceeded _ _) 8)
+      ((err:InvalidAliasing _) 9)
+      (_ 99)))
+
+  (declare raw-error (aug:AugmentedPlan * arr:LispArray F64 * F64 * F64 * arr:LispArray F64 -> UFix))
+  (define (raw-error plan values top bottom output)
+    (catch (progn (aug:refill! plan values top bottom output) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare matrix-error (aug:AugmentedPlan * csc:Matrix * F64 * F64 * arr:LispArray F64 -> UFix))
+  (define (matrix-error plan matrix top bottom output)
+    (catch (progn (aug:refill-csc! plan matrix top bottom output) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare analysis-error (csc:Matrix * UFix * Integer -> UFix))
+  (define (analysis-error matrix limit expected-storage)
+    "0 on success; 8 for a storage refusal carrying the expected count and the given budget, 88 for another payload."
+    (catch (progn (aug:analyze-with-limit matrix limit) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisStorageExceeded required budget)
+          (if (and (== required expected-storage) (== budget limit)) 8 88))
+         (_ (error-code problem))))
+      (_ 99)))
+
+  (declare held-analysis-error (ldlt:Pattern * UFix -> UFix))
+  (define (held-analysis-error pattern leading)
+    "0 on success, otherwise the typed error category of analyze-quasidefinite."
+    (catch (progn (ldlt:analyze-quasidefinite pattern leading) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare step-loop (aug:AugmentedPlan * ldlt:Symbolic * arr:LispArray F64 * F64 * F64 * arr:LispArray F64
+                      * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (step-loop plan symbolic values top bottom augmented rhs out count)
+    "A real external caller: refill the augmented values, factor with signed pivots, read the counts, solve twice."
+    (let failures = (cell:new (the UFix 0)))
+    (let factor = (ldlt:symbolic-factor symbolic))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (aug:refill! plan values top bottom augmented)
+      (unless (== (ldlt:factor-signed! symbolic augmented 0.0d0) ldlt:SignedSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (+ (ldlt:positive-pivot-count factor) (ldlt:negative-pivot-count factor))
+                  (aug:dimension plan))
+        (cell:write! failures (+ (cell:read failures) 1)))
+      ;; A second solve on a fresh right-hand side, as an iterative refinement would make.
+      (unless (== (ldlt:solve! factor rhs out) ldlt:SolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (ldlt:solve! factor out out) ldlt:SolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))

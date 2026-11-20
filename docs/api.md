@@ -77,7 +77,7 @@ plan's dimension, column pointers and row indices.
 
 ## coalton-linalg/sparse/spd-ldlt
 
-[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Cholesky form](cholesky-form.md) · [Source](../src/sparse/spd-ldlt.ct)
+[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Cholesky form](cholesky-form.md) · [Signed pivots](quasidefinite.md) · [Source](../src/sparse/spd-ldlt.ct)
 
 | Export | Type or role |
 | --- | --- |
@@ -102,6 +102,13 @@ plan's dimension, column pointers and row indices.
 | `factor-ready?` | NumericFactor -> Boolean |
 | `factor-cholesky!` | Symbolic * V * F64 -> FactorStatus; Cholesky-form factor for a proof, not for solving |
 | `cholesky-ready?` | NumericFactor -> Boolean |
+| `analyze-quasidefinite` | Pattern * UFix -> Symbolic; indices from the second argument on are held back |
+| `analyze-quasidefinite-with-limit` | Pattern * UFix * UFix -> Symbolic; the last argument is the entry budget |
+| `SignedFactorStatus` | Signed factorization outcome type |
+| `SignedSuccess`, `SignedZeroPivot`, `SignedNonFinite`, `SignedBadValues`, `SignedBadShift` | SignedFactorStatus values |
+| `factor-signed!` | Symbolic * V * F64 -> SignedFactorStatus; pivots of either sign, no numerical pivoting |
+| `factor-growth` | NumericFactor -> F64; measured by the latest successful factor-signed!, otherwise -1 |
+| `positive-pivot-count`, `negative-pivot-count` | NumericFactor -> UFix; signs of D in the standing factor |
 | `solve!` | NumericFactor * V * V -> SolveStatus |
 | `ConditionStatus` | Condition-estimate outcome type |
 | `ConditionSuccess`, `ConditionInvalidFactor`, `ConditionNonFiniteResult` | ConditionStatus values |
@@ -121,6 +128,25 @@ fields from ordinary external Coalton callers. The public inspection arrays
 remain mutable at runtime and read-only by contract. An earlier FactorSuccess
 describes its original call; the separately borrowed factor can later become invalid.
 See the [design review](design.md#coalton-interface-review-2026-11-19).
+
+## coalton-linalg/sparse/augmented
+
+[Contract](quasidefinite.md) · [Source](../src/sparse/augmented.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `AugmentedPlan` | Fixed-pattern plan for `[[top I, Aᵀ], [A, −bottom I]]`; obtain from the analyze operations |
+| `analyze` | coalton-linalg/sparse/csc:Matrix -> AugmentedPlan |
+| `analyze-with-limit` | Matrix * UFix -> AugmentedPlan; explicit stored-entry budget |
+| `dimension`, `leading-dimension`, `entry-count` | AugmentedPlan -> UFix; n + m, n, and the stored lower entries |
+| `column-pointers`, `row-indices` | AugmentedPlan -> I; lower CSC pattern with every diagonal |
+| `refill!` | AugmentedPlan * V * F64 * F64 * V -> Void; source values, top, bottom, caller output |
+| `refill-csc!` | AugmentedPlan * Matrix * F64 * F64 * V -> Void; checks the source pattern first |
+| `maximum-analysis-size`, `default-analysis-entry-limit` | UFix; the bounds shared with SPD analysis |
+
+The output values belong to the caller and feed `factor-signed!` with a `Pattern` built
+from the plan's dimension, column pointers and row indices, analyzed by
+`analyze-quasidefinite` with the plan's leading dimension.
 
 ## coalton-linalg/dense/indefinite-ldlt
 
