@@ -12,6 +12,7 @@
   (run-buffered-property-tests)
   (run-gram-runtime-tests)
   (run-gram-property-tests)
+  (run-condition-tests)
   (coalton-linalg/tests/typed-errors:run-typed-error-tests)
   (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
   (coalton-linalg/tests/encapsulation:run-status-type-tests)

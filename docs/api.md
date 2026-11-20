@@ -77,7 +77,7 @@ plan's dimension, column pointers and row indices.
 
 ## coalton-linalg/sparse/spd-ldlt
 
-[Contract and outcome meanings](spd-ldlt.md) · [Source](../src/sparse/spd-ldlt.ct)
+[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Source](../src/sparse/spd-ldlt.ct)
 
 | Export | Type or role |
 | --- | --- |
@@ -101,6 +101,14 @@ plan's dimension, column pointers and row indices.
 | `factor-values`, `factor-diagonal` | NumericFactor -> V |
 | `factor-ready?` | NumericFactor -> Boolean |
 | `solve!` | NumericFactor * V * V -> SolveStatus |
+| `ConditionStatus` | Condition-estimate outcome type |
+| `ConditionSuccess`, `ConditionInvalidFactor`, `ConditionNonFiniteResult` | ConditionStatus values |
+| `estimate-inverse-norm1!` | NumericFactor -> ConditionStatus; lower estimate of the inverse's 1-norm |
+| `inverse-norm1-estimate` | NumericFactor -> F64; latest estimate for the standing factor, otherwise -1 |
+| `estimate-solve-count` | NumericFactor -> UFix; solves made by the latest estimate call |
+| `maximum-estimate-solves` | UFix; 11, the bound on that count |
+| `shifted-norm1` | Symbolic * V * F64 -> F64; 1-norm of A - shift I from the analyzed lower values |
+| `reciprocal-condition1` | F64 * F64 -> F64; 1 / (norm * inverse-norm), or 0 when that is not positive and finite |
 
 Every factor call overwrites or invalidates the owning workspace's previous
 factor. Solve mutates scratch and, on success, the supplied output. Handles and

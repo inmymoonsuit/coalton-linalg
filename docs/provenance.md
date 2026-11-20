@@ -83,6 +83,20 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 3d: condition estimate
+
+The estimate was derived from convexity: |inverse(M) x|_1 is convex in x, its maximum over
+the unit 1-norm ball is the norm sought and is attained at a vertex, and one further solve
+with the sign vector gives a subgradient that says whether any vertex is promised an
+increase. [The contract](condition.md) carries the derivation. The method is the one the
+literature attributes to Hager, and the planned-batch page links a prose description of
+factor-based condition estimation; both were known as descriptions. The final probe vector,
+alternating in sign with magnitudes growing evenly from 1 to 2, is a published safeguard for
+that estimator, used here from recall of its description; its bound 2|y|_1/(3n) was derived
+here from the vector's own 1-norm. No numerical-library implementation and no algorithm
+listing was opened or copied. The reference values in the tests are exact rational inverses
+computed by a separate dense elimination written for the tests.
+
 ## Batch 3c: fixed-pattern Gram products
 
 The product pattern and refill follow the defining sums G[i,j] = sum_k B[k,i] B[k,j]

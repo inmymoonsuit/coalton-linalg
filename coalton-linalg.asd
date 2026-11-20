@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.2.0"
+  :version "0.3.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -34,7 +34,8 @@
                              (:ct-file "buffered-callers") (:file "buffered-products")
                              (:file "buffered-properties")
                              (:ct-file "gram-callers") (:file "gram-runtime")
-                             (:file "gram-properties") (:file "suite"))))
+                             (:file "gram-properties")
+                             (:ct-file "condition-callers") (:file "condition") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))

@@ -2,6 +2,19 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.3.0 — 2026-11-19
+
+Added:
+
+- A condition estimate in `coalton-linalg/sparse/spd-ldlt`: `estimate-inverse-norm1!` gives a
+  lower estimate of the 1-norm of the inverse of the factored, shifted matrix in at most 11
+  solves without allocating; `shifted-norm1` gives the matching matrix norm and
+  `reciprocal-condition1` combines them. Outcomes are a new `ConditionStatus`.
+  [Contract](docs/condition.md) · [record](docs/batch3d.md).
+
+Unchanged: every earlier result and artifact. A `factor!` call now also clears the stored
+estimate; no existing call changes meaning.
+
 ## 0.2.0 — 2026-11-19
 
 Added:

@@ -1,0 +1,37 @@
+(cl:defpackage #:coalton-linalg/tests/condition-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:estimate-loop #:norm-error))
+(cl:in-package #:coalton-linalg/tests/condition-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare estimate-loop (ldlt:Symbolic * arr:LispArray F64 * F64 * UFix -> UFix))
+  (define (estimate-loop symbolic values shift count)
+    "A real external caller: refactor, take the norm, estimate, and form the reciprocal; count what goes wrong."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (ldlt:factor! symbolic values shift) ldlt:FactorSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (let norm = (ldlt:shifted-norm1 symbolic values shift))
+      (let factor = (ldlt:symbolic-factor symbolic))
+      (unless (== (ldlt:estimate-inverse-norm1! factor) ldlt:ConditionSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (let reciprocal = (ldlt:reciprocal-condition1 norm (ldlt:inverse-norm1-estimate factor)))
+      (unless (and (> reciprocal 0.0d0) (<= reciprocal 1.000001d0))
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare norm-error (ldlt:Symbolic * arr:LispArray F64 * F64 -> UFix))
+  (define (norm-error symbolic values shift)
+    "Test-only codes for shifted-norm1: success 0, dimensions 2, input 5, result 6, unexpected 99."
+    (catch (progn (ldlt:shifted-norm1 symbolic values shift) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:InvalidDimensions _) 2)
+         ((err:NonFiniteInput _) 5)
+         ((err:NonFiniteResult _) 6)
+         (_ 99)))
+      (_ 99))))

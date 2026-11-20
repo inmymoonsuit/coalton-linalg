@@ -55,6 +55,9 @@ SolveStatus is a distinct type with these outcomes:
 | SolveNonFiniteRhs | Nonfinite right-hand side |
 | SolveNonFiniteResult | Nonfinite computed solution |
 
+After a successful factor, [the condition estimate](condition.md) gives a lower estimate of
+the 1-norm of the inverse of the shifted matrix by solves with the same factor.
+
 Use Coalton matching or equality with the named values. There is no numeric
 encoding contract. Raw Lisp callers can obtain a status value through, for
 example, `(coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveSuccess)`.

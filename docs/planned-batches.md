@@ -1,6 +1,7 @@
 # Planned numerical batches
 
-State: Batches 3a, 3b and 3c completed; remaining steps planned.
+State: Batch 3 completed (3a through 3d); Batches 4 through 6 planned.
+[Batch 3d evidence](batch3d.md) records the condition estimate.
 [Batch 3c evidence](batch3c.md) records the Gram products.
 [Batch 3b evidence](batch3b.md) records buffered-product delivery.
 [Batch 3a evidence](batch3a.md) records the implemented contract and measurements.
@@ -87,6 +88,11 @@ measurements. Verify construction rounding; an exactly rank-deficient generating
 matrix does not establish exact singularity of its rounded Gram output.
 
 ### 3d. Condition estimate using a prepared factor
+
+Implementation note: delivered as `estimate-inverse-norm1!`, `shifted-norm1` and
+`reciprocal-condition1`; [the contract](condition.md) is the current statement.
+The estimate is tied to one factor generation; the matching norm is computed from
+values the caller passes, because the library retains none.
 
 Start with a named reciprocal condition estimate in a specified norm, such as
 rcond_1, using factor solves and a caller-supplied or retained matching matrix norm.

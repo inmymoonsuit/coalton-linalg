@@ -15,6 +15,7 @@ loaded or required.
 - Transpose, row/column permutations, A*x and transpose(A)*x.
 - Caller-buffer matvec! and transpose-matvec!, with measured allocation-free success.
 - Fixed-pattern Gram products AᵀA and AAᵀ: analyze once, refill caller storage without allocating.
+- A lower estimate of the inverse's 1-norm from a prepared factor, for a reciprocal condition estimate.
 - Stable Euclidean/infinity norms using Coalton standard numeric primitives.
 - Lower compressed sparse column (CSC) factorization input, double-precision values.
 - Deterministic exact minimum-degree ordering and symbolic factor structure.
@@ -95,7 +96,6 @@ each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the
 | `src/errors.ct` | Typed validation and primitive arithmetic errors |
 | `src/numeric.ct` | Stable norms |
 | `src/sparse/csc.ct` | Owned sparse matrices and operations |
-| `src/sparse/ordering.ct` | Private compact graph ordering |
 | `src/sparse/gram.ct` | Fixed-pattern AᵀA and AAᵀ products |
 | `src/sparse/ordering.ct` | Private minimum-degree ordering |
 | `src/sparse/spd-ldlt.ct` | SPD factorization and solves |

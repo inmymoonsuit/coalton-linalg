@@ -10,7 +10,10 @@
            #:SolveStatus #:SolveSuccess #:SolveInvalidFactor #:SolveBadSize #:SolveNonFiniteRhs #:SolveNonFiniteResult
            #:analyze #:analyze-csc #:analyze-with-limit #:analyze-csc-with-limit #:factor! #:solve! #:refused-column
            #:symbolic-factor #:factor-permutation #:factor-columns #:factor-rows
-           #:factor-values #:factor-diagonal #:factor-ready?))
+           #:factor-values #:factor-diagonal #:factor-ready?
+           #:ConditionStatus #:ConditionSuccess #:ConditionInvalidFactor #:ConditionNonFiniteResult
+           #:estimate-inverse-norm1! #:inverse-norm1-estimate #:estimate-solve-count
+           #:maximum-estimate-solves #:shifted-norm1 #:reciprocal-condition1))
 (cl:in-package #:coalton-linalg/sparse/spd-ldlt)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -30,7 +33,10 @@
     (entries (arr:LispArray F64))
     (diagonal (arr:LispArray F64))
     (scratch (arr:LispArray F64))
-    (state (arr:LispArray UFix)))
+    (state (arr:LispArray UFix))
+    (probe (arr:LispArray F64))
+    (image (arr:LispArray F64))
+    (estimate (arr:LispArray F64)))
 
   (repr :transparent)
   (define-type NumericFactor
@@ -218,7 +224,8 @@
         (arr:set! ai slot q)
         (arr:set! cursor k (+ slot 1))))
     (let f = (MkNumericFactor (NumericFactorStorage n perm lp lr (arr:make nzl 0.0d0) (arr:make n 0.0d0)
-                    (arr:make n 0.0d0) (arr:make 1 (the UFix 0)))))
+                    (arr:make n 0.0d0) (arr:make 2 (the UFix 0))
+                    (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make 1 -1.0d0))))
     (MkSymbolic (SymbolicStorage f nnz ap ar ai rp rc rq (arr:make 1 (the IFix -1)))))
 
   (declare factor! (Symbolic * arr:LispArray F64 * F64 -> FactorStatus))
@@ -227,6 +234,9 @@
     (let s = (symbolic-storage symbolic))
     (let f = (numeric-storage (.numeric s)))
     (arr:set! (.state f) 0 0)
+    ;; A stored inverse-norm estimate describes the previous factor only.
+    (arr:set! (.state f) 1 0)
+    (arr:set! (.estimate f) 0 -1.0d0)
     (arr:set! (.diagnostic s) 0 -1)
     (unless (== (arr:length values) (.input-count s)) (return FactorBadValues))
     (unless (inline (finite? shift)) (return FactorBadShift))
@@ -301,4 +311,147 @@
     (for ((k 0 (+ k 1))) :while (< k n)
       (arr:set! out (arr:aref perm k) (arr:aref w k)))
     SolveSuccess)
+
+  (derive Eq)
+  (repr :enum)
+  (define-type ConditionStatus
+    "Outcome of an inverse-norm estimate; distinct from factor and solve outcomes."
+    ConditionSuccess ConditionInvalidFactor ConditionNonFiniteResult)
+
+  (declare maximum-estimate-steps UFix)
+  (define maximum-estimate-steps 5)
+
+  (declare maximum-estimate-solves UFix)
+  ;; Upper bound on solves in one estimate: two a step, and one for the alternating probe.
+  (define maximum-estimate-solves (+ (* 2 maximum-estimate-steps) 1))
+
+  (declare inverse-norm1-estimate (NumericFactor -> F64))
+  (define (inverse-norm1-estimate factor)
+    "Latest successful estimate for the factor as it now stands, or -1 when none stands."
+    (arr:aref (.estimate (numeric-storage factor)) 0))
+
+  (declare estimate-solve-count (NumericFactor -> UFix))
+  (define (estimate-solve-count factor)
+    "Solves made by the latest estimate call, counting one that was refused."
+    (arr:aref (.state (numeric-storage factor)) 1))
+
+  (declare counted-solve! (NumericFactor * NumericFactorStorage * arr:LispArray F64 * arr:LispArray F64 -> Boolean))
+  (define (counted-solve! factor f b out)
+    (arr:set! (.state f) 1 (+ (arr:aref (.state f) 1) 1))
+    (== (solve! factor b out) SolveSuccess))
+
+  (declare absolute-sum (arr:LispArray F64 -> F64))
+  (define (absolute-sum vector)
+    (let total = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length vector))
+      (cell:write! total (+ (cell:read total) (abs (arr:aref vector i)))))
+    (cell:read total))
+
+  (declare estimate-inverse-norm1! (NumericFactor -> ConditionStatus))
+  (define (estimate-inverse-norm1! factor)
+    "Estimate the 1-norm of the inverse of the factored matrix from below, by solves alone. See docs/condition.md."
+    (let f = (numeric-storage factor))
+    (arr:set! (.estimate f) 0 -1.0d0)
+    (arr:set! (.state f) 1 0)
+    (unless (factor-ready? factor) (return ConditionInvalidFactor))
+    (let n = (.size f))
+    (when (== n 0)
+      (arr:set! (.estimate f) 0 0.0d0)
+      (return ConditionSuccess))
+    (let x = (.probe f))
+    (let y = (.image f))
+    (let count = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (cell:write! count (+ (cell:read count) 1.0d0)))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (arr:set! x i (/ 1.0d0 (cell:read count))))
+    (let best = (cell:new 0.0d0))
+    (let previous = (cell:new n))
+    ;; Maximize the convex function |inverse(M) x|_1 over the unit 1-norm ball: each step moves
+    ;; to the vertex its subgradient favours, and stops where no vertex promises an increase.
+    (for ((step 0 (+ step 1))) :while (< step maximum-estimate-steps)
+      (unless (counted-solve! factor f x y) (return ConditionNonFiniteResult))
+      (let norm = (absolute-sum y))
+      (unless (inline (finite? norm)) (return ConditionNonFiniteResult))
+      (when (and (> step 0) (<= norm (cell:read best))) (break))
+      (cell:write! best norm)
+      (for ((i 0 (+ i 1))) :while (< i n)
+        (arr:set! y i (if (< (arr:aref y i) 0.0d0) -1.0d0 1.0d0)))
+      ;; M is symmetric, so the subgradient inverse(M)^T sign(y) is one more solve.
+      (unless (counted-solve! factor f y y) (return ConditionNonFiniteResult))
+      (let along = (cell:new 0.0d0))
+      (let largest = (cell:new 0.0d0))
+      (let at = (cell:new (the UFix 0)))
+      (for ((i 0 (+ i 1))) :while (< i n)
+        (let z = (arr:aref y i))
+        (cell:write! along (+ (cell:read along) (* z (arr:aref x i))))
+        (when (> (abs z) (cell:read largest))
+          (cell:write! largest (abs z))
+          (cell:write! at i)))
+      (unless (inline (finite? (cell:read along))) (return ConditionNonFiniteResult))
+      (when (or (<= (cell:read largest) (cell:read along))
+                (== (cell:read at) (cell:read previous)))
+        (break))
+      (for ((i 0 (+ i 1))) :while (< i n) (arr:set! x i 0.0d0))
+      (arr:set! x (cell:read at) 1.0d0)
+      (cell:write! previous (cell:read at)))
+    ;; Any vector b bounds the norm from below by |inverse(M) b|_1 / |b|_1. This one alternates
+    ;; in sign and grows from 1 to 2, so |b|_1 = 3n/2; it catches a start the ascent cannot leave.
+    (when (> n 1)
+      (let sign = (cell:new 1.0d0))
+      (let position = (cell:new 0.0d0))
+      (for ((i 0 (+ i 1))) :while (< i n)
+        (arr:set! x i (* (cell:read sign)
+                         (+ 1.0d0 (/ (cell:read position) (- (cell:read count) 1.0d0)))))
+        (cell:write! sign (- 0.0d0 (cell:read sign)))
+        (cell:write! position (+ (cell:read position) 1.0d0)))
+      (unless (counted-solve! factor f x y) (return ConditionNonFiniteResult))
+      (let alternate = (/ (* 2.0d0 (absolute-sum y)) (* 3.0d0 (cell:read count))))
+      (unless (inline (finite? alternate)) (return ConditionNonFiniteResult))
+      (when (> alternate (cell:read best)) (cell:write! best alternate)))
+    (arr:set! (.estimate f) 0 (cell:read best))
+    ConditionSuccess)
+
+  (declare shifted-norm1 (Symbolic * arr:LispArray F64 * F64 -> F64))
+  (define (shifted-norm1 symbolic values shift)
+    "The 1-norm of the symmetric matrix A - shift I, from values in the analyzed lower CSC order."
+    (let s = (symbolic-storage symbolic))
+    (let f = (numeric-storage (.numeric s)))
+    (unless (== (arr:length values) (.input-count s))
+      (throw (err:InvalidDimensions "Value count differs from the analyzed pattern.")))
+    (unless (inline (finite? shift))
+      (throw (err:NonFiniteInput "Shift must be finite.")))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (unless (inline (finite? (arr:aref values q)))
+        (throw (err:NonFiniteInput "Matrix values must be finite."))))
+    (let n = (.size f))
+    (let w = (.scratch f))
+    (for ((i 0 (+ i 1))) :while (< i n) (arr:set! w i 0.0d0))
+    ;; Each stored lower entry counts toward its own column and, off the diagonal, its mirror's.
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (for ((q (arr:aref (.input-columns s) k) (+ q 1)))
+          :while (< q (arr:aref (.input-columns s) (+ k 1)))
+        (let v = (arr:aref values (arr:aref (.input-indices s) q)))
+        (let row = (arr:aref (.input-rows s) q))
+        (if (== row k)
+            (arr:set! w k (+ (arr:aref w k) (abs (- v shift))))
+            (progn
+              (arr:set! w k (+ (arr:aref w k) (abs v)))
+              (arr:set! w row (+ (arr:aref w row) (abs v)))))))
+    (let largest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (when (> (arr:aref w i) (cell:read largest)) (cell:write! largest (arr:aref w i))))
+    (unless (inline (finite? (cell:read largest)))
+      (throw (err:NonFiniteResult "Matrix norm is not finite.")))
+    (cell:read largest))
+
+  (declare reciprocal-condition1 (F64 * F64 -> F64))
+  (define (reciprocal-condition1 norm inverse-norm)
+    "1 / (norm * inverse-norm) when that product is positive and finite; 1 for two zeros, the empty matrix; otherwise 0."
+    (let product = (* norm inverse-norm))
+    (if (and (== norm 0.0d0) (== inverse-norm 0.0d0))
+        1.0d0
+        (if (and (> product 0.0d0) (inline (finite? product)))
+            (/ 1.0d0 product)
+            0.0d0)))
 )

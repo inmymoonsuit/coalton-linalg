@@ -38,7 +38,7 @@ artifacts. The exact-singular regression demonstrates the computed-pivot contrac
 
 ## Batches 3 through 6
 
-Batches 3a, 3b and 3c are completed; the remaining steps are planned. [The batch record](docs/batch3a.md)
+Batch 3 is completed in four steps, 3a through 3d; Batches 4 through 6 are planned. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -61,9 +61,12 @@ with an explicit factor-entry budget and overflow-safe representability limits.
    without allocating. Exact rational references, planted source controls and
    eight allocation measurements per policy pass. [The batch record](docs/batch3c.md)
    holds the measurements; [the contract](docs/gram.md) the calling rules.
-4. Add a factor-based condition estimate in a named norm. Do not equate a cheap
-   reciprocal 1-norm condition estimate with a singular-value ratio or a rank
-   certificate; the matrix, shift and matching norm must be explicit.
+4. **Completed (3d):** a lower estimate of the 1-norm of the inverse of the factored,
+   shifted matrix in at most 11 solves, the matching matrix norm, and their reciprocal
+   product. It is neither a singular-value ratio nor a rank certificate. Exact rational
+   references, planted source controls and an allocation measurement per policy pass.
+   [The batch record](docs/batch3d.md) holds the measurements; [the contract](docs/condition.md)
+   the meaning.
 
 ### Batch 4: dense symmetric indefinite LDL^T and inertia
 
