@@ -1,6 +1,7 @@
 # Planned numerical batches
 
-State: Batches 3 (3a through 3d), 4 and 5 completed; Batch 6 planned.
+State: Batches 3 (3a through 3d), 4, 5 and 6 completed.
+[Batch 6 evidence](batch6.md) records the Jacobi eigenvalue and singular value routines.
 [Batch 5 evidence](batch5.md) records the orthogonal decompositions.
 [Batch 4 evidence](batch4.md) records the dense indefinite factorization.
 [Batch 3d evidence](batch3d.md) records the condition estimate.
@@ -196,6 +197,13 @@ families such as the [Kahan matrix](https://math.nist.gov/MatrixMarket/deli/Kaha
 independent high-precision or exact checks where applicable. Do not wait for Batch 6 to validate this batch.
 
 ## Batch 6: dense symmetric eigenproblems and Jacobi SVD
+
+Implementation note: delivered as `coalton-linalg/dense/jacobi`;
+[the contract](jacobi.md) is the current statement and carries the derivation. The right
+singular factor is always complete, n-by-n, so the nullspace basis needs no separate
+completion; the price is that a wide matrix costs far more than its transpose. Absolute
+accuracy is tested by exact inertia brackets; relative accuracy of small values is
+observed on two graded matrices and not promised.
 
 Develop symmetric Jacobi eigenvalue/eigenvector operations and a direct one-sided
 Jacobi SVD. Do not obtain the SVD by first forming a Gram matrix, which squares the

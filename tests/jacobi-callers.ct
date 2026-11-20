@@ -1,0 +1,78 @@
+(cl:defpackage #:coalton-linalg/tests/jacobi-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:jc #:coalton-linalg/dense/jacobi)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:observe-eigen #:observe-eigen-limit #:observe-svd #:observe-svd-limit
+           #:eigen-loop #:svd-loop #:eigen-storage-error #:svd-storage-error))
+(cl:in-package #:coalton-linalg/tests/jacobi-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare status-code (jc:JacobiStatus -> UFix))
+  (define (status-code status)
+    (match status
+      ((jc:JacobiSuccess) 0)
+      ((jc:JacobiNotConverged) 1)
+      ((jc:JacobiNonFinite) 2)
+      ((jc:JacobiBadSize) 3)))
+
+  (declare observe-eigen (jc:SymmetricEigen * arr:LispArray F64 -> UFix))
+  (define (observe-eigen eigen a)
+    "Exhaustively matched outcome: success 0, not converged 1, non-finite 2, size 3."
+    (status-code (jc:eigen! eigen a)))
+
+  (declare observe-eigen-limit (jc:SymmetricEigen * arr:LispArray F64 * UFix -> UFix))
+  (define (observe-eigen-limit eigen a sweeps)
+    (status-code (jc:eigen-with-sweep-limit! eigen a sweeps)))
+
+  (declare observe-svd (jc:Svd * arr:LispArray F64 -> UFix))
+  (define (observe-svd svd a)
+    "Exhaustively matched outcome: success 0, not converged 1, non-finite 2, size 3."
+    (status-code (jc:svd! svd a)))
+
+  (declare observe-svd-limit (jc:Svd * arr:LispArray F64 * UFix -> UFix))
+  (define (observe-svd-limit svd a sweeps)
+    (status-code (jc:svd-with-sweep-limit! svd a sweeps)))
+
+  (declare eigen-loop (jc:SymmetricEigen * arr:LispArray F64 * UFix -> UFix))
+  (define (eigen-loop eigen a count)
+    "A real external caller: recompute and read the sweep count; count what goes wrong."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (jc:eigen! eigen a) jc:JacobiSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (> (jc:eigen-sweeps eigen) 0)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare svd-loop (jc:Svd * arr:LispArray F64 * F64 * UFix -> UFix))
+  (define (svd-loop svd a relative count)
+    "A real external caller: recompute and count the rank against a relative threshold; return the last rank."
+    (let rank = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (when (== (jc:svd! svd a) jc:JacobiSuccess)
+        (cell:write! rank (jc:rank-above svd (* relative (arr:aref (jc:singular-values svd) 0))))))
+    (cell:read rank))
+
+  (declare eigen-storage-error (UFix * UFix -> UFix))
+  (define (eigen-storage-error n maximum-entries)
+    "Test-only codes: success 0, dimension limit 3, entry budget 4, unexpected 99."
+    (catch (progn (jc:make-symmetric-eigen-with-limit n maximum-entries) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisLimitExceeded _ _) 3)
+         ((err:AnalysisStorageExceeded _ _) 4)
+         (_ 99)))
+      (_ 99)))
+
+  (declare svd-storage-error (UFix * UFix * UFix -> UFix))
+  (define (svd-storage-error m n maximum-entries)
+    "Test-only codes: success 0, dimension limit 3, entry budget 4, unexpected 99."
+    (catch (progn (jc:make-svd-with-limit m n maximum-entries) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisLimitExceeded _ _) 3)
+         ((err:AnalysisStorageExceeded _ _) 4)
+         (_ 99)))
+      (_ 99))))

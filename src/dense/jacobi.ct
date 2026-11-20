@@ -1,0 +1,339 @@
+(cl:defpackage #:coalton-linalg/dense/jacobi
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math) (#:limits #:coalton-linalg/dense/limits))
+  (:import-from #:coalton/math #:finite?)
+  (:export #:JacobiStatus #:JacobiSuccess #:JacobiNotConverged #:JacobiNonFinite #:JacobiBadSize
+           #:maximum-dimension #:default-entry-limit #:default-sweep-limit
+           #:SymmetricEigen #:make-symmetric-eigen #:make-symmetric-eigen-with-limit
+           #:eigen! #:eigen-with-sweep-limit! #:eigen-ready? #:eigen-dimension #:eigen-sweeps
+           #:eigenvalues #:eigenvectors
+           #:Svd #:make-svd #:make-svd-with-limit
+           #:svd! #:svd-with-sweep-limit! #:svd-ready? #:svd-rows #:svd-columns #:svd-sweeps
+           #:singular-values #:left-vectors #:right-vectors #:rank-above))
+(cl:in-package #:coalton-linalg/dense/jacobi)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+(coalton-toplevel
+  (derive Eq)
+  (repr :enum)
+  (define-type JacobiStatus
+    "Outcome of an eigenvalue or singular value computation."
+    JacobiSuccess JacobiNotConverged JacobiNonFinite JacobiBadSize)
+
+  (declare maximum-dimension UFix)
+  (define maximum-dimension limits:maximum-dimension)
+  (declare default-entry-limit UFix)
+  (define default-entry-limit limits:default-entry-limit)
+  (declare default-sweep-limit UFix)
+  (define default-sweep-limit 60)
+
+  ;; 2^-52: an off-diagonal quantity this far below the geometric mean of its two diagonal
+  ;; quantities is treated as converged.
+  (declare relative-tolerance F64)
+  (define relative-tolerance (lisp (-> F64) () (cl:scale-float 1d0 -52)))
+  ;; In the singular value routine, columns this far below the largest entry are not rotated at all.
+  (declare absolute-floor F64)
+  (define absolute-floor (lisp (-> F64) () (cl:scale-float 1d0 -104)))
+  (declare large-ratio F64)
+  (define large-ratio (lisp (-> F64) () (cl:scale-float 1d0 500)))
+  (declare small-ratio F64)
+  (define small-ratio (lisp (-> F64) () (cl:scale-float 1d0 -500)))
+  (declare scale-down F64)
+  (define scale-down (lisp (-> F64) () (cl:scale-float 1d0 -600)))
+  (declare scale-up F64)
+  (define scale-up (lisp (-> F64) () (cl:scale-float 1d0 600)))
+
+  (declare rotation-tangent (F64 * F64 * F64 -> F64))
+  (define (rotation-tangent a d b)
+    "The smaller root t of t^2 + 2 z t - 1 = 0 with z = (d - a) / (2 b): the rotation that annihilates b."
+    (let z = (/ (- d a) (* 2.0d0 b)))
+    (let size = (abs z))
+    (if (> size large-ratio)
+        ;; 1 + z^2 would overflow; the root is 1 / (2 z) to every representable digit.
+        (/ 0.5d0 z)
+        (let ((root (/ 1.0d0 (+ size (math:sqrt (+ 1.0d0 (* z z)))))))
+          (if (< z 0.0d0) (- 0.0d0 root) root))))
+
+  ;;; Symmetric eigenvalues.
+
+  (define-struct EigenStorage
+    "Owned working matrix, accumulated rotations, and results."
+    (size UFix)
+    (work (arr:LispArray F64))
+    (vectors (arr:LispArray F64))
+    (values (arr:LispArray F64))
+    (state (arr:LispArray UFix)))
+
+  (repr :transparent)
+  (define-type SymmetricEigen
+    "Reusable symmetric eigenvalue computation of one dimension; construction and workspace fields are private."
+    (MkSymmetricEigen EigenStorage))
+
+  (inline)
+  (declare eigen-storage (SymmetricEigen -> EigenStorage))
+  (define (eigen-storage eigen) (match eigen ((MkSymmetricEigen held) held)))
+
+  (declare make-symmetric-eigen-with-limit (UFix * UFix -> SymmetricEigen))
+  (define (make-symmetric-eigen-with-limit n maximum-entries)
+    "Allocate reusable storage for n-by-n problems when n * n is within the entry budget."
+    (limits:check-storage! n n maximum-entries)
+    (MkSymmetricEigen (EigenStorage n (arr:make (* n n) 0.0d0) (arr:make (* n n) 0.0d0)
+                                    (arr:make n 0.0d0) (arr:make 2 (the UFix 0)))))
+
+  (declare make-symmetric-eigen (UFix -> SymmetricEigen))
+  (define (make-symmetric-eigen n)
+    "Allocate reusable storage under default-entry-limit. Nothing is ready until eigen! succeeds."
+    (make-symmetric-eigen-with-limit n default-entry-limit))
+
+  (declare eigen-dimension (SymmetricEigen -> UFix))
+  (define (eigen-dimension eigen) (.size (eigen-storage eigen)))
+  (declare eigen-ready? (SymmetricEigen -> Boolean))
+  (define (eigen-ready? eigen) (== (arr:aref (.state (eigen-storage eigen)) 0) 1))
+  (declare eigen-sweeps (SymmetricEigen -> UFix))
+  (define (eigen-sweeps eigen)
+    "Sweeps made by the latest call, counting the final one that rotated nothing."
+    (arr:aref (.state (eigen-storage eigen)) 1))
+  (declare eigenvalues (SymmetricEigen -> arr:LispArray F64))
+  (define (eigenvalues eigen) (.values (eigen-storage eigen)))
+  (declare eigenvectors (SymmetricEigen -> arr:LispArray F64))
+  (define (eigenvectors eigen) (.vectors (eigen-storage eigen)))
+
+  (declare rotate-columns! (arr:LispArray F64 * UFix * UFix * UFix * F64 * F64 -> Void))
+  (define (rotate-columns! w rows p q c s)
+    "Columns p and q of a column-major array with the given row count become c p - s q and s p + c q."
+    (for ((k 0 (+ k 1))) :while (< k rows)
+      (let wp = (arr:aref w (+ k (* p rows))))
+      (let wq = (arr:aref w (+ k (* q rows))))
+      (arr:set! w (+ k (* p rows)) (- (* c wp) (* s wq)))
+      (arr:set! w (+ k (* q rows)) (+ (* s wp) (* c wq)))))
+
+  (declare swap-columns! (arr:LispArray F64 * UFix * UFix * UFix -> Void))
+  (define (swap-columns! w rows p q)
+    (for ((k 0 (+ k 1))) :while (< k rows)
+      (let held = (arr:aref w (+ k (* p rows))))
+      (arr:set! w (+ k (* p rows)) (arr:aref w (+ k (* q rows))))
+      (arr:set! w (+ k (* q rows)) held)))
+
+  (declare eigen-with-sweep-limit! (SymmetricEigen * arr:LispArray F64 * UFix -> JacobiStatus))
+  (define (eigen-with-sweep-limit! eigen a sweep-limit)
+    "A = V diag(values) V^T from the lower triangle of column-major a, by cyclic rotations within the sweep limit."
+    (let f = (eigen-storage eigen))
+    (let n = (.size f))
+    (let st = (.state f))
+    (arr:set! st 0 0)
+    (arr:set! st 1 0)
+    (unless (== (arr:length a) (* n n)) (return JacobiBadSize))
+    (let w = (.work f))
+    (let v = (.vectors f))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (for ((i j (+ i 1))) :while (< i n)
+        (let entry = (arr:aref a (+ i (* j n))))
+        (unless (inline (finite? entry)) (return JacobiNonFinite))
+        (arr:set! w (+ i (* j n)) entry)
+        (arr:set! w (+ j (* i n)) entry))
+      (for ((i 0 (+ i 1))) :while (< i n)
+        (arr:set! v (+ i (* j n)) (if (== i j) 1.0d0 0.0d0))))
+    (let rotating = (cell:new True))
+    (for ((sweep 0 (+ sweep 1))) :while (and (cell:read rotating) (< sweep sweep-limit))
+      (cell:write! rotating False)
+      (arr:set! st 1 (+ sweep 1))
+      (for ((p 0 (+ p 1))) :while (< (+ p 1) n)
+        (for ((q (+ p 1) (+ q 1))) :while (< q n)
+          (let b = (arr:aref w (+ p (* q n))))
+          (let a-pp = (arr:aref w (+ p (* p n))))
+          (let a-qq = (arr:aref w (+ q (* q n))))
+          ;; An exactly zero entry never passes this test, whatever its diagonal entries are.
+          (when (> (abs b) (* relative-tolerance (* (math:sqrt (abs a-pp)) (math:sqrt (abs a-qq)))))
+            (cell:write! rotating True)
+            (let tangent = (rotation-tangent a-pp a-qq b))
+            (let c = (/ 1.0d0 (math:sqrt (+ 1.0d0 (* tangent tangent)))))
+            (let s = (* tangent c))
+            ;; W := J^T W J. The two columns first, then the two rows; the 2-by-2 block is set outright.
+            (rotate-columns! w n p q c s)
+            (for ((k 0 (+ k 1))) :while (< k n)
+              (arr:set! w (+ p (* k n)) (arr:aref w (+ k (* p n))))
+              (arr:set! w (+ q (* k n)) (arr:aref w (+ k (* q n)))))
+            (arr:set! w (+ p (* p n)) (- a-pp (* tangent b)))
+            (arr:set! w (+ q (* q n)) (+ a-qq (* tangent b)))
+            (arr:set! w (+ p (* q n)) 0.0d0)
+            (arr:set! w (+ q (* p n)) 0.0d0)
+            (rotate-columns! v n p q c s)))))
+    (let values = (.values f))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let value = (arr:aref w (+ k (* k n))))
+      (unless (inline (finite? value)) (return JacobiNonFinite))
+      (arr:set! values k value))
+    (for ((q 0 (+ q 1))) :while (< q (* n n))
+      (unless (inline (finite? (arr:aref v q))) (return JacobiNonFinite)))
+    (when (cell:read rotating) (return JacobiNotConverged))
+    ;; Ascending order by selection, carrying each vector with its value.
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let at = (cell:new k))
+      (for ((j (+ k 1) (+ j 1))) :while (< j n)
+        (when (< (arr:aref values j) (arr:aref values (cell:read at))) (cell:write! at j)))
+      (let least = (cell:read at))
+      (unless (== least k)
+        (let held = (arr:aref values k))
+        (arr:set! values k (arr:aref values least))
+        (arr:set! values least held)
+        (swap-columns! v n k least)))
+    (arr:set! st 0 1)
+    JacobiSuccess)
+
+  (declare eigen! (SymmetricEigen * arr:LispArray F64 -> JacobiStatus))
+  (define (eigen! eigen a)
+    "eigen-with-sweep-limit! at default-sweep-limit."
+    (eigen-with-sweep-limit! eigen a default-sweep-limit))
+
+  ;;; Singular values.
+
+  (define-struct SvdStorage
+    "Owned rotated columns, accumulated rotations, and results."
+    (rows UFix)
+    (columns UFix)
+    (left (arr:LispArray F64))
+    (right (arr:LispArray F64))
+    (values (arr:LispArray F64))
+    (state (arr:LispArray UFix)))
+
+  (repr :transparent)
+  (define-type Svd
+    "Reusable singular value decomposition of one shape; construction and workspace fields are private."
+    (MkSvd SvdStorage))
+
+  (inline)
+  (declare svd-storage (Svd -> SvdStorage))
+  (define (svd-storage svd) (match svd ((MkSvd held) held)))
+
+  (declare make-svd-with-limit (UFix * UFix * UFix -> Svd))
+  (define (make-svd-with-limit m n maximum-entries)
+    "Allocate reusable storage for m-by-n matrices when m * n and n * n are within the entry budget."
+    (limits:check-storage! m n maximum-entries)
+    (limits:check-storage! n n maximum-entries)
+    (MkSvd (SvdStorage m n (arr:make (* m n) 0.0d0) (arr:make (* n n) 0.0d0)
+                       (arr:make n 0.0d0) (arr:make 2 (the UFix 0)))))
+
+  (declare make-svd (UFix * UFix -> Svd))
+  (define (make-svd m n)
+    "Allocate reusable storage under default-entry-limit. Nothing is ready until svd! succeeds."
+    (make-svd-with-limit m n default-entry-limit))
+
+  (declare svd-rows (Svd -> UFix))
+  (define (svd-rows svd) (.rows (svd-storage svd)))
+  (declare svd-columns (Svd -> UFix))
+  (define (svd-columns svd) (.columns (svd-storage svd)))
+  (declare svd-ready? (Svd -> Boolean))
+  (define (svd-ready? svd) (== (arr:aref (.state (svd-storage svd)) 0) 1))
+  (declare svd-sweeps (Svd -> UFix))
+  (define (svd-sweeps svd)
+    "Sweeps made by the latest call, counting the final one that rotated nothing."
+    (arr:aref (.state (svd-storage svd)) 1))
+  (declare singular-values (Svd -> arr:LispArray F64))
+  (define (singular-values svd) (.values (svd-storage svd)))
+  (declare left-vectors (Svd -> arr:LispArray F64))
+  (define (left-vectors svd) (.left (svd-storage svd)))
+  (declare right-vectors (Svd -> arr:LispArray F64))
+  (define (right-vectors svd) (.right (svd-storage svd)))
+
+  (declare rank-above (Svd * F64 -> UFix))
+  (define (rank-above svd threshold)
+    "Number of singular values strictly larger than threshold; 0 when no decomposition stands."
+    (let f = (svd-storage svd))
+    (let count = (cell:new (the UFix 0)))
+    (when (== (arr:aref (.state f) 0) 1)
+      (for ((k 0 (+ k 1))) :while (and (< k (.columns f)) (> (arr:aref (.values f) k) threshold))
+        (cell:write! count (+ k 1))))
+    (cell:read count))
+
+  (declare svd-with-sweep-limit! (Svd * arr:LispArray F64 * UFix -> JacobiStatus))
+  (define (svd-with-sweep-limit! svd a sweep-limit)
+    "A V = U diag(values) from column-major a, by rotating pairs of columns to orthogonality within the sweep limit."
+    (let f = (svd-storage svd))
+    (let m = (.rows f))
+    (let n = (.columns f))
+    (let st = (.state f))
+    (arr:set! st 0 0)
+    (arr:set! st 1 0)
+    (unless (== (arr:length a) (* m n)) (return JacobiBadSize))
+    (let g = (.left f))
+    (let v = (.right f))
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q (* m n))
+      (let entry = (arr:aref a q))
+      (unless (inline (finite? entry)) (return JacobiNonFinite))
+      (when (> (abs entry) (cell:read largest)) (cell:write! largest (abs entry))))
+    ;; An exact scaling by a power of two keeps every sum of squares representable.
+    (let top = (cell:read largest))
+    (let factor = (if (> top large-ratio) scale-down (if (and (> top 0.0d0) (< top small-ratio)) scale-up 1.0d0)))
+    (for ((q 0 (+ q 1))) :while (< q (* m n))
+      (arr:set! g q (* (arr:aref a q) factor)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (for ((i 0 (+ i 1))) :while (< i n)
+        (arr:set! v (+ i (* j n)) (if (== i j) 1.0d0 0.0d0))))
+    (let cutoff = (* absolute-floor (* top factor)))
+    (let rotating = (cell:new True))
+    (for ((sweep 0 (+ sweep 1))) :while (and (cell:read rotating) (< sweep sweep-limit))
+      (cell:write! rotating False)
+      (arr:set! st 1 (+ sweep 1))
+      (for ((p 0 (+ p 1))) :while (< (+ p 1) n)
+        (for ((q (+ p 1) (+ q 1))) :while (< q n)
+          (let alpha = (cell:new 0.0d0))
+          (let beta = (cell:new 0.0d0))
+          (let gamma = (cell:new 0.0d0))
+          (for ((k 0 (+ k 1))) :while (< k m)
+            (let gp = (arr:aref g (+ k (* p m))))
+            (let gq = (arr:aref g (+ k (* q m))))
+            (cell:write! alpha (+ (cell:read alpha) (* gp gp)))
+            (cell:write! beta (+ (cell:read beta) (* gq gq)))
+            (cell:write! gamma (+ (cell:read gamma) (* gp gq))))
+          (let size-p = (math:sqrt (cell:read alpha)))
+          (let size-q = (math:sqrt (cell:read beta)))
+          (when (and (and (> size-p cutoff) (> size-q cutoff))
+                     (> (abs (cell:read gamma)) (* relative-tolerance (* size-p size-q))))
+            (cell:write! rotating True)
+            (let tangent = (rotation-tangent (cell:read alpha) (cell:read beta) (cell:read gamma)))
+            (let c = (/ 1.0d0 (math:sqrt (+ 1.0d0 (* tangent tangent)))))
+            (let s = (* tangent c))
+            (rotate-columns! g m p q c s)
+            (rotate-columns! v n p q c s)))))
+    (let values = (.values f))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let squares = (cell:new 0.0d0))
+      (for ((k 0 (+ k 1))) :while (< k m)
+        (let entry = (arr:aref g (+ k (* j m))))
+        (cell:write! squares (+ (cell:read squares) (* entry entry))))
+      (let size = (math:sqrt (cell:read squares)))
+      (unless (inline (finite? size)) (return JacobiNonFinite))
+      (arr:set! values j size))
+    (for ((q 0 (+ q 1))) :while (< q (* n n))
+      (unless (inline (finite? (arr:aref v q))) (return JacobiNonFinite)))
+    (when (cell:read rotating) (return JacobiNotConverged))
+    ;; Descending order by selection, carrying both vectors with each value.
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let at = (cell:new k))
+      (for ((j (+ k 1) (+ j 1))) :while (< j n)
+        (when (> (arr:aref values j) (arr:aref values (cell:read at))) (cell:write! at j)))
+      (let most = (cell:read at))
+      (unless (== most k)
+        (let held = (arr:aref values k))
+        (arr:set! values k (arr:aref values most))
+        (arr:set! values most held)
+        (swap-columns! g m k most)
+        (swap-columns! v n k most)))
+    ;; Each rotated column is its singular value times a unit left vector; a zero column stays zero.
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let size = (arr:aref values j))
+      (unless (== size 0.0d0)
+        (for ((k 0 (+ k 1))) :while (< k m)
+          (arr:set! g (+ k (* j m)) (/ (arr:aref g (+ k (* j m))) size))))
+      (let unscaled = (/ size factor))
+      (unless (inline (finite? unscaled)) (return JacobiNonFinite))
+      (arr:set! values j unscaled))
+    (arr:set! st 0 1)
+    JacobiSuccess)
+
+  (declare svd! (Svd * arr:LispArray F64 -> JacobiStatus))
+  (define (svd! svd a)
+    "svd-with-sweep-limit! at default-sweep-limit."
+    (svd-with-sweep-limit! svd a default-sweep-limit)))

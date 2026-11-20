@@ -38,7 +38,7 @@ artifacts. The exact-singular regression demonstrates the computed-pivot contrac
 
 ## Batches 3 through 6
 
-Batch 3, in four steps 3a through 3d, and Batches 4 and 5 are completed; Batch 6 is planned. [The batch record](docs/batch3a.md)
+Batches 3 through 6 are completed, Batch 3 in four steps 3a through 3d. Nothing further is planned in detail. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -92,10 +92,16 @@ derivation and what the diagonal of R does not say.
 
 ### Batch 6: dense symmetric eigenvalues and SVD
 
-Develop symmetric Jacobi and direct one-sided Jacobi SVD, with bounded work,
-convergence reports and nullspace/subspace bases. Test accuracy under explicit
-assumptions; use these routines as additional cross-checks while retaining
-independent references for rank decisions.
+**Completed.** `coalton-linalg/dense/jacobi` computes all eigenvalues and eigenvectors of a
+dense symmetric matrix by cyclic Jacobi rotations, and all singular values and vectors of
+a dense matrix of any shape by one-sided Jacobi rotations on its columns, with a complete
+right factor whose trailing columns are a nullspace basis, a rank count against the
+caller's threshold, and a sweep limit whose exhaustion is a named outcome. Every computed
+value in 277 test matrices is bracketed by an exact inertia count; eighteen planted source
+controls and two allocation measurements per policy pass. [The batch
+record](docs/batch6.md) holds the measurements, including how slow these routines are
+against a tridiagonalizing reference; [the contract](docs/jacobi.md) the derivation and
+what is promised against what is only observed.
 
 ### Later, when measured need justifies it
 

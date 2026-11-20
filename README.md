@@ -19,6 +19,7 @@ loaded or required.
 - Dense symmetric indefinite LDLᵀ with 1-by-1 and 2-by-2 pivots, solves, and inertia.
 - Dense column-pivoted QR and complete orthogonal decomposition: minimum-norm least squares
   and a nullspace basis at a rank the caller chooses.
+- Dense symmetric eigenvalues and singular values by Jacobi rotations, for small matrices.
 - Stable Euclidean/infinity norms using Coalton standard numeric primitives.
 - Lower compressed sparse column (CSC) factorization input, double-precision values.
 - Deterministic exact minimum-degree ordering and symbolic factor structure.
@@ -60,7 +61,8 @@ development-mode performance is unverified. See the toolchain notes below.
 
 The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
 `coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/spd-ldlt`,
-`coalton-linalg/dense/indefinite-ldlt` and `coalton-linalg/dense/orthogonal`. The [interface reference](docs/api.md) indexes
+`coalton-linalg/dense/indefinite-ldlt`, `coalton-linalg/dense/orthogonal` and
+`coalton-linalg/dense/jacobi`. The [interface reference](docs/api.md) indexes
 all exported symbols and links to their contracts. [A compiled SPD example](examples/spd-solve.ct)
 uses the local nickname `ldlt`; [a sparse example](examples/sparse-operations.ct)
 shows construction and products. The [mathematical glossary](CONTEXT.md) explains
@@ -105,6 +107,7 @@ each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the
 | `src/sparse/spd-ldlt.ct` | SPD factorization, solves and condition estimate |
 | `src/dense/indefinite-ldlt.ct` | Dense symmetric indefinite factorization and inertia |
 | `src/dense/orthogonal.ct` | Dense pivoted QR, complete orthogonal decomposition, least squares |
+| `src/dense/jacobi.ct` | Dense symmetric eigenvalues and singular values by Jacobi rotations |
 | `tests/` | Interface/runtime tests and small generic fixtures |
 | `tools/` | Optional artifact driver and independent Python verifier |
 | `examples/` | Executable caller examples, exercised by tests |

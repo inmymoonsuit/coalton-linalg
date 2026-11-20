@@ -2,6 +2,21 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.6.0 — 2026-11-19
+
+Added:
+
+- `coalton-linalg/dense/jacobi`: all eigenvalues and eigenvectors of a dense symmetric
+  matrix by cyclic Jacobi rotations, and all singular values and vectors of a dense matrix
+  of any shape by one-sided Jacobi rotations, with a complete right factor whose trailing
+  columns are a nullspace basis, a rank count against the caller's threshold, and a sweep
+  limit whose exhaustion is a named outcome. [Contract](docs/jacobi.md) ·
+  [record](docs/batch6.md).
+- A compiled example reading a rank from singular values, `examples/singular-rank.ct`.
+
+Corrected: the orthogonal decomposition's contract now names a refusal it did not: a
+column whose norm exceeds half the largest double. No code changed.
+
 ## 0.5.1 — 2026-11-19
 
 Added: an artifact driver for the orthogonal decompositions, `scripts/check.ps1 -Task

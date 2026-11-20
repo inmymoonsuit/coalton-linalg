@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.5.1"
+  :version "0.6.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -17,13 +17,13 @@
                                            (:ct-file "gram") (:ct-file "spd-ldlt")))
                              (:module "dense" :serial t
                               :components ((:ct-file "limits") (:ct-file "indefinite-ldlt")
-                                           (:ct-file "orthogonal")))))))
+                                           (:ct-file "orthogonal") (:ct-file "jacobi")))))))
 
 (asdf:defsystem "coalton-linalg/examples"
   :description "Runnable public-interface examples."
   :depends-on ("coalton-linalg")
   :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
-                                                (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints")))))
+                                                (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints") (:ct-file "singular-rank")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -40,7 +40,8 @@
                              (:file "gram-properties")
                              (:ct-file "condition-callers") (:file "condition")
                              (:ct-file "indefinite-callers") (:file "indefinite")
-                             (:ct-file "orthogonal-callers") (:file "orthogonal") (:file "suite"))))
+                             (:ct-file "orthogonal-callers") (:file "orthogonal")
+                             (:ct-file "jacobi-callers") (:file "jacobi") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))

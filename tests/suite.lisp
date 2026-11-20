@@ -15,6 +15,7 @@
   (run-condition-tests)
   (run-indefinite-tests)
   (run-orthogonal-tests)
+  (run-jacobi-tests)
   (coalton-linalg/tests/typed-errors:run-typed-error-tests)
   (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
   (coalton-linalg/tests/encapsulation:run-status-type-tests)
@@ -25,4 +26,5 @@
   (assert (close-vector-p (coalton-linalg/examples/minimum-norm:minimum-norm-solution) (doubles 1d0 1d0 2d0 2d0)))
   (assert (close-vector-p (coalton-linalg/examples/dependent-constraints:shortest-solution)
                           (doubles 1d0 1d0 2d0 2d0)))
+  (assert (= 2 (coalton-linalg/examples/singular-rank:constraint-rank)))
   (format t "COALTON-EXAMPLE-PASS~%LIBRARY-TESTS-PASS~%"))

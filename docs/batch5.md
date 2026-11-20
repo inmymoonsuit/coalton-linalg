@@ -174,6 +174,11 @@ residual and the whole nullspace basis; [the contract page](orthogonal.md#artifa
 has the protocol. Its regressions cover an exact QR file, a truncated solve with its
 nullspace vector, named rank and factor refusals, and removal of stale artifacts.
 
+A held-back set run by the reviewer through that driver, 33 systems and 91 runs with shapes
+from 1-by-1 to 602-by-950, passed all 124 of its checks. It found one refusal the contract
+did not name: a column with entries 10³⁰⁸ and 10²⁹⁰ is refused although its norm is finite,
+because the reflector's divisor is about twice the norm. The contract now says so.
+
 ## Limits
 
 - The rank is the caller's decision. The diagonal of R can overstate the smallest singular

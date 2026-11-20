@@ -54,7 +54,7 @@ A matrix is an F64 array of m n elements in column-major order: entry (i,j) is a
 | FactorStatus | Meaning |
 | --- | --- |
 | FactorSuccess | A factorization stands; no rank is selected yet |
-| FactorNonFinite | A non-finite input, column norm, or computed entry of R |
+| FactorNonFinite | A non-finite input, column norm, reflector, or computed entry of R |
 | FactorBadSize | The array does not have m n elements |
 
 | RankStatus | Meaning |
@@ -113,7 +113,9 @@ zeros; selecting them divides by them. Choosing the threshold is how a caller av
 Arithmetic is IEEE double with traps disabled. A sum of squares is formed unscaled while
 its largest entry lies between 2⁻⁵⁰⁰ and 2⁵⁰⁰ and otherwise after an exact scaling by
 2^±600, so a matrix scaled by a power of two gives the same pivoting and the same
-reflectors bit for bit as long as its entries stay well inside the representable range. A column norm that overflows is a
+reflectors bit for bit as long as its entries stay well inside the representable range.
+A column whose norm exceeds half the largest double may be refused although the norm itself
+is finite, because the reflector's divisor adds the head's magnitude to the norm. A column norm that overflows is a
 refusal. No scaling or equilibration of rows or columns is applied, and the result
 depends on column scaling, as pivoting by column norm does.
 

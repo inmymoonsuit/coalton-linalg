@@ -83,6 +83,27 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 6: Jacobi eigenvalues and singular values
+
+**These are classical published methods.** The rotation that annihilates one off-diagonal
+entry and its use in cyclic sweeps is Jacobi's method (1846); the choice of the smaller
+root and the update of the two diagonal entries by t b follow Rutishauser's formulation
+(1966); rotating pairs of columns to orthogonality is the one-sided method of Hestenes
+(1958); stopping on a test relative to the two diagonal entries or the two column norms is
+the criterion analysed by Demmel and Veselic (1992), whom the planned-batch page cites. The
+code was written from the derivation on [the contract page](jacobi.md), which was written
+first: the rotation equation, its smaller root, the invariant kept by accumulating the
+rotations, and the reason the one-sided form needs no Gram matrix are worked out there. The
+methods were known from their descriptions. No numerical-library implementation and no
+algorithm listing or pseudocode box was opened while writing it; the same open maintainer
+decision as for Batches 3d, 4 and 5 applies.
+
+The tests' reference is this library's own choice: every computed value is bracketed by an
+exact count of eigenvalues below two rational shifts, by symmetric elimination in rational
+arithmetic and Sylvester's law of inertia, so no eigenvalue routine is trusted as a
+reference. NumPy and SciPy were used after the implementation, as a comparison and a timing
+reference only.
+
 ## Batch 5: orthogonal decompositions
 
 **These are standard published methods.** Householder reflections, QR with column

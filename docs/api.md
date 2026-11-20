@@ -1,6 +1,6 @@
 # Public interface reference
 
-This is the symbol index for the seven public library packages, excluding examples,
+This is the symbol index for the eight public library packages, excluding examples,
 tooling and the private sparse/ordering, sparse/limits and dense/limits packages. The linked contracts specify storage, errors, ownership, numerical
 assumptions, and cost. See the [glossary](../CONTEXT.md) for mathematical terms.
 
@@ -183,6 +183,32 @@ The three status types are distinct from each other and from the other packages'
 the same names. The rank is always the caller's choice; nothing is solved until
 `set-rank!` succeeds.
 
+## coalton-linalg/dense/jacobi
+
+[Contract and derivation](jacobi.md) · [Source](../src/dense/jacobi.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `JacobiStatus` | `JacobiSuccess`, `JacobiNotConverged`, `JacobiNonFinite`, `JacobiBadSize` |
+| `maximum-dimension`, `default-entry-limit`, `default-sweep-limit` | UFix; 32,768, 16,777,216 and 60 |
+| `SymmetricEigen` | Reusable eigenvalue computation of one dimension; obtain from make-symmetric-eigen |
+| `make-symmetric-eigen`, `make-symmetric-eigen-with-limit` | UFix -> SymmetricEigen; UFix * UFix -> SymmetricEigen with an entry budget |
+| `eigen!` | SymmetricEigen * V -> JacobiStatus; lower triangle of a column-major n-by-n array |
+| `eigen-with-sweep-limit!` | SymmetricEigen * V * UFix -> JacobiStatus |
+| `eigenvalues`, `eigenvectors` | SymmetricEigen -> V; ascending values, and their unit vectors as columns |
+| `eigen-ready?`, `eigen-dimension`, `eigen-sweeps` | SymmetricEigen -> Boolean, UFix, UFix |
+| `Svd` | Reusable singular value decomposition of one shape; obtain from make-svd |
+| `make-svd`, `make-svd-with-limit` | UFix * UFix -> Svd; UFix * UFix * UFix -> Svd with an entry budget |
+| `svd!` | Svd * V -> JacobiStatus; a column-major m-by-n array |
+| `svd-with-sweep-limit!` | Svd * V * UFix -> JacobiStatus |
+| `singular-values` | Svd -> V; n values, descending |
+| `left-vectors`, `right-vectors` | Svd -> V; m-by-n and a complete n-by-n, column-major |
+| `rank-above` | Svd * F64 -> UFix; values strictly above an absolute threshold |
+| `svd-ready?`, `svd-rows`, `svd-columns`, `svd-sweeps` | Svd -> Boolean, UFix, UFix, UFix |
+
+With r from `rank-above`, columns r to n - 1 of the right vectors are an orthonormal
+nullspace basis for any shape. A wide matrix costs far more than its transpose.
+
 ## Choosing the entry point
 
 Use [the SPD example](../examples/spd-solve.ct) for analyze/factor!/solve! and
@@ -191,7 +217,13 @@ and products. [The normal-equations example](../examples/normal-equations.ct) jo
 products to the SPD factorization, and [the minimum-norm example](../examples/minimum-norm.ct)
 uses the dense indefinite factorization. [The dependent-constraints
 example](../examples/dependent-constraints.ct) picks a rank and solves through the
-orthogonal decomposition. All are compiled and exercised by the library tests.
+orthogonal decomposition, and [the singular-rank example](../examples/singular-rank.ct) reads
+the same rank from singular values. All are compiled and exercised by the library tests.
+
+For a rank decision there are three tools, in rising cost and reliability: the inertia of
+[the dense indefinite factorization](indefinite-ldlt.md) either side of a shift, the
+diagonal of R in [the orthogonal decomposition](orthogonal.md), and the singular values in
+[the Jacobi package](jacobi.md). Each leaves the threshold to the caller.
 
 A general CSC matrix represents exactly its stored entries; it has no implicit
 symmetry. The SPD interface specifically interprets its lower triangle as a
