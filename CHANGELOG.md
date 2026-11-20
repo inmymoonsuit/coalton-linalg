@@ -2,6 +2,24 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.13.1 — 2026-11-20
+
+Fixed, in `coalton-linalg/sparse/scaling`, after a held-back review:
+
+- `scale!` and `scale-symmetric!` are now exact for powers of two whenever the result is
+  zero or a normal number. Before, a value multiplied by one factor could leave the
+  range on the way to a normal result and come back rounded: `[[1, 1e-310]]` scaled its
+  second entry to a value wrong in its last digits.
+- `equilibrate!` gives a column whose entries fall below the normal range under the row
+  factors the largest factor, 2¹⁰²³. Before, such a column could keep the factor 1, so
+  that `scale!` wrote zero for an entry it can keep exactly, or a factor one step short.
+- The contract names the rows and columns that no factor brings to 1/2.
+
+For a matrix whose entries span less than about 2¹⁰²² within every row, no factor and no
+scaled value changes. With factors that are not powers of two, which the contract makes
+no claim about, a scaled value may differ in its last bit from before.
+[Contract](docs/scaling.md) · [record](docs/batch9a.md).
+
 ## 0.13.0 — 2026-11-20
 
 Added: `coalton-linalg/conjugate-gradient`. `cg!` and `pcg!` solve a symmetric positive

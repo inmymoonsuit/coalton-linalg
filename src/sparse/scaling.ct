@@ -26,6 +26,24 @@
       (cl:make-array 10 :element-type 'cl:double-float
                         :initial-contents (cl:loop :for k :from 9 :downto 0 :collect (cl:scale-float 1d0 (cl:ash 1 k))))))
 
+  (declare largest-power F64)
+  (define largest-power
+    "2^1023, the largest power of two there is and the product of the ten above."
+    (lisp (-> F64) () (cl:scale-float 1d0 1023)))
+
+  (inline)
+  (declare scaled-product (F64 * F64 * F64 -> F64))
+  (define (scaled-product value first-scale second-scale)
+    "value times the two scale factors. For factors that are powers of two it is the exact product whenever that product is a normal number or zero, whatever the sizes of the three: see docs/scaling.md, Derivation."
+    (let together = (* first-scale second-scale))
+    ;; The two factors' own product is exact unless it leaves the range. Where it does not, one
+    ;; multiplication by it has no intermediate to lose anything in. Where it underflows to zero
+    ;; both factors are below 1, and where it overflows both are above 1, so taking them in turn
+    ;; moves the value one way only and every intermediate lies between the value and the result.
+    (if (or (== together 0.0d0) (not (inline (math:finite? together))))
+        (* (* value first-scale) second-scale)
+        (* value together)))
+
   (declare replace-by-reciprocal-power! (arr:LispArray F64 * UFix -> Void))
   (define (replace-by-reciprocal-power! a i)
     "Replace a positive finite a[i] = f 2^e, f in [1/2, 1), by the power of two 2^-e, held to 2^1023 at most; anything else by 1. Only multiplications and divisions by powers of two are used, so every step is exact and nothing is allocated."
@@ -125,7 +143,7 @@
 
   (declare equilibrate! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> Void))
   (define (equilibrate! matrix values row-scales column-scales)
-    "Write powers of two r and c so that every row and every column of r[i] a[i,j] c[j] that has a nonzero has its largest magnitude in [1/2, 1). See docs/scaling.md."
+    "Write powers of two r and c so that every row and every column of r[i] a[i,j] c[j] that has a nonzero has its largest magnitude in [1/2, 1), or below 1/2 under the largest factor there is where no factor reaches. See docs/scaling.md."
     (check-values! matrix values)
     (unless (and (== (arr:length row-scales) (csc:row-count matrix))
                  (== (arr:length column-scales) (csc:column-count matrix)))
@@ -147,14 +165,26 @@
       (replace-by-reciprocal-power! row-scales i))
     ;; Then columns, on the row-scaled entries. Those are all below 1, so a column's factor is
     ;; at least 1 and at most what brings its own largest entry under 1: no row leaves [1/2, 1).
+    ;; A row-scaled entry can be far below the normal range, where it would be rounded or lost,
+    ;; so each is taken 2^1023 times larger, which is exact down to 2^-2045. A largest lifted
+    ;; magnitude of f 2^e with e from 0 to 1023 asks for the factor 2^(1023 - e); one below 1/2
+    ;; asks for more than there is and gets 2^1023.
     (for ((j 0 (+ j 1))) :while (< j (arr:length column-scales))
       (let largest = (cell:new 0.0d0))
+      (let present = (cell:new False))
       (for ((q (arr:aref cp j) (+ q 1))) :while (< q (arr:aref cp (+ j 1)))
-        (let scaled = (* (abs (arr:aref values q)) (arr:aref row-scales (arr:aref ri q))))
-        (when (> scaled (cell:read largest))
-          (cell:write! largest scaled)))
-      (arr:set! column-scales j (cell:read largest))
-      (replace-by-reciprocal-power! column-scales j)))
+        (let magnitude = (abs (arr:aref values q)))
+        (when (> magnitude 0.0d0) (cell:write! present True))
+        (let lifted = (scaled-product magnitude (arr:aref row-scales (arr:aref ri q)) largest-power))
+        (when (> lifted (cell:read largest))
+          (cell:write! largest lifted)))
+      (cond
+        ((not (cell:read present)) (arr:set! column-scales j 1.0d0))
+        ((< (cell:read largest) 0.5d0) (arr:set! column-scales j largest-power))
+        (True
+         (arr:set! column-scales j (cell:read largest))
+         (replace-by-reciprocal-power! column-scales j)
+         (arr:set! column-scales j (* (arr:aref column-scales j) largest-power))))))
 
   (declare scale! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> Void))
   (define (scale! matrix values row-scales column-scales out)
@@ -171,9 +201,8 @@
     (let ri = (csc:row-indices matrix))
     (for ((j 0 (+ j 1))) :while (< j (csc:column-count matrix))
       (for ((q (arr:aref cp j) (+ q 1))) :while (< q (arr:aref cp (+ j 1)))
-        ;; The row factor first: after equilibrate! that product is below 1 and the second cannot overflow.
-        (arr:set! out q (* (* (arr:aref row-scales (arr:aref ri q)) (arr:aref values q))
-                           (arr:aref column-scales j)))))
+        (arr:set! out q (scaled-product (arr:aref values q) (arr:aref row-scales (arr:aref ri q))
+                                        (arr:aref column-scales j)))))
     (for ((q 0 (+ q 1))) :while (< q (arr:length out))
       (unless (inline (math:finite? (arr:aref out q)))
         (throw (err:NonFiniteResult "A scaled value is not finite.")))))
@@ -238,8 +267,8 @@
     (let ri = (csc:row-indices matrix))
     (for ((j 0 (+ j 1))) :while (< j (csc:column-count matrix))
       (for ((q (arr:aref cp j) (+ q 1))) :while (< q (arr:aref cp (+ j 1)))
-        (arr:set! out q (* (* (arr:aref scales (arr:aref ri q)) (arr:aref values q))
-                           (arr:aref scales j)))))
+        (arr:set! out q (scaled-product (arr:aref values q) (arr:aref scales (arr:aref ri q))
+                                        (arr:aref scales j)))))
     (for ((q 0 (+ q 1))) :while (< q (arr:length out))
       (unless (inline (math:finite? (arr:aref out q)))
         (throw (err:NonFiniteResult "A scaled symmetric value is not finite."))))))

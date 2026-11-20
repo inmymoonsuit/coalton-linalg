@@ -151,6 +151,17 @@ Cholesky-form factor follow from `G Gᵀ`. No numerical-library implementation a
 algorithm listing was opened. The tests recompute the iteration independently and
 compare with exact rational solutions.
 
+## Batch 9a: scaling at the edges of the range
+
+The defects were found by an independent held-back review and by reading the source
+against its cases. Multiplying the two factors first, and applying them in turn only
+where their own product leaves the range, was worked out here, after the reviewer showed
+by example that no fixed order of the two multiplications is exact; the reviewer's own
+suggestion, adding the factors' exponents and scaling once, is the same idea, reached
+here without decoding a number. Lifting the column pass by the largest power of two was
+worked out here. No numerical-library implementation and no algorithm listing was
+opened.
+
 ## Batch 9: scaling by powers of two
 
 Scaling rows and then columns by their largest magnitudes is classical equilibration,

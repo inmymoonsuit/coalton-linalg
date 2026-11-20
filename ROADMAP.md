@@ -149,6 +149,9 @@ factors. Every factor is a power of two, so each scaled value is the exact produ
 matrices checked exactly, twenty planted source controls and an allocation measurement
 per policy pass. [The batch record](docs/batch9.md) holds the controls; [the
 contract](docs/scaling.md) says which solutions each kind of scaling leaves unchanged.
+A held-back review later found it inexact where an intermediate product left the normal
+range; [Batch 9a](docs/batch9a.md) corrects that and names the rows and columns that no
+factor reaches.
 
 ### Batch 10: iterative refinement, and a solve on the Cholesky-form factor
 

@@ -171,14 +171,15 @@
     (assert (equalp scales (doubles (scale-float 1d0 511) 1d0)) () "Scales ~S." scales)
     (assert (= 0 (sc-caller:symmetric-scale-error matrix (csc:entries matrix) scales scaled)))
     (assert (equalp scaled (doubles (scale-float 1d0 -18) 1d0)) () "Scaled ~S." scaled))
-  ;; An entry far below its row's largest underflows when scaled: it is rounded, not refused, and the
-  ;; pattern keeps it.
-  (let* ((matrix (csc-from-entries 1 2 (list (list 0 0 (scale-float 1d0 1000)) (list 0 1 (scale-float 1d0 -1000)))))
-         (rows (zeros 1)) (columns (zeros 2)) (scaled (zeros 2)))
+  ;; An entry far below the largest in its row and in its column cannot be kept: the row factor takes
+  ;; it to 2^-2001 and the column factor, set by the column's larger entry, does not bring it back. It
+  ;; is rounded to zero, not refused, and the pattern keeps it.
+  (let* ((matrix (csc-from-entries 2 2 (list (list 0 0 (scale-float 1d0 1000)) (list 0 1 (scale-float 1d0 -1000))
+                                             '(1 1 1))))
+         (rows (zeros 2)) (columns (zeros 2)) (scaled (zeros 3)))
     (assert (= 0 (sc-caller:equilibrate-error matrix (csc:entries matrix) rows columns)))
     (assert (= 0 (sc-caller:scale-error matrix (csc:entries matrix) rows columns scaled)))
-    (assert (= 0.5d0 (aref scaled 0)))
-    (assert (zerop (aref scaled 1)) () "An entry 2^-2001 of its row's size became ~S." (aref scaled 1)))
+    (assert (equalp scaled (doubles 0.5d0 0d0 0.5d0)) () "Scaled ~S." scaled))
   ;; Refusals name their kind and leave the outputs alone.
   (let* ((matrix (csc-from-entries 2 3 '((0 0 1) (0 2 -2) (1 1 3)))) (values (csc:entries matrix))
          (rows (doubles 7d0 7d0)) (columns (doubles 7d0 7d0 7d0)) (out (doubles 7d0 7d0 7d0))
@@ -257,10 +258,136 @@
     (assert (equalp scales (doubles 7d0 7d0)) () "A refused symmetric call wrote the scales: ~S." scales))
   (format t "SCALING-EDGE-PASS~%"))
 
+(defun normal-or-zero-p (exact)
+  "Whether an exact value is zero or at least the smallest normal number in magnitude."
+  (or (zerop exact) (>= (abs exact) (rational least-positive-normalized-double-float))))
+
+(defvar *scaling-range-values* 0)
+
+(defun check-wide-range (label m n entries)
+  "Equilibrate and scale a matrix whose entries may span the whole floating-point range, and hold the contract's
+statements in exact arithmetic: the factors are powers of two; every scaled value whose exact product is zero or
+normal is that product; every row and column with a nonzero has its exact largest scaled magnitude below 1, and at
+least 1/2 unless its factor is the largest there is, 2^1023."
+  (let* ((matrix (csc-from-entries m n entries)) (values (csc:entries matrix))
+         (rows (zeros m)) (columns (zeros n)) (scaled (zeros (length values)))
+         (limit (scale-float 1d0 1023)))
+    (assert (= 0 (sc-caller:equilibrate-error matrix values rows columns)) () "~A: equilibrate! refused." label)
+    (assert (and (every #'power-of-two-p rows) (every #'power-of-two-p columns)) ()
+            "~A: a scale factor is not a power of two: ~S ~S." label rows columns)
+    (assert (= 0 (sc-caller:scale-error matrix values rows columns scaled)) () "~A: scale! refused." label)
+    (let ((row-largest (make-array m :initial-element 0)) (column-largest (make-array n :initial-element 0))
+          (row-present (make-array m :initial-element nil)) (column-present (make-array n :initial-element nil)))
+      (loop :for (i j v) :in (stored-entries matrix values) :for (nil nil s) :in (stored-entries matrix scaled) :do
+        (let ((exact (* (rational (aref rows i)) (rational v) (rational (aref columns j)))))
+          (when (normal-or-zero-p exact)
+            (incf *scaling-range-values*)
+            (assert (= (rational s) exact) () "~A: entry ~D,~D was scaled to ~S; the exact product is ~E." label i j s
+                    (float exact 1d0)))
+          (unless (zerop v) (setf (aref row-present i) t (aref column-present j) t))
+          (setf (aref row-largest i) (max (aref row-largest i) (abs exact)))
+          (setf (aref column-largest j) (max (aref column-largest j) (abs exact)))))
+      (flet ((judge (kind index present largest factor)
+               (cond ((not present)
+                      (assert (= 1d0 factor) () "~A: ~A ~D has no nonzero and the factor ~S." label kind index factor))
+                     (t
+                      (assert (< largest 1) () "~A: ~A ~D has a scaled magnitude of ~E." label kind index
+                              (float largest 1d0))
+                      (assert (or (<= 1/2 largest) (= factor limit)) ()
+                              "~A: ~A ~D has largest scaled magnitude ~E under a factor of ~S, which is not the largest."
+                              label kind index (float largest 1d0) factor)))))
+        (dotimes (i m) (judge "row" i (aref row-present i) (aref row-largest i) (aref rows i)))
+        (dotimes (j n) (judge "column" j (aref column-present j) (aref column-largest j) (aref columns j)))))
+    (values rows columns scaled)))
+
+(defun full-range-entries (state m n percent)
+  "Stored entries whose magnitudes range over the whole of the floating-point range, subnormals included."
+  (loop :for i :below m :append
+    (loop :for j :below n
+          :when (< (random 100 state) percent)
+            :collect (list i j (* (if (zerop (random 2 state)) 1 -1)
+                                  (scale-float (+ 1d0 (random 1d0 state)) (- (random 2090 state) 1070)))))))
+
+(defun run-scaling-range-tests ()
+  "The edges of the range: products whose intermediate leaves it, and rows and columns that cannot be brought to 1/2."
+  (setf *scaling-range-values* 0)
+  (let ((limit (scale-float 1d0 1023)) (least least-positive-double-float)
+        (largest-subnormal (- least-positive-normalized-double-float least-positive-double-float)))
+    ;; scale! with factors a caller chose, each a power of two, where the result is a normal number
+    ;; and a product taken in one order or the other leaves the range on the way.
+    (flet ((exact-scale (label value row column)
+             (let* ((matrix (csc-from-entries 1 1 (list (list 0 0 value)))) (out (zeros 1))
+                    (exact (* (rational value) (rational row) (rational column))))
+               (assert (normal-or-zero-p exact) () "~A: the case's premise failed, the product is not normal." label)
+               (assert (= 0 (sc-caller:scale-error matrix (csc:entries matrix) (doubles row) (doubles column) out)) ()
+                       "~A: scale! refused." label)
+               (assert (= (rational (aref out 0)) exact) () "~A: ~S times ~S times ~S gave ~S; exactly ~E." label row
+                       value column (aref out 0) (float exact 1d0)))))
+      ;; The row factor first rounds a value on the subnormal grid; the column factor first overflows.
+      (exact-scale "neither order" 2.5d0 least limit)
+      (exact-scale "neither order, mirrored" 2.5d0 limit least)
+      (exact-scale "row first is lossy" 1.5d0 least (scale-float 1d0 1000))
+      (exact-scale "column first is lossy" 1.5d0 (scale-float 1d0 1000) least)
+      (exact-scale "column first overflows" (scale-float 1d0 1000) least (scale-float 1d0 1000))
+      (exact-scale "row first overflows" (scale-float 1d0 1000) (scale-float 1d0 1000) least)
+      ;; The two factors' own product overflows, or underflows to zero, and the result is normal.
+      (exact-scale "factors overflow together" (* 5 least) (scale-float 1d0 600) (scale-float 1d0 600))
+      (exact-scale "factors underflow together" (scale-float 1.5d0 1000) (scale-float 1d0 -800) (scale-float 1d0 -800))
+      (exact-scale "a subnormal value brought up" (* 12345 least) 0.5d0 limit)
+      (exact-scale "a subnormal row factor" 1.25d0 (scale-float 1d0 -1060) (scale-float 1d0 1020))
+      (exact-scale "a zero factor" 3d0 0d0 limit))
+    ;; The same for the symmetric form, with factors a caller chose: the entry off the diagonal is
+    ;; 2.5 between a factor of 2^-1074 and one of 2^1023.
+    (let* ((matrix (csc-from-entries 2 2 (list (list 0 0 least) '(1 0 2.5d0) '(1 1 1))))
+           (scales (doubles limit least)) (out (zeros 3)))
+      (assert (= 0 (sc-caller:symmetric-scale-error matrix (csc:entries matrix) scales out)))
+      (assert (= (rational (aref out 1)) (* (rational least) 5/2 (rational limit))) ()
+              "The symmetric form scaled 2.5 to ~S." (aref out 1))
+      (assert (= (rational (aref out 0)) (* (rational limit) (rational least) (rational limit)))))
+    ;; equilibrate! and scale! together. A value of 1 beside a subnormal one: the subnormal
+    ;; column is beyond reach, its factor is the largest, and its scaled value is exact.
+    (multiple-value-bind (rows columns scaled) (check-wide-range "one beside a subnormal" 1 2 '((0 0 1) (0 1 1d-310)))
+      (assert (equalp rows (doubles 0.5d0)))
+      (assert (equalp columns (doubles 1d0 limit)))
+      (assert (= (rational (aref scaled 1)) (* 1/2 (rational 1d-310) (rational limit)))))
+    ;; A column whose only entry is 2^-2000 of its row's largest. No factor brings it to 1/2; the
+    ;; largest factor keeps it, where a factor of 1 would round it to zero.
+    (multiple-value-bind (rows columns scaled)
+        (check-wide-range "a column far below its row" 1 2 (list (list 0 0 (scale-float 1d0 1000))
+                                                               (list 0 1 (scale-float 1d0 -1000))))
+      (declare (ignore rows))
+      (assert (equalp columns (doubles 1d0 limit)))
+      (assert (= (aref scaled 1) (scale-float 1d0 -978)) () "The column's entry became ~S." (aref scaled 1)))
+    ;; A column whose row-scaled largest entry is just under 2^-1023, where a product formed in
+    ;; floating point rounds up to it: the factor has to be the largest, not half of it.
+    (multiple-value-bind (rows columns scaled)
+        (check-wide-range "just under a power of two" 1 2 (list '(0 0 1) (list 0 1 largest-subnormal)))
+      (declare (ignore rows scaled))
+      (assert (equalp columns (doubles 1d0 limit)) () "Column factors ~S." columns))
+    ;; A column whose only entry is lost even when taken 2^1023 times larger: the smallest number
+    ;; beside the largest. It is still a column with a nonzero, and gets the largest factor.
+    (multiple-value-bind (rows columns)
+        (check-wide-range "lost even when lifted" 1 2 (list (list 0 0 most-positive-double-float) (list 0 1 least)))
+      (declare (ignore rows))
+      (assert (equalp columns (doubles 1d0 limit)) () "Column factors ~S." columns))
+    ;; The same with the row itself beyond reach: every entry subnormal.
+    (check-wide-range "a subnormal row" 2 2 (list (list 0 0 (* 3 least)) (list 0 1 least) '(1 1 1)))
+    (check-wide-range "the smallest and the largest" 2 2 (list (list 0 0 least) (list 0 1 most-positive-double-float)
+                                                               (list 1 0 most-positive-double-float) (list 1 1 least)))
+    (let ((state (sb-ext:seed-random-state 20261207)) (cases 0))
+      (loop :for (m n) :in '((1 2) (2 1) (2 2) (3 3) (3 5) (5 3) (6 6) (8 8)) :do
+        (dolist (percent '(40 70 100))
+          (dotimes (repeat 6)
+            (check-wide-range (format nil "full range ~Dx~D ~D% #~D" m n percent repeat) m n
+                              (full-range-entries state m n percent))
+            (incf cases))))
+      (format t "SCALING-RANGE-PASS cases=~D exact-values=~D~%" (+ cases 6) *scaling-range-values*))))
+
 (defun run-scaling-tests ()
   (setf *scaling-cases* 0)
   (run-scaling-exact-tests)
   (run-scaling-edge-tests)
+  (run-scaling-range-tests)
   ;; Warmed repeated work through a compiled Coalton caller allocates nothing.
   (let* ((state (sb-ext:seed-random-state 7))
          (matrix (csc-from-entries 6 9 (ranged-entries state 6 9 70 30)))

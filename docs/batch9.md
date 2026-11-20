@@ -1,5 +1,8 @@
 # Batch 9: scaling by powers of two
 
+**Corrected since:** [Batch 9a](batch9a.md) fixes this batch's behaviour where values or
+intermediate products leave the normal range, which the rosters below do not reach.
+
 State: completed; verified at safety 1 and safety 0 on 2026-11-20, Windows/x86-64,
 SBCL 2.6.10 and the pinned Coalton compiler. The contract and the derivation are in
 [scaling.md](scaling.md).
