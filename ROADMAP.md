@@ -36,9 +36,9 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 11
+## Batches 3 through 12
 
-Batches 3 through 11 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+Batches 3 through 12 are completed, Batch 3 in four steps 3a through 3d, with one addition,
 [6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
 8 were set by a consuming application's measurements; what follows is listed under
 *Next*. [The batch record](docs/batch3a.md)
@@ -177,20 +177,32 @@ was read by the consumer that asked for it; [the batch record](docs/batch11.md) 
 controls, and [the contract](docs/dependent-rows.md) says what is proved and where the
 method stops resolving.
 
+### Batch 12: sparse LU with partial pivoting
+
+**Completed.** `coalton-linalg/sparse/lu` factors a square sparse matrix as `P A Q = L U`,
+choosing each pivot from the values: the largest magnitude in the column, or the
+matrix's diagonal entry where it is within a threshold of that. Each column costs what
+it changes, found by a depth-first search over the structure of L. The factors' storage
+grows up to a budget. It solves with the matrix and with its transpose, measures its
+growth, and bounds its backward error by one number that holds with underflow.
+[The batch record](docs/batch12.md) holds the controls; [the contract](docs/lu.md) says
+what is claimed and what is not built.
+
 ### Next
 
 From 2026-11-20 the library develops ahead of any one consumer's measurements, toward
 what solving in CAD and engineering work is likely to need. The order is a consumer's
 ranking of what it would use first:
 
-1. Sparse LU with partial pivoting for a square nonsymmetric matrix.
-2. Iterative least squares and minimum norm on an operator, with damping, and conjugate
+1. Iterative least squares and minimum norm on an operator, with damping, and conjugate
    gradients for the definite case.
-3. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
+2. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
-4. Continuous integration on the pinned toolchain.
+3. Continuous integration on the pinned toolchain.
 
-Dependent rows, first in that ranking, is Batch 11. Its second method, a triangular
+Dependent rows, first in that ranking, is Batch 11, and sparse LU, second, is Batch 12;
+a refactorization on a fixed pivot sequence and a condition estimate for it would
+follow a consumer's use of it. Its second method, a triangular
 factor of Aᵀ by rotations that resolves distances the first cannot, is designed and not
 built: it waits for a consumer whose tolerance is finer than about 10⁻⁷ of a row's size.
 

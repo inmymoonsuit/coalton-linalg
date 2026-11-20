@@ -1,0 +1,543 @@
+(cl:defpackage #:coalton-linalg/sparse/lu
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:gram #:coalton-linalg/sparse/gram)
+                    (#:ord #:coalton-linalg/sparse/ordering)
+                    (#:limits #:coalton-linalg/sparse/limits)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:Lu #:make-lu #:make-lu-with-order #:column-order #:default-entry-limit
+           #:LuStatus #:LuSuccess #:LuSingular #:LuNonFinite #:LuStorageExceeded #:LuBadMatrix #:LuBadThreshold
+           #:LuSolveStatus #:LuSolveSuccess #:LuSolveNoFactor #:LuSolveBadSize #:LuSolveNonFiniteRhs
+           #:LuSolveNonFiniteResult
+           #:factor! #:solve! #:solve-transpose! #:lu-ready? #:dimension #:entry-limit #:singular-column
+           #:lower-entry-count #:upper-entry-count #:lu-growth #:lu-backward-bound
+           #:row-permutation #:column-permutation
+           #:lower-pointers #:lower-rows #:lower-values
+           #:upper-pointers #:upper-rows #:upper-values #:upper-diagonal))
+(cl:in-package #:coalton-linalg/sparse/lu)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+(coalton-toplevel
+  (define-struct LuStorage
+    "Owns the factors, which grow up to the entry limit, and the workspace of every call."
+    (size UFix)
+    (limit UFix)
+    (order (arr:LispArray UFix))
+    (pinv (arr:LispArray UFix))
+    (pivrow (arr:LispArray UFix))
+    (lp (arr:LispArray UFix))
+    (li (cell:Cell (arr:LispArray UFix)))
+    (lx (cell:Cell (arr:LispArray F64)))
+    (up (arr:LispArray UFix))
+    (ui (cell:Cell (arr:LispArray UFix)))
+    (ux (cell:Cell (arr:LispArray F64)))
+    (udiag (arr:LispArray F64))
+    (x (arr:LispArray F64))
+    (w (arr:LispArray F64))
+    (z (arr:LispArray F64))
+    (mark (arr:LispArray UFix))
+    (stack (arr:LispArray UFix))
+    (cursor (arr:LispArray UFix))
+    (topo (arr:LispArray UFix))
+    (cand (arr:LispArray UFix))
+    (counters (arr:LispArray UFix))
+    (lsum (arr:LispArray F64))
+    (usum (arr:LispArray F64))
+    (state (arr:LispArray UFix))
+    (estimate (arr:LispArray F64)))
+
+  (repr :transparent)
+  (define-type Lu
+    "Factorization handle for square matrices of one order; it owns its factors and workspace, and one call at a time uses them."
+    (MkLu LuStorage))
+
+  (inline)
+  (declare lu-storage (Lu -> LuStorage))
+  (define (lu-storage lu) (match lu ((MkLu storage) storage)))
+
+  (derive Eq)
+  (repr :enum)
+  (define-type LuStatus
+    "Outcome of a factorization call."
+    LuSuccess
+    "Factors stand."
+    LuSingular
+    "A column had no nonzero entry left to pivot on; singular-column names it."
+    LuNonFinite
+    "An intermediate result was not finite."
+    LuStorageExceeded
+    "The factors need more entries than the handle's limit."
+    LuBadMatrix
+    "The matrix is not square of the handle's order."
+    LuBadThreshold
+    "The threshold is not in (0, 1].")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type LuSolveStatus
+    "Outcome of a solve call."
+    LuSolveSuccess
+    "The output holds the solution."
+    LuSolveNoFactor
+    "No factors stand."
+    LuSolveBadSize
+    "A vector's length differs from the order."
+    LuSolveNonFiniteRhs
+    "The right-hand side holds a non-finite entry."
+    LuSolveNonFiniteResult
+    "The computed solution was not finite; the output is unchanged.")
+
+  (inline)
+  (declare %count->float (UFix -> F64))
+  (define (%count->float count)
+    "A count as a floating-point number; exact below 2^53."
+    (lisp (-> F64) (count) (cl:coerce count 'cl:double-float)))
+
+  (declare unit-roundoff F64)
+  (define unit-roundoff (lisp (-> F64) () (cl:scale-float 1d0 -53)))
+  (declare smallest-positive F64)
+  (define smallest-positive (lisp (-> F64) () cl:least-positive-double-float))
+
+  (declare default-entry-limit UFix)
+  (define default-entry-limit
+    "Default budget, 2^20, of entries of L and U together, off their diagonals."
+    limits:default-analysis-entry-limit)
+
+  (declare column-order (csc:Matrix * UFix -> arr:LispArray UFix))
+  (define (column-order matrix maximum-entries)
+    "A fill-reducing order of the columns of a square matrix: minimum degree on the pattern of A^T A, which does not depend on the rows' order and so can be chosen before the pivoting is known. The budget is the Gram analysis's and the ordering's; a dense row makes A^T A dense."
+    (let n = (csc:column-count matrix))
+    (let plan = (gram:analyze-ata-with-limit matrix maximum-entries))
+    (.permutation (ord:minimum-degree n (gram:column-pointers plan) (gram:row-indices plan)
+                                      (limits:effective-entry-limit maximum-entries) n)))
+
+  (declare make-lu-with-order (UFix * arr:LispArray UFix * UFix -> Lu))
+  (define (make-lu-with-order n order maximum-entries)
+    "A handle for matrices of order n, eliminating the columns in the given order, with a budget of factor entries."
+    (limits:check-dimension! n)
+    (unless (== (arr:length order) n)
+      (throw (err:InvalidPermutation "The column order's length differs from the order of the matrix.")))
+    (let seen = (arr:make n (the UFix 0)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let column = (arr:aref order j))
+      (unless (< column n)
+        (throw (err:InvalidPermutation "The column order holds an index out of range.")))
+      (unless (== (arr:aref seen column) 0)
+        (throw (err:InvalidPermutation "The column order repeats an index.")))
+      (arr:set! seen column 1))
+    (let limit = (limits:effective-entry-limit maximum-entries))
+    (let start = (if (< limit 16) limit 16))
+    (MkLu (LuStorage n limit (arr:copy order)
+                     (arr:make n n) (arr:make n (the UFix 0))
+                     (arr:make (+ n 1) (the UFix 0))
+                     (cell:new (arr:make start (the UFix 0))) (cell:new (arr:make start 0.0d0))
+                     (arr:make (+ n 1) (the UFix 0))
+                     (cell:new (arr:make start (the UFix 0))) (cell:new (arr:make start 0.0d0))
+                     (arr:make n 0.0d0)
+                     (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0)
+                     (arr:make n (the UFix 0)) (arr:make n (the UFix 0)) (arr:make n (the UFix 0))
+                     (arr:make n (the UFix 0)) (arr:make n (the UFix 0)) (arr:make 2 (the UFix 0))
+                     (arr:make n 0.0d0) (arr:make n 0.0d0)
+                     (arr:make 4 (the UFix 0)) (arr:make 2 -1.0d0))))
+
+  (declare make-lu (csc:Matrix -> Lu))
+  (define (make-lu matrix)
+    "A handle for square matrices of this one's order, with column-order of its pattern and the default budget."
+    (unless (== (csc:row-count matrix) (csc:column-count matrix))
+      (throw (err:InvalidDimensions "LU factorization requires a square matrix.")))
+    (make-lu-with-order (csc:column-count matrix) (column-order matrix default-entry-limit) default-entry-limit))
+
+  (declare grow-indices! (cell:Cell (arr:LispArray UFix) * UFix * UFix * UFix -> Void))
+  (define (grow-indices! holder used needed limit)
+    "Make room for needed entries, keeping the first used; the capacity doubles and stops at the limit."
+    (let old = (cell:read holder))
+    (when (> needed (arr:length old))
+      (let doubled = (* 2 (arr:length old)))
+      (let capped = (if (> doubled limit) limit doubled))
+      (let fresh = (arr:make (if (> needed capped) needed capped) (the UFix 0)))
+      (for ((q 0 (+ q 1))) :while (< q used)
+        (arr:set! fresh q (arr:aref old q)))
+      (cell:write! holder fresh)))
+
+  (declare grow-values! (cell:Cell (arr:LispArray F64) * UFix * UFix * UFix -> Void))
+  (define (grow-values! holder used needed limit)
+    "grow-indices! for values."
+    (let old = (cell:read holder))
+    (when (> needed (arr:length old))
+      (let doubled = (* 2 (arr:length old)))
+      (let capped = (if (> doubled limit) limit doubled))
+      (let fresh = (arr:make (if (> needed capped) needed capped) 0.0d0))
+      (for ((q 0 (+ q 1))) :while (< q used)
+        (arr:set! fresh q (arr:aref old q)))
+      (cell:write! holder fresh)))
+
+  (declare reach! (UFix * UFix * UFix * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray UFix
+                   * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray UFix
+                   * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray UFix -> Void))
+  (define (reach! start stamp n pinv pivrow mark stack cursor topo cand lp li counters)
+    "From pivot position start, visit every pivot position the column's value at start's row will spread to, depth first and without recursion. A position is written to topo, filling it downward from counters[0], when everything it spreads to has been written, so topo then holds each position before those it feeds. Rows not yet pivoted that are met are appended to cand, counted in counters[1]."
+    (arr:set! mark (arr:aref pivrow start) stamp)
+    (arr:set! stack 0 start)
+    (arr:set! cursor 0 (arr:aref lp start))
+    (let depth = (cell:new (the UFix 1)))
+    (for () :while (> (cell:read depth) 0)
+      (let level = (- (cell:read depth) 1))
+      (let k = (arr:aref stack level))
+      (let end = (arr:aref lp (+ k 1)))
+      (let p = (cell:new (arr:aref cursor level)))
+      (let descended = (cell:new False))
+      (for () :while (and (< (cell:read p) end) (not (cell:read descended)))
+        (let i = (arr:aref li (cell:read p)))
+        (cell:write! p (+ (cell:read p) 1))
+        (unless (== (arr:aref mark i) stamp)
+          (arr:set! mark i stamp)
+          (cond
+            ((< (arr:aref pinv i) n)
+             (cell:write! descended True)
+             (cell:write! depth (+ (cell:read depth) 1))
+             (arr:set! cursor level (cell:read p))
+             (arr:set! stack (+ level 1) (arr:aref pinv i))
+             (arr:set! cursor (+ level 1) (arr:aref lp (arr:aref pinv i))))
+            (True
+             (arr:set! cand (arr:aref counters 1) i)
+             (arr:set! counters 1 (+ (arr:aref counters 1) 1))))))
+      (unless (cell:read descended)
+        (cell:write! depth level)
+        (arr:set! counters 0 (- (arr:aref counters 0) 1))
+        (arr:set! topo (arr:aref counters 0) k))))
+
+  (declare factor! (Lu * csc:Matrix * F64 -> LuStatus))
+  (define (factor! lu matrix threshold)
+    "Factor P A Q = L U, Q the handle's column order and P chosen as it goes: in each column the entry of largest magnitude, or the one on the diagonal of A when it is within threshold of the largest. Overwrites the handle's factors; a refusal leaves none. See docs/lu.md."
+    (let s = (lu-storage lu))
+    (let st = (.state s))
+    (let n = (.size s))
+    (arr:set! st 0 0)
+    (arr:set! st 1 n)
+    (arr:set! st 2 0)
+    (arr:set! st 3 0)
+    (arr:set! (.estimate s) 0 -1.0d0)
+    (arr:set! (.estimate s) 1 -1.0d0)
+    (unless (and (== (csc:row-count matrix) n) (== (csc:column-count matrix) n)) (return LuBadMatrix))
+    (unless (and (> threshold 0.0d0) (<= threshold 1.0d0)) (return LuBadThreshold))
+    (let cp = (csc:column-pointers matrix))
+    (let ri = (csc:row-indices matrix))
+    (let av = (csc:entries matrix))
+    (let order = (.order s))
+    (let pinv = (.pinv s))
+    (let pivrow = (.pivrow s))
+    (let lp = (.lp s))
+    (let up = (.up s))
+    (let udiag = (.udiag s))
+    (let x = (.x s))
+    (let mark = (.mark s))
+    (let topo = (.topo s))
+    (let cand = (.cand s))
+    (let counters = (.counters s))
+    (let lsum = (.lsum s))
+    (let usum = (.usum s))
+    (let limit = (.limit s))
+    ;; The work column is zero between columns and is zeroed here, so that a call refused part
+    ;; of the way through a column leaves nothing for the next.
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (arr:set! pinv i n)
+      (arr:set! mark i 0)
+      (arr:set! x i 0.0d0)
+      (arr:set! lsum i 1.0d0)
+      (arr:set! usum i 0.0d0))
+    (let lnz = (cell:new (the UFix 0)))
+    (let unz = (cell:new (the UFix 0)))
+    (let largest-entry = (cell:new 0.0d0))
+    (let largest-upper = (cell:new 0.0d0))
+    (let longest = (cell:new (the UFix 0)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let column = (arr:aref order j))
+      (let stamp = (+ j 1))
+      (arr:set! lp j (cell:read lnz))
+      (arr:set! up j (cell:read unz))
+      ;; Which pivot positions this column reaches, in an order that feeds each before it is
+      ;; read, and which rows not yet pivoted it touches.
+      (arr:set! counters 0 n)
+      (arr:set! counters 1 0)
+      (let li = (cell:read (.li s)))
+      (let lx = (cell:read (.lx s)))
+      (for ((p (arr:aref cp column) (+ p 1))) :while (< p (arr:aref cp (+ column 1)))
+        (let i = (arr:aref ri p))
+        (unless (== (arr:aref mark i) stamp)
+          (cond
+            ((< (arr:aref pinv i) n)
+             (reach! (arr:aref pinv i) stamp n pinv pivrow mark (.stack s) (.cursor s) topo cand lp li counters)
+             (arr:set! mark i stamp))
+            (True
+             (arr:set! mark i stamp)
+             (arr:set! cand (arr:aref counters 1) i)
+             (arr:set! counters 1 (+ (arr:aref counters 1) 1))))))
+      (let top = (arr:aref counters 0))
+      (let count = (arr:aref counters 1))
+      (for ((p (arr:aref cp column) (+ p 1))) :while (< p (arr:aref cp (+ column 1)))
+        (let v = (arr:aref av p))
+        (when (> (abs v) (cell:read largest-entry)) (cell:write! largest-entry (abs v)))
+        (arr:set! x (arr:aref ri p) v))
+      ;; The column of U, and the column's remainder in the rows not yet pivoted.
+      (for ((t top (+ t 1))) :while (< t n)
+        (let k = (arr:aref topo t))
+        (let v = (arr:aref x (arr:aref pivrow k)))
+        (for ((p (arr:aref lp k) (+ p 1))) :while (< p (arr:aref lp (+ k 1)))
+          (let i = (arr:aref li p))
+          (arr:set! x i (- (arr:aref x i) (* (arr:aref lx p) v)))))
+      ;; The pivot: the largest magnitude, the smallest row among equals; then the diagonal of
+      ;; A instead, where it is a candidate within the threshold of that largest.
+      (let best = (cell:new n))
+      (let peak = (cell:new 0.0d0))
+      (let sound = (cell:new True))
+      (for ((c 0 (+ c 1))) :while (< c count)
+        (let i = (arr:aref cand c))
+        (let magnitude = (abs (arr:aref x i)))
+        (unless (inline (math:finite? magnitude)) (cell:write! sound False))
+        (when (or (> magnitude (cell:read peak))
+                  (and (== magnitude (cell:read peak)) (and (> magnitude 0.0d0) (< i (cell:read best)))))
+          (cell:write! peak magnitude)
+          (cell:write! best i)))
+      (for ((t top (+ t 1))) :while (< t n)
+        (unless (inline (math:finite? (arr:aref x (arr:aref pivrow (arr:aref topo t)))))
+          (cell:write! sound False)))
+      (unless (cell:read sound)
+        (return LuNonFinite))
+      (when (== (cell:read best) n)
+        (arr:set! st 1 column)
+        (return LuSingular))
+      (when (and (== (arr:aref mark column) stamp) (== (arr:aref pinv column) n))
+        (let diagonal = (abs (arr:aref x column)))
+        (when (and (> diagonal 0.0d0) (>= diagonal (* threshold (cell:read peak))))
+          (cell:write! best column)))
+      (let row = (cell:read best))
+      (let pivot = (arr:aref x row))
+      ;; Room for this column in both factors, within the budget.
+      (let upper = (- n top))
+      (let lower = (- count 1))
+      (when (> (+ upper lower) (- limit (+ (cell:read lnz) (cell:read unz))))
+        (return LuStorageExceeded))
+      (grow-indices! (.ui s) (cell:read unz) (+ (cell:read unz) upper) limit)
+      (grow-values! (.ux s) (cell:read unz) (+ (cell:read unz) upper) limit)
+      (grow-indices! (.li s) (cell:read lnz) (+ (cell:read lnz) lower) limit)
+      (grow-values! (.lx s) (cell:read lnz) (+ (cell:read lnz) lower) limit)
+      (let ui = (cell:read (.ui s)))
+      (let ux = (cell:read (.ux s)))
+      (let li-now = (cell:read (.li s)))
+      (let lx-now = (cell:read (.lx s)))
+      (when (> upper (cell:read longest)) (cell:write! longest upper))
+      (for ((t top (+ t 1))) :while (< t n)
+        (let k = (arr:aref topo t))
+        (let v = (arr:aref x (arr:aref pivrow k)))
+        (arr:set! ui (cell:read unz) k)
+        (arr:set! ux (cell:read unz) v)
+        (cell:write! unz (+ (cell:read unz) 1))
+        (arr:set! usum k (+ (arr:aref usum k) (abs v)))
+        (when (> (abs v) (cell:read largest-upper)) (cell:write! largest-upper (abs v)))
+        (arr:set! x (arr:aref pivrow k) 0.0d0))
+      (arr:set! udiag j pivot)
+      (arr:set! usum j (+ (arr:aref usum j) (abs pivot)))
+      (when (> (abs pivot) (cell:read largest-upper)) (cell:write! largest-upper (abs pivot)))
+      (for ((c 0 (+ c 1))) :while (< c count)
+        (let i = (arr:aref cand c))
+        (unless (== i row)
+          (let multiplier = (/ (arr:aref x i) pivot))
+          (arr:set! li-now (cell:read lnz) i)
+          (arr:set! lx-now (cell:read lnz) multiplier)
+          (cell:write! lnz (+ (cell:read lnz) 1))
+          (arr:set! lsum j (+ (arr:aref lsum j) (abs multiplier))))
+        (arr:set! x i 0.0d0))
+      (arr:set! pinv row j)
+      (arr:set! pivrow j row))
+    (arr:set! lp n (cell:read lnz))
+    (arr:set! up n (cell:read unz))
+    (arr:set! st 2 (cell:read lnz))
+    (arr:set! st 3 (cell:read unz))
+    ;; Growth, and a bound on the backward error. Each entry of P A Q - L U is within
+    ;; gamma(r + 1) of the same entry of |L| |U|, r the longest column of U off its diagonal,
+    ;; plus what underflow can add; the sum of the entries of |L| |U| is the sum over the pivot
+    ;; positions of a column sum of |L| times a row sum of |U|; and the Frobenius norm is at
+    ;; most the sum of the magnitudes. Rounded up by a margin for this arithmetic itself.
+    (let total = (cell:new 0.0d0))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (cell:write! total (+ (cell:read total) (* (arr:aref lsum k) (arr:aref usum k)))))
+    (let order-count = (%count->float n))
+    (let reach = (%count->float (+ (cell:read longest) 1)))
+    (let relative = (/ (* reach unit-roundoff) (- 1.0d0 (* reach unit-roundoff))))
+    (let entries = (%count->float (+ n (+ (cell:read lnz) (cell:read unz)))))
+    (let underflow = (* smallest-positive (* entries (+ (+ reach 1.0d0) (cell:read largest-upper)))))
+    (let margin = (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order-count (+ (* 2.0d0 reach) 10.0d0)))))
+    (arr:set! (.estimate s) 0
+              (if (> (cell:read largest-entry) 0.0d0) (/ (cell:read largest-upper) (cell:read largest-entry)) 0.0d0))
+    (arr:set! (.estimate s) 1 (* margin (+ (* relative (cell:read total)) underflow)))
+    (arr:set! st 0 1)
+    LuSuccess)
+
+  (declare lu-ready? (Lu -> Boolean))
+  (define (lu-ready? lu)
+    "Whether factors stand: the latest factor! on the handle succeeded."
+    (== (arr:aref (.state (lu-storage lu)) 0) 1))
+
+  (declare dimension (Lu -> UFix))
+  (define (dimension lu)
+    "The order of the matrices the handle factors."
+    (.size (lu-storage lu)))
+
+  (declare entry-limit (Lu -> UFix))
+  (define (entry-limit lu)
+    "The handle's budget of entries of L and U together, off their diagonals."
+    (.limit (lu-storage lu)))
+
+  (declare singular-column (Lu -> UFix))
+  (define (singular-column lu)
+    "The column of the matrix at which the latest factor! found nothing to pivot on; the order when it did not return LuSingular."
+    (arr:aref (.state (lu-storage lu)) 1))
+
+  (declare lower-entry-count (Lu -> UFix))
+  (define (lower-entry-count lu)
+    "Entries of L below its unit diagonal in the standing factors; 0 when none stand."
+    (arr:aref (.state (lu-storage lu)) 2))
+
+  (declare upper-entry-count (Lu -> UFix))
+  (define (upper-entry-count lu)
+    "Entries of U above its diagonal in the standing factors; 0 when none stand."
+    (arr:aref (.state (lu-storage lu)) 3))
+
+  (declare lu-growth (Lu -> F64))
+  (define (lu-growth lu)
+    "The largest magnitude in U over the largest in the matrix, for the standing factors; -1 when none stand."
+    (arr:aref (.estimate (lu-storage lu)) 0))
+
+  (declare lu-backward-bound (Lu -> F64))
+  (define (lu-backward-bound lu)
+    "An upper bound on the Frobenius norm, hence the 2-norm, of P A Q - L U for the standing factors; -1 when none stand. It may be infinite. See docs/lu.md."
+    (arr:aref (.estimate (lu-storage lu)) 1))
+
+  (declare row-permutation (Lu -> arr:LispArray UFix))
+  (define (row-permutation lu)
+    "Borrowed view: the row of the matrix pivoted at each step."
+    (.pivrow (lu-storage lu)))
+
+  (declare column-permutation (Lu -> arr:LispArray UFix))
+  (define (column-permutation lu)
+    "Borrowed view: the column of the matrix eliminated at each step."
+    (.order (lu-storage lu)))
+
+  (declare lower-pointers (Lu -> arr:LispArray UFix))
+  (define (lower-pointers lu)
+    "Borrowed view: where each column of L starts in lower-rows and lower-values, one more than the order long."
+    (.lp (lu-storage lu)))
+
+  (declare lower-rows (Lu -> arr:LispArray UFix))
+  (define (lower-rows lu)
+    "Borrowed view, replaced when the factors grow: the row of the matrix of each entry of L below its diagonal, in no particular order within a column."
+    (cell:read (.li (lu-storage lu))))
+
+  (declare lower-values (Lu -> arr:LispArray F64))
+  (define (lower-values lu)
+    "Borrowed view, replaced when the factors grow: the multipliers, in the order of lower-rows."
+    (cell:read (.lx (lu-storage lu))))
+
+  (declare upper-pointers (Lu -> arr:LispArray UFix))
+  (define (upper-pointers lu)
+    "Borrowed view: where each column of U starts in upper-rows and upper-values, one more than the order long."
+    (.up (lu-storage lu)))
+
+  (declare upper-rows (Lu -> arr:LispArray UFix))
+  (define (upper-rows lu)
+    "Borrowed view, replaced when the factors grow: the pivot step of each entry of U above its diagonal, in an order in which each step comes before those it feeds."
+    (cell:read (.ui (lu-storage lu))))
+
+  (declare upper-values (Lu -> arr:LispArray F64))
+  (define (upper-values lu)
+    "Borrowed view, replaced when the factors grow: the entries of U above its diagonal, in the order of upper-rows."
+    (cell:read (.ux (lu-storage lu))))
+
+  (declare upper-diagonal (Lu -> arr:LispArray F64))
+  (define (upper-diagonal lu)
+    "Borrowed view: the pivots, the diagonal of U, by step."
+    (.udiag (lu-storage lu)))
+
+  (declare solve! (Lu * arr:LispArray F64 * arr:LispArray F64 -> LuSolveStatus))
+  (define (solve! lu b out)
+    "Solve A x = b with the standing factors. Solve into out on success, which may be b; return a named outcome and preserve out on refusal."
+    (unless (lu-ready? lu) (return LuSolveNoFactor))
+    (let s = (lu-storage lu))
+    (let n = (.size s))
+    (unless (and (== (arr:length b) n) (== (arr:length out) n)) (return LuSolveBadSize))
+    (let pivrow = (.pivrow s))
+    (let lp = (.lp s))
+    (let li = (cell:read (.li s)))
+    (let lx = (cell:read (.lx s)))
+    (let up = (.up s))
+    (let ui = (cell:read (.ui s)))
+    (let ux = (cell:read (.ux s)))
+    (let udiag = (.udiag s))
+    (let w = (.w s))
+    (let z = (.z s))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (let v = (arr:aref b i))
+      (unless (inline (math:finite? v)) (return LuSolveNonFiniteRhs))
+      (arr:set! w i v))
+    ;; L y = P b, a column at a time, the right-hand side kept by row of the matrix.
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let v = (arr:aref w (arr:aref pivrow k)))
+      (arr:set! z k v)
+      (for ((p (arr:aref lp k) (+ p 1))) :while (< p (arr:aref lp (+ k 1)))
+        (let i = (arr:aref li p))
+        (arr:set! w i (- (arr:aref w i) (* (arr:aref lx p) v)))))
+    ;; U z = y, from the last column back.
+    (for ((remaining n (- remaining 1))) :while (> remaining 0)
+      (let j = (- remaining 1))
+      (let v = (/ (arr:aref z j) (arr:aref udiag j)))
+      (unless (inline (math:finite? v)) (return LuSolveNonFiniteResult))
+      (arr:set! z j v)
+      (for ((p (arr:aref up j) (+ p 1))) :while (< p (arr:aref up (+ j 1)))
+        (let k = (arr:aref ui p))
+        (arr:set! z k (- (arr:aref z k) (* (arr:aref ux p) v)))))
+    (let order = (.order s))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! out (arr:aref order j) (arr:aref z j)))
+    LuSolveSuccess)
+
+  (declare solve-transpose! (Lu * arr:LispArray F64 * arr:LispArray F64 -> LuSolveStatus))
+  (define (solve-transpose! lu b out)
+    "Solve A^T x = b with the standing factors. Solve into out on success, which may be b; return a named outcome and preserve out on refusal."
+    (unless (lu-ready? lu) (return LuSolveNoFactor))
+    (let s = (lu-storage lu))
+    (let n = (.size s))
+    (unless (and (== (arr:length b) n) (== (arr:length out) n)) (return LuSolveBadSize))
+    (let pivrow = (.pivrow s))
+    (let pinv = (.pinv s))
+    (let order = (.order s))
+    (let lp = (.lp s))
+    (let li = (cell:read (.li s)))
+    (let lx = (cell:read (.lx s)))
+    (let up = (.up s))
+    (let ui = (cell:read (.ui s)))
+    (let ux = (cell:read (.ux s)))
+    (let udiag = (.udiag s))
+    (let z = (.z s))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (unless (inline (math:finite? (arr:aref b i))) (return LuSolveNonFiniteRhs)))
+    ;; U^T t = Q^T b, from the first column on: column j of U holds what row j of U^T needs.
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let acc = (cell:new (arr:aref b (arr:aref order j))))
+      (for ((p (arr:aref up j) (+ p 1))) :while (< p (arr:aref up (+ j 1)))
+        (cell:write! acc (- (cell:read acc) (* (arr:aref ux p) (arr:aref z (arr:aref ui p))))))
+      (arr:set! z j (/ (cell:read acc) (arr:aref udiag j))))
+    ;; L^T s = t, from the last step back: every row in column k of L was pivoted after step k.
+    ;; A value that is not finite after the first pass is not finite after this one, which
+    ;; looks at every entry.
+    (for ((remaining n (- remaining 1))) :while (> remaining 0)
+      (let k = (- remaining 1))
+      (let acc = (cell:new (arr:aref z k)))
+      (for ((p (arr:aref lp k) (+ p 1))) :while (< p (arr:aref lp (+ k 1)))
+        (cell:write! acc (- (cell:read acc) (* (arr:aref lx p) (arr:aref z (arr:aref pinv (arr:aref li p)))))))
+      (unless (inline (math:finite? (cell:read acc))) (return LuSolveNonFiniteResult))
+      (arr:set! z k (cell:read acc)))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (arr:set! out (arr:aref pivrow k) (arr:aref z k)))
+    LuSolveSuccess))

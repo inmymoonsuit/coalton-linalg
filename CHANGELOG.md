@@ -2,6 +2,17 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.12.0 — 2026-11-20
+
+Added: `coalton-linalg/sparse/lu`. `factor!` computes `P A Q = L U` for a square sparse
+matrix with partial pivoting, the pivots chosen from the values and the diagonal
+preferred within a threshold; `solve!` and `solve-transpose!` solve with the matrix and
+with its transpose; `lu-growth` and `lu-backward-bound` report on the factors that
+stand; `make-lu`, `make-lu-with-order` and `column-order` make the handle, whose storage
+grows up to an entry budget. [Contract](docs/lu.md) · [record](docs/batch12.md).
+
+No existing call changes.
+
 ## 0.11.0 — 2026-11-20
 
 Added:

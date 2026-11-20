@@ -83,6 +83,22 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 12: sparse LU with partial pivoting
+
+Gaussian elimination with partial pivoting, and its rounding analysis, are classical. The
+organization used here, a column at a time with the set of earlier columns that a column
+needs found by a depth-first search over the structure of L and applied in the order the
+search finishes them, is the method of Gilbert and Peierls (1988), known here from its
+description: that the solution of a sparse triangular system has its nonzeros at the
+nodes reachable from the right-hand side's, and that a reverse finishing order is a
+valid order of computation. The search without recursion, the storage, the pivot rule's
+tie-breaking, the treatment of a refused call and the one-number backward bound with its
+underflow term were worked out here. Preferring the diagonal within a threshold is common
+practice in sparse elimination. Ordering the columns by the pattern of `Aᵀ A` is likewise
+common practice and uses this library's own ordering. No numerical-library
+implementation and no algorithm listing was opened. The tests' reference is an exact
+rational product of the exported factors.
+
 ## Batch 11: dependent rows and skipped pivots
 
 Leaving out an index whose pivot is negligible, in a factorization of a positive

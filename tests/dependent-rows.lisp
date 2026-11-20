@@ -17,9 +17,6 @@
 (defvar *dr-worst-gap* 0)
 (defvar *dr-worst-combination* 0)
 
-(defun zeros (count)
-  (make-array count :element-type 'double-float :initial-element 0d0))
-
 ;;; ---- The pivot-skipping factorization -------------------------------------------------
 
 (defun exact-skipping-pivots (exact perm floor)

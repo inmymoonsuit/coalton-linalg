@@ -186,6 +186,37 @@ See the [design review](design.md#coalton-interface-review-2026-11-19).
 A search withdraws the earlier set and its bounds. After the analysis only
 `transpose-product-bound` allocates. One analysis serves one call at a time.
 
+## coalton-linalg/sparse/lu
+
+[Contract](lu.md) · [Source](../src/sparse/lu.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `Lu` | Factors and workspace for square matrices of one order; obtain from make-lu |
+| `make-lu` | coalton-linalg/sparse/csc:Matrix -> Lu; column-order of the pattern, default budget |
+| `make-lu-with-order` | UFix * I * UFix -> Lu; order, the column eliminated at each step, entry budget |
+| `column-order` | coalton-linalg/sparse/csc:Matrix * UFix -> I; minimum degree on the pattern of AᵀA |
+| `default-entry-limit` | UFix; 1,048,576 entries of L and U together, off their diagonals |
+| `LuStatus` | Outcome type of factor! |
+| `LuSuccess`, `LuSingular`, `LuNonFinite`, `LuStorageExceeded`, `LuBadMatrix`, `LuBadThreshold` | LuStatus values |
+| `factor!` | Lu * coalton-linalg/sparse/csc:Matrix * F64 -> LuStatus; P A Q = L U, the threshold in (0, 1] |
+| `LuSolveStatus` | Outcome type of the solves |
+| `LuSolveSuccess`, `LuSolveNoFactor`, `LuSolveBadSize`, `LuSolveNonFiniteRhs`, `LuSolveNonFiniteResult` | LuSolveStatus values |
+| `solve!` | Lu * V * V -> LuSolveStatus; A x = b |
+| `solve-transpose!` | Lu * V * V -> LuSolveStatus; Aᵀ x = b |
+| `lu-ready?` | Lu -> Boolean |
+| `dimension`, `entry-limit` | Lu -> UFix |
+| `singular-column` | Lu -> UFix; the column at which the latest factor! found no pivot, otherwise the order |
+| `lower-entry-count`, `upper-entry-count` | Lu -> UFix; entries of the standing factors off their diagonals |
+| `lu-growth` | Lu -> F64; largest magnitude in U over the largest in A, otherwise -1 |
+| `lu-backward-bound` | Lu -> F64; upper bound on the Frobenius norm of P A Q − L U, otherwise -1 |
+| `row-permutation`, `column-permutation` | Lu -> I; the row and the column of the matrix taken at each step |
+| `lower-pointers`, `lower-rows`, `upper-pointers`, `upper-rows` | Lu -> I; the factors by column |
+| `lower-values`, `upper-values`, `upper-diagonal` | Lu -> V |
+
+The factors' storage grows up to the budget and the row and value views are replaced
+when it does. A refused factor! leaves no factors. One handle serves one call at a time.
+
 ## coalton-linalg/sparse/scaling
 
 [Contract](scaling.md) · [Source](../src/sparse/scaling.ct)

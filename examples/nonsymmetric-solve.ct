@@ -1,0 +1,61 @@
+(cl:defpackage #:coalton-linalg/examples/nonsymmetric-solve
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:lu #:coalton-linalg/sparse/lu))
+  (:export #:nonsymmetric-solution #:transposed-solution))
+(cl:in-package #:coalton-linalg/examples/nonsymmetric-solve)
+
+(coalton-toplevel
+  (declare system (Void -> csc:Matrix))
+  (define (system)
+    "A matrix with nothing on its diagonal in the first two rows, so no factorization without row exchanges exists.
+
+    [ 0  2  0 ]
+    [ 1  0  3 ]
+    [ 4  0  1 ]"
+    (let rows = (arr:make 5 (the UFix 0)))
+    (let columns = (arr:make 5 (the UFix 0)))
+    (let values = (arr:make 5 0.0d0))
+    (arr:set! rows 0 1) (arr:set! columns 0 0) (arr:set! values 0 1.0d0)
+    (arr:set! rows 1 2) (arr:set! columns 1 0) (arr:set! values 1 4.0d0)
+    (arr:set! rows 2 0) (arr:set! columns 2 1) (arr:set! values 2 2.0d0)
+    (arr:set! rows 3 1) (arr:set! columns 3 2) (arr:set! values 3 3.0d0)
+    (arr:set! rows 4 2) (arr:set! columns 4 2) (arr:set! values 4 1.0d0)
+    (csc:from-coo 3 3 rows columns values csc:RejectDuplicates))
+
+  (declare right-hand-side (Void -> arr:LispArray F64))
+  (define (right-hand-side)
+    "A [1, 2, 3]^T = [4, 10, 7]^T."
+    (let b = (arr:make 3 0.0d0))
+    (arr:set! b 0 4.0d0)
+    (arr:set! b 1 10.0d0)
+    (arr:set! b 2 7.0d0)
+    b)
+
+  (declare nonsymmetric-solution (Void -> arr:LispArray F64))
+  (define (nonsymmetric-solution)
+    "Solve A x = [4, 10, 7]; return [1, 2, 3], or an empty vector if a step was refused.
+
+The handle is made once for the order and the pattern; factor! then chooses its pivots from
+the values, here exchanging rows at every step."
+    (let matrix = (system))
+    (let handle = (lu:make-lu matrix))
+    (let x = (arr:make 3 0.0d0))
+    (unless (== (lu:factor! handle matrix 1.0d0) lu:LuSuccess)
+      (return (arr:make 0 0.0d0)))
+    (unless (== (lu:solve! handle (right-hand-side) x) lu:LuSolveSuccess)
+      (return (arr:make 0 0.0d0)))
+    x)
+
+  (declare transposed-solution (Void -> arr:LispArray F64))
+  (define (transposed-solution)
+    "Solve A^T y = [4, 10, 7] with the same factors; return [5, 24/11, 5/11], or an empty vector if a step was refused."
+    (let matrix = (system))
+    (let handle = (lu:make-lu matrix))
+    (let y = (arr:make 3 0.0d0))
+    (unless (== (lu:factor! handle matrix 1.0d0) lu:LuSuccess)
+      (return (arr:make 0 0.0d0)))
+    (unless (== (lu:solve-transpose! handle (right-hand-side) y) lu:LuSolveSuccess)
+      (return (arr:make 0 0.0d0)))
+    y))

@@ -1,0 +1,88 @@
+(cl:defpackage #:coalton-linalg/tests/lu-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:lu #:coalton-linalg/sparse/lu)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:observe-factor #:observe-solve #:observe-transpose-solve #:make-code #:make-ordered-code
+           #:order-code #:factor-solve-loop))
+(cl:in-package #:coalton-linalg/tests/lu-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare observe-factor (lu:Lu * csc:Matrix * F64 -> UFix))
+  (define (observe-factor handle matrix threshold)
+    "Exhaustively matched outcome: success 0, singular 1, non-finite 2, storage 3, matrix 4, threshold 5."
+    (match (lu:factor! handle matrix threshold)
+      ((lu:LuSuccess) 0)
+      ((lu:LuSingular) 1)
+      ((lu:LuNonFinite) 2)
+      ((lu:LuStorageExceeded) 3)
+      ((lu:LuBadMatrix) 4)
+      ((lu:LuBadThreshold) 5)))
+
+  (declare solve-code (lu:LuSolveStatus -> UFix))
+  (define (solve-code status)
+    (match status
+      ((lu:LuSolveSuccess) 0)
+      ((lu:LuSolveNoFactor) 1)
+      ((lu:LuSolveBadSize) 2)
+      ((lu:LuSolveNonFiniteRhs) 3)
+      ((lu:LuSolveNonFiniteResult) 4)))
+
+  (declare observe-solve (lu:Lu * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (observe-solve handle b out)
+    "Exhaustively matched outcome of solve!: success 0, no factor 1, size 2, right-hand side 3, result 4."
+    (solve-code (lu:solve! handle b out)))
+
+  (declare observe-transpose-solve (lu:Lu * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (observe-transpose-solve handle b out)
+    "The same codes for solve-transpose!."
+    (solve-code (lu:solve-transpose! handle b out)))
+
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure 91, dimensions 92, permutation 93, dimension limit 97, storage 98."
+    (match problem
+      ((err:InvalidStructure _) 91)
+      ((err:InvalidDimensions _) 92)
+      ((err:InvalidPermutation _) 93)
+      ((err:AnalysisLimitExceeded _ _) 97)
+      ((err:AnalysisStorageExceeded _ _) 98)
+      (_ 99)))
+
+  (declare make-code (csc:Matrix -> UFix))
+  (define (make-code matrix)
+    "0 when make-lu gave a handle; a typed error's category from 91."
+    (catch (progn (lu:make-lu matrix) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare make-ordered-code (UFix * arr:LispArray UFix * UFix -> UFix))
+  (define (make-ordered-code n order limit)
+    "0 when make-lu-with-order gave a handle; a typed error's category from 91."
+    (catch (progn (lu:make-lu-with-order n order limit) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare order-code (csc:Matrix * UFix -> UFix))
+  (define (order-code matrix limit)
+    "0 when column-order gave an order under the budget; a typed error's category from 91."
+    (catch (progn (lu:column-order matrix limit) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare factor-solve-loop (lu:Lu * csc:Matrix * F64 * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (factor-solve-loop handle matrix threshold rhs out count)
+    "A real external caller: factor, read the diagnostics, solve, then solve with the transpose in place."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (lu:factor! handle matrix threshold) lu:LuSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (and (lu:lu-ready? handle) (>= (lu:lu-backward-bound handle) 0.0d0))
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (lu:solve! handle rhs out) lu:LuSolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (lu:solve-transpose! handle out out) lu:LuSolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))
