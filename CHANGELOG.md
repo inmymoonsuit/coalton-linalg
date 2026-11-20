@@ -2,6 +2,16 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.6.2 — 2026-11-20
+
+Fixed: **`eigen!` could return wrong eigenvalues as `JacobiSuccess`** for a matrix whose two
+diagonal entries differ by more than the largest double, for example 10³⁰⁸ and −10³⁰⁸ with
+an off-diagonal entry of 10³⁰⁷. The difference overflowed and the off-diagonal entry was
+dropped without a rotation. The routine now scales the matrix by an exact power of two
+first. Only a matrix with an entry above half the largest double, about 9 × 10³⁰⁷ in
+magnitude, could be affected.
+[Record](docs/batch6.md#after-review).
+
 ## 0.6.1 — 2026-11-20
 
 Added: an artifact driver for the Jacobi routines, `scripts/check.ps1 -Task Jacobi`.

@@ -134,6 +134,12 @@
       (check "two" '((2 1) (1 2)))
       (check "zero matrix" '((0 0 0) (0 0 0) (0 0 0)))
       (check "repeated" (build-matrix 4 (lambda (i j) (if (= i j) 3 1))))
+      ;; Diagonal entries of opposite sign near the largest double: their difference overflows
+      ;; unscaled. A reviewer's held-back set found the first returned as a success with the
+      ;; off-diagonal entry dropped and both values 0.5 percent off.
+      (check "large opposite diagonals" (list (list 1d308 1d307) (list 1d307 -1d308)))
+      (check "large opposite diagonals, equal coupling" (list (list 1d308 1d308) (list 1d308 -1d308)))
+      (check "tiny opposite diagonals" (list (list 1d-308 1d-309) (list 1d-309 -1d-308)))
       (check "rank one" (build-matrix 5 (lambda (i j) (* (1+ i) (1+ j)))))
       ;; An already diagonal matrix needs one sweep that rotates nothing, and comes back sorted.
       (let ((eigen (check "diagonal" '((3 0 0) (0 1 0) (0 0 2)))))
@@ -323,7 +329,8 @@
     (assert (= 2 (jc-caller:observe-eigen eigen (let ((bad (copy-seq a))) (setf (aref bad 6) infinity) bad))))
     (assert (= 3 (jc-caller:observe-svd svd (doubles 1d0 2d0 3d0))))
     (assert (= 2 (jc-caller:observe-svd svd (let ((bad (copy-seq a))) (setf (aref bad 1) infinity) bad)))))
-  ;; Results that overflow are refusals.
+  ;; Results that overflow are refusals: the matrix is finite and its larger eigenvalue, twice
+  ;; its entries, is not.
   (let ((big (/ most-positive-double-float 1.2d0)))
     (assert (= 2 (jc-caller:observe-eigen (jc:make-symmetric-eigen 2) (doubles big big big big))))
     (assert (= 2 (jc-caller:observe-svd (jc:make-svd 2 1) (doubles big big)))))

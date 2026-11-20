@@ -46,11 +46,12 @@
 
   (declare rotation-tangent (F64 * F64 * F64 -> F64))
   (define (rotation-tangent a d b)
-    "The smaller root t of t^2 + 2 z t - 1 = 0 with z = (d - a) / (2 b): the rotation that annihilates b."
+    "The smaller root t of t^2 + 2 z t - 1 = 0 with z = (d - a) / (2 b). The caller keeps d - a finite."
     (let z = (/ (- d a) (* 2.0d0 b)))
     (let size = (abs z))
     (if (> size large-ratio)
-        ;; 1 + z^2 would overflow; the root is 1 / (2 z) to every representable digit.
+        ;; 1 + z^2 would overflow; the root is 1 / (2 z) to every representable digit. An infinite
+        ;; z gives no rotation, which is right only because b is then negligible beside d - a.
         (/ 0.5d0 z)
         (let ((root (/ 1.0d0 (+ size (math:sqrt (+ 1.0d0 (* z z)))))))
           (if (< z 0.0d0) (- 0.0d0 root) root))))
@@ -126,10 +127,20 @@
     (unless (== (arr:length a) (* n n)) (return JacobiBadSize))
     (let w = (.work f))
     (let v = (.vectors f))
+    (let largest = (cell:new 0.0d0))
     (for ((j 0 (+ j 1))) :while (< j n)
       (for ((i j (+ i 1))) :while (< i n)
         (let entry = (arr:aref a (+ i (* j n))))
         (unless (inline (finite? entry)) (return JacobiNonFinite))
+        (when (> (abs entry) (cell:read largest)) (cell:write! largest (abs entry)))))
+    ;; An exact scaling by a power of two keeps every difference and rotated entry representable.
+    ;; Without it the difference of two large diagonal entries can overflow, and a rotation
+    ;; computed from an infinite ratio is the identity while its entry is still set to zero.
+    (let top = (cell:read largest))
+    (let factor = (if (> top large-ratio) scale-down (if (and (> top 0.0d0) (< top small-ratio)) scale-up 1.0d0)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (for ((i j (+ i 1))) :while (< i n)
+        (let entry = (* (arr:aref a (+ i (* j n))) factor))
         (arr:set! w (+ i (* j n)) entry)
         (arr:set! w (+ j (* i n)) entry))
       (for ((i 0 (+ i 1))) :while (< i n)
@@ -161,7 +172,7 @@
             (rotate-columns! v n p q c s)))))
     (let values = (.values f))
     (for ((k 0 (+ k 1))) :while (< k n)
-      (let value = (arr:aref w (+ k (* k n))))
+      (let value = (/ (arr:aref w (+ k (* k n))) factor))
       (unless (inline (finite? value)) (return JacobiNonFinite))
       (arr:set! values k value))
     (for ((q 0 (+ q 1))) :while (< q (* n n))

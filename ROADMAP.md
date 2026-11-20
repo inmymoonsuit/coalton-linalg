@@ -97,7 +97,7 @@ dense symmetric matrix by cyclic Jacobi rotations, and all singular values and v
 a dense matrix of any shape by one-sided Jacobi rotations on its columns, with a complete
 right factor whose trailing columns are a nullspace basis, a rank count against the
 caller's threshold, and a sweep limit whose exhaustion is a named outcome. Every computed
-value in 277 test matrices is bracketed by an exact inertia count; eighteen planted source
+value in 280 test matrices is bracketed by an exact inertia count; twenty planted source
 controls and two allocation measurements per policy pass. [The batch
 record](docs/batch6.md) holds the measurements, including how slow these routines are
 against a tridiagonalizing reference; [the contract](docs/jacobi.md) the derivation and

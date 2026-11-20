@@ -33,7 +33,7 @@ Both complete serial checks pass on the final tree, `scripts/check.ps1 -Safety 1
   inertia). Value k must have at most k below and at least k + 1 at or below. This uses no
   eigenvalue routine. For singular values the counted matrix is the exact AᵀA and the
   shifts are (σ ± δ)². δ is 16 units of roundoff times n times the size of the matrix.
-- **Eigenvalues, 133 matrices** up to order 8: named cases, 96 seeded integer matrices, 27
+- **Eigenvalues, 136 matrices** up to order 8: named cases, 96 seeded integer matrices, 27
   positive semidefinite matrices of every rank, and one graded positive definite matrix.
   V is orthogonal to 23.1 units of roundoff against an asserted 8(n + 1); A V − V Λ is at
   most 2.5 units of roundoff times n max|A| against an asserted 16; the most sweeps
@@ -76,6 +76,8 @@ focused tests run; every one failed, and the restored source passed.
 | Eigenvalues: sorting moves values without their vectors | yes |
 | Eigenvalues: the convergence test is 10⁻⁸ of the two diagonal entries | yes |
 | Eigenvalues: reaching the sweep limit is reported as success | yes |
+| Eigenvalues: the matrix is never scaled | yes |
+| Eigenvalues: values are not scaled back | yes |
 | Singular values: left vectors are not normalized | yes |
 | Singular values: the right factor is not rotated | yes |
 | Singular values: values are not scaled back | yes |
@@ -167,6 +169,29 @@ NumPy program.
   identical output files.
 
 ## After review
+
+**A held-back set found a wrong answer returned as a success, and it is fixed.** The
+reviewer ran 53 runs through the driver below, and 52 passed.
+The one failure was the symmetric matrix with diagonal 10³⁰⁸ and −10³⁰⁸ and off-diagonal
+10³⁰⁷. The difference of its diagonal entries overflowed, the rotation computed from the
+infinite ratio was the identity, and the routine still set the off-diagonal entry to zero
+and counted the rotation. It returned ±10³⁰⁸ with unit vectors as `JacobiSuccess`, where the
+eigenvalues are ±1.005 × 10³⁰⁸: each value 0.5% off, and nothing reported.
+
+The eigenvalue routine now scales its matrix by an exact power of two first, as the
+singular value routine already did, so that difference cannot overflow. The failing matrix,
+a second with equal coupling whose eigenvalues ±1.414 × 10³⁰⁸ are representable, and a
+third near the smallest normal number are in the exact roster, each value bracketed by the
+exact inertia count. Two planted controls, one disabling the scaling and one the scaling
+back, are caught. The rosters that passed before the fix did not hold a matrix whose
+diagonal difference overflows; the scaling tests went only to 2⁶⁰⁰.
+
+The same set measured, from the files alone: VᵀV within 464 units of roundoff at n = 200 and
+within 3024 at 402 columns after 32 sweeps; A V within 4 and 5 units of the size of A; every
+rank line equal to the strict count, and equal to the proved exact rank on every integer
+system; and on a built matrix with singular values 0.04 decades above and 0.05 below a
+relative threshold, a count of 11 from the singular values where the diagonal of R in
+[the orthogonal decomposition](orthogonal.md) gave 12.
 
 An artifact driver, `scripts/check.ps1 -Task Jacobi`, was added at the reviewer's request so
 that a held-back set can be checked from files alone. It writes the values, the vectors and

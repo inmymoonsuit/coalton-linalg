@@ -113,13 +113,15 @@ places. The complete nullspace basis of a wide matrix is what the direct orienta
 
 ## Numerical assumptions and limits
 
-Arithmetic is IEEE double with traps disabled. The singular value routine first scales the
-matrix by an exact power of two when its largest entry is above 2⁵⁰⁰ or below 2⁻⁵⁰⁰, so sums
-of squares stay representable, and scales the values back; entries more than about 500
-binary orders below the largest are lost to underflow. The eigenvalue routine forms no
-squares of entries and applies no scaling. Scaling a matrix by a power of two (an even
-power for the eigenvalue routine) scales the values exactly and leaves the vectors
-unchanged bit for bit, as long as the entries stay well inside the representable range.
+Arithmetic is IEEE double with traps disabled. Both routines first scale the matrix by an
+exact power of two when its largest entry is above 2⁵⁰⁰ or below 2⁻⁵⁰⁰, and scale the values
+back. For singular values that keeps sums of squares representable; entries more than
+about 500 binary orders below the largest are lost to underflow. For eigenvalues it keeps
+the difference of two diagonal entries and every rotated entry representable: a symmetric
+matrix with any finite entries is accepted, and the only overflow left is an eigenvalue
+that is itself too large to represent, which is `JacobiNonFinite`. Scaling a matrix by a
+power of two (an even power for the eigenvalue routine) scales the values exactly and
+leaves the vectors unchanged bit for bit.
 
 Rank-deficient and wide matrices take more sweeps than well-conditioned ones, because
 columns at rounding level are also orthogonalized among themselves; the record has the
