@@ -193,6 +193,16 @@ system; and on a built matrix with singular values 0.04 decades above and 0.05 b
 relative threshold, a count of 11 from the singular values where the diagonal of R in
 [the orthogonal decomposition](orthogonal.md) gave 12.
 
+The reviewer then ran the fixed routine on the first set again and on 13 new symmetric
+systems at the ends of the range: 66 of 66 runs passed. The failing matrix returns values
+within one unit of roundoff of the exact ones. The new systems include diagonal entries of
+mixed sign near 10³⁰⁸, a matrix whose larger eigenvalue is not representable and is refused
+as `JacobiNonFinite`, the smallest subnormal in every entry, a diagonal matrix 616 decimal
+orders across, and an integer matrix scaled by 2⁹⁰⁰, 2¹⁰⁰⁰, 2⁻⁹⁰⁰ and 2⁻¹⁰⁶⁰; the first three
+scalings give exactly scaled values and vectors identical bit for bit. At 2⁻¹⁰⁶⁰ the
+eigenvalues are subnormal and each returned value is the exact one rounded to the nearest
+subnormal, which the contract now states.
+
 An artifact driver, `scripts/check.ps1 -Task Jacobi`, was added at the reviewer's request so
 that a held-back set can be checked from files alone. It writes the values, the vectors and
 the sweep count of each run by sweep limit, and for singular value problems the rank at

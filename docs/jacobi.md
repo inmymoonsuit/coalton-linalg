@@ -121,7 +121,8 @@ the difference of two diagonal entries and every rotated entry representable: a 
 matrix with any finite entries is accepted, and the only overflow left is an eigenvalue
 that is itself too large to represent, which is `JacobiNonFinite`. Scaling a matrix by a
 power of two (an even power for the eigenvalue routine) scales the values exactly and
-leaves the vectors unchanged bit for bit.
+leaves the vectors unchanged bit for bit. A value below the normal range is returned on
+the subnormal grid, so its relative accuracy is that grid's.
 
 Rank-deficient and wide matrices take more sweeps than well-conditioned ones, because
 columns at rounding level are also orthogonalized among themselves; the record has the
