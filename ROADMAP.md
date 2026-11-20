@@ -36,12 +36,12 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 8
+## Batches 3 through 9
 
-Batches 3 through 8 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+Batches 3 through 9 are completed, Batch 3 in four steps 3a through 3d, with one addition,
 [6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
-8 and what follows them are set by a consuming application's measurements; what follows
-is listed under *Next*. [The batch record](docs/batch3a.md)
+8 were set by a consuming application's measurements; what follows is listed under
+*Next*. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -140,18 +140,41 @@ was then changed the same way, without sorts and with an unchanged pattern, and 
 between 1.7 and 13 times less on the same systems. [The batch record](docs/batch8.md)
 holds the measurements and what was tried and removed.
 
+### Batch 9: scaling by powers of two
+
+**Completed.** `coalton-linalg/sparse/scaling` equilibrates the rows and columns of a
+sparse matrix so that each has its largest magnitude in [1/2, 1), scales a symmetric
+positive definite matrix by its diagonal into [1/2, 2), and carries vectors through the
+factors. Every factor is a power of two, so each scaled value is the exact product. 246
+matrices checked exactly, twenty planted source controls and an allocation measurement
+per policy pass. [The batch record](docs/batch9.md) holds the controls; [the
+contract](docs/scaling.md) says which solutions each kind of scaling leaves unchanged.
+
 ### Next
 
-Each decided by a consumer's measurement and not before it:
+From 2026-11-20 the library develops ahead of any one consumer's measurements, toward
+what solving in CAD and engineering work is likely to need. The order is a consumer's
+ranking of what it would use first:
 
-1. A further gain in ordering time, which now needs an approximate degree or merged
-   vertices and so a decision about changing the order.
-2. Dense fronts in the numeric factor, only if factorization comes to dominate.
+1. Iterative refinement as a call: a standing factor's solve refined against an operator
+   the caller applies, with a stopping rule, the best iterate and the residual history.
+2. Dependent rows with a certificate: which rows of a sparse matrix are dependent, and
+   what can be proved about it. A written design comes before any code.
+3. Sparse LU with partial pivoting for a square nonsymmetric matrix.
+4. Iterative least squares and minimum norm on an operator, with damping, and conjugate
+   gradients for the definite case.
+5. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
+   signed factorization, and the inertia as a count that none was missed.
+6. Continuous integration on the pinned toolchain.
 
-### Later, when measured need justifies it
+Waiting on a measurement or a decision: a further gain in ordering time, which needs an
+approximate degree or merged vertices and so a change of order; reuse of an analysis
+across patterns that differ by a few rows; dense fronts in the numeric factor.
 
-Lanczos, LSMR, conjugate gradients for SPD systems, sparse QR, sparse indefinite
-factorization, supernodal methods and numeric types beyond F64. Application
+### Later
+
+Sparse QR, sparse indefinite factorization with pivoting, supernodal methods and numeric
+types beyond F64. Application
 Jacobians and dual-number residual evaluation remain application code.
 
 ## Release work

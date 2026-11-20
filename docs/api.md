@@ -130,6 +130,24 @@ remain mutable at runtime and read-only by contract. An earlier FactorSuccess
 describes its original call; the separately borrowed factor can later become invalid.
 See the [design review](design.md#coalton-interface-review-2026-11-19).
 
+## coalton-linalg/sparse/scaling
+
+[Contract](scaling.md) · [Source](../src/sparse/scaling.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `equilibrate!` | Matrix * V * V * V -> Void; values, then row and column scale vectors to write, all powers of two |
+| `scale!` | Matrix * V * V * V * V -> Void; values, row scales, column scales, caller output |
+| `scale-vector!` | V * V * V -> Void; scales, input, output, which may be the input |
+| `row-maxima!`, `column-maxima!` | Matrix * V * V -> Void; values, caller output |
+| `DiagonalStatus` | Outcome type of equilibrate-symmetric! |
+| `DiagonalScaled`, `DiagonalNotPositive` | DiagonalStatus values |
+| `equilibrate-symmetric!` | Matrix * V * V -> DiagonalStatus; lower triangle with a positive diagonal, values, scale vector to write |
+| `scale-symmetric!` | Matrix * V * V * V -> Void; values, scales, caller output |
+
+The matrix supplies the pattern and the values array the numbers, in the matrix's stored
+order; it may be the matrix's own entries. No call allocates.
+
 ## coalton-linalg/sparse/augmented
 
 [Contract](quasidefinite.md) · [Source](../src/sparse/augmented.ct)

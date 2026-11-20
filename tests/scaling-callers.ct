@@ -1,0 +1,77 @@
+(cl:defpackage #:coalton-linalg/tests/scaling-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:sc #:coalton-linalg/sparse/scaling)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:equilibrate-error #:scale-error #:vector-error #:maxima-error
+           #:symmetric-code #:symmetric-scale-error #:scaling-loop))
+(cl:in-package #:coalton-linalg/tests/scaling-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure 1, dimensions 2, input 5, result 6, alias 9."
+    (match problem
+      ((err:InvalidStructure _) 1)
+      ((err:InvalidDimensions _) 2)
+      ((err:NonFiniteInput _) 5)
+      ((err:NonFiniteResult _) 6)
+      ((err:InvalidAliasing _) 9)
+      (_ 99)))
+
+  (declare equilibrate-error (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (equilibrate-error matrix values rows columns)
+    (catch (progn (sc:equilibrate! matrix values rows columns) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare scale-error (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (scale-error matrix values rows columns out)
+    (catch (progn (sc:scale! matrix values rows columns out) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare vector-error (arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (vector-error scales x out)
+    (catch (progn (sc:scale-vector! scales x out) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare maxima-error (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * Boolean -> UFix))
+  (define (maxima-error matrix values out by-row)
+    (catch (progn (if by-row (sc:row-maxima! matrix values out) (sc:column-maxima! matrix values out)) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare symmetric-code (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (symmetric-code matrix values scales)
+    "Exhaustively matched outcome: scaled 0, a diagonal not positive 10; otherwise the typed error category."
+    (catch (match (sc:equilibrate-symmetric! matrix values scales)
+             ((sc:DiagonalScaled) 0)
+             ((sc:DiagonalNotPositive) 10))
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare symmetric-scale-error (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (symmetric-scale-error matrix values scales out)
+    (catch (progn (sc:scale-symmetric! matrix values scales out) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare scaling-loop (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64
+                         * arr:LispArray F64 * csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (scaling-loop matrix rows columns scaled x y lower d lower-scaled count)
+    "A real external caller: equilibrate and scale a rectangular matrix, carry a vector through the row factors, then scale a symmetric one by its diagonal."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (sc:equilibrate! matrix (csc:entries matrix) rows columns)
+      (sc:scale! matrix (csc:entries matrix) rows columns scaled)
+      (sc:scale-vector! rows x y)
+      (sc:scale-vector! rows y y)
+      (sc:row-maxima! matrix scaled y)
+      (unless (== (sc:equilibrate-symmetric! lower (csc:entries lower) d) sc:DiagonalScaled)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (sc:scale-symmetric! lower (csc:entries lower) d lower-scaled))
+    (cell:read failures)))

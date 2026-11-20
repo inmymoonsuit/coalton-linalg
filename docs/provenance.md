@@ -83,6 +83,20 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 9: scaling by powers of two
+
+Scaling rows and then columns by their largest magnitudes is classical equilibration,
+and rounding the factors to powers of two so that the scaling is exact is common practice;
+both were known from descriptions. That one pass each way suffices for the property the
+contract states is argued on [the contract page](scaling.md#derivation), and the way the
+power of two is found, by ten exact multiplications or divisions and no decoding of the
+number, was worked out here after the first version, which decoded it, was measured to
+allocate. Scaling a positive definite matrix by its diagonal is Jacobi scaling, and the
+statement that it is near the best diagonal scaling is van der Sluis's (1969), cited from
+its statement and not used by the code. No numerical-library implementation and no
+algorithm listing was opened. The tests compare every scaled value with the exact
+rational product.
+
 ## Batch 8: faster minimum-degree analysis
 
 **The representation is published; the code was written from its description.** Keeping

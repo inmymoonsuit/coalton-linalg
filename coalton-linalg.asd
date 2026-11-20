@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.8.0"
+  :version "0.9.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -14,7 +14,7 @@
                 :components ((:ct-file "errors") (:ct-file "numeric")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
-                                           (:ct-file "gram") (:ct-file "augmented")
+                                           (:ct-file "gram") (:ct-file "scaling") (:ct-file "augmented")
                                            (:ct-file "spd-ldlt")))
                              (:module "dense" :serial t
                               :components ((:ct-file "limits") (:ct-file "indefinite-ldlt")
@@ -25,7 +25,7 @@
   :depends-on ("coalton-linalg")
   :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
                                                 (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints") (:ct-file "singular-rank")
-                                                (:ct-file "augmented-minimum-norm")))))
+                                                (:ct-file "augmented-minimum-norm") (:ct-file "scaled-solve")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -46,6 +46,7 @@
                              (:ct-file "jacobi-callers") (:file "jacobi")
                              (:ct-file "cholesky-callers") (:file "cholesky-form")
                              (:ct-file "quasidefinite-callers") (:file "quasidefinite") (:file "ordering")
+                             (:ct-file "scaling-callers") (:file "scaling")
                              (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))

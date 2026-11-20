@@ -2,6 +2,15 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.9.0 — 2026-11-20
+
+Added: `coalton-linalg/sparse/scaling`. `equilibrate!` gives power-of-two row and column
+factors that bring every row's and column's largest magnitude into [1/2, 1);
+`equilibrate-symmetric!` scales a symmetric positive definite matrix by its diagonal;
+`scale!`, `scale-symmetric!` and `scale-vector!` apply the factors, exactly; `row-maxima!`
+and `column-maxima!` report the result. A compiled example, `examples/scaled-solve.ct`.
+[Contract](docs/scaling.md) · [record](docs/batch9.md). No existing call changes meaning.
+
 ## 0.8.0 — 2026-11-20
 
 Added: `factor-backward-bound` in `coalton-linalg/sparse/spd-ldlt`, an upper bound on the

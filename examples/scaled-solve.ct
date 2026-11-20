@@ -1,0 +1,56 @@
+(cl:defpackage #:coalton-linalg/examples/scaled-solve
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:sc #:coalton-linalg/sparse/scaling)
+                    (#:ldlt #:coalton-linalg/sparse/spd-ldlt))
+  (:export #:scaled-solution))
+(cl:in-package #:coalton-linalg/examples/scaled-solve)
+
+(coalton-toplevel
+  (declare scaled-solution (Void -> arr:LispArray F64))
+  (define (scaled-solution)
+    "Solve a positive definite system whose diagonal spans twelve orders of magnitude through its scaled form; return [2^20, 1, 2^-20].
+
+The matrix is D T D with T = [[2,1,0],[1,2,1],[0,1,2]] and D = diag(2^-20, 1, 2^20), and the
+right-hand side is D [3,4,3]. Its diagonal is scaled into [1/2, 2) by powers of two, the scaled
+matrix is factored, and the right-hand side and the solution are carried through the same
+factors. No digit of the matrix is changed by the scaling."
+    (let small = (lisp (-> F64) () (cl:scale-float 1d0 -20)))
+    (let large = (lisp (-> F64) () (cl:scale-float 1d0 20)))
+    (let pointers = (arr:make 4 (the UFix 0)))
+    (arr:set! pointers 1 2)
+    (arr:set! pointers 2 4)
+    (arr:set! pointers 3 5)
+    (let rows = (arr:make 5 (the UFix 0)))
+    (arr:set! rows 1 1)
+    (arr:set! rows 2 1)
+    (arr:set! rows 3 2)
+    (arr:set! rows 4 2)
+    ;; Lower triangle by column: (0,0), (1,0), (1,1), (2,1), (2,2).
+    (let values = (arr:make 5 0.0d0))
+    (arr:set! values 0 (* 2.0d0 (* small small)))
+    (arr:set! values 1 small)
+    (arr:set! values 2 2.0d0)
+    (arr:set! values 3 large)
+    (arr:set! values 4 (* 2.0d0 (* large large)))
+    (let matrix = (csc:from-csc 3 3 pointers rows values))
+    ;; The scale factors, and the scaled matrix in the same stored order.
+    (let d = (arr:make 3 0.0d0))
+    (unless (== (sc:equilibrate-symmetric! matrix (csc:entries matrix) d) sc:DiagonalScaled)
+      (lisp (-> Void) () (cl:error "Example diagonal is not positive.")))
+    (let scaled = (arr:make 5 0.0d0))
+    (sc:scale-symmetric! matrix (csc:entries matrix) d scaled)
+    (let symbolic = (ldlt:analyze-csc matrix))
+    (unless (== (ldlt:factor! symbolic scaled 0.0d0) ldlt:FactorSuccess)
+      (lisp (-> Void) () (cl:error "Example factorization refused.")))
+    ;; (D A D) y = D b, then x = D y.
+    (let b = (arr:make 3 4.0d0))
+    (arr:set! b 0 (* 3.0d0 small))
+    (arr:set! b 2 (* 3.0d0 large))
+    (sc:scale-vector! d b b)
+    (let x = (arr:make 3 0.0d0))
+    (unless (== (ldlt:solve! (ldlt:symbolic-factor symbolic) b x) ldlt:SolveSuccess)
+      (lisp (-> Void) () (cl:error "Example solve refused.")))
+    (sc:scale-vector! d x x)
+    x))
