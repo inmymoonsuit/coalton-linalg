@@ -19,14 +19,27 @@
   (repr :enum)
   (define-type JacobiStatus
     "Outcome of an eigenvalue or singular value computation."
-    JacobiSuccess JacobiNotConverged JacobiNonFinite JacobiBadSize)
+    JacobiSuccess
+    "The values and vectors stand."
+    JacobiNotConverged
+    "The sweep limit was reached while rotations were still being made; no result stands."
+    JacobiNonFinite
+    "A value or an intermediate result was not finite."
+    JacobiBadSize
+    "The matrix array's length differs from the handle's dimensions.")
 
   (declare maximum-dimension UFix)
-  (define maximum-dimension limits:maximum-dimension)
+  (define maximum-dimension
+    "Largest row or column count a handle can be made for."
+    limits:maximum-dimension)
   (declare default-entry-limit UFix)
-  (define default-entry-limit limits:default-entry-limit)
+  (define default-entry-limit
+    "Default budget of the entries a handle stores."
+    limits:default-entry-limit)
   (declare default-sweep-limit UFix)
-  (define default-sweep-limit 60)
+  (define default-sweep-limit
+    "Sweeps allowed by the calls that take no limit."
+    60)
 
   ;; 2^-52: an off-diagonal quantity this far below the geometric mean of its two diagonal
   ;; quantities is treated as converged.
@@ -88,17 +101,25 @@
     (make-symmetric-eigen-with-limit n default-entry-limit))
 
   (declare eigen-dimension (SymmetricEigen -> UFix))
-  (define (eigen-dimension eigen) (.size (eigen-storage eigen)))
+  (define (eigen-dimension eigen)
+    "The order this handle was made for."
+    (.size (eigen-storage eigen)))
   (declare eigen-ready? (SymmetricEigen -> Boolean))
-  (define (eigen-ready? eigen) (== (arr:aref (.state (eigen-storage eigen)) 0) 1))
+  (define (eigen-ready? eigen)
+    "Whether eigenvalues and eigenvectors stand: the latest eigen call on this handle succeeded."
+    (== (arr:aref (.state (eigen-storage eigen)) 0) 1))
   (declare eigen-sweeps (SymmetricEigen -> UFix))
   (define (eigen-sweeps eigen)
     "Sweeps made by the latest call, counting the final one that rotated nothing."
     (arr:aref (.state (eigen-storage eigen)) 1))
   (declare eigenvalues (SymmetricEigen -> arr:LispArray F64))
-  (define (eigenvalues eigen) (.values (eigen-storage eigen)))
+  (define (eigenvalues eigen)
+    "Borrowed view: the eigenvalues, ascending."
+    (.values (eigen-storage eigen)))
   (declare eigenvectors (SymmetricEigen -> arr:LispArray F64))
-  (define (eigenvectors eigen) (.vectors (eigen-storage eigen)))
+  (define (eigenvectors eigen)
+    "Borrowed view: the eigenvectors as columns, column-major, in the order of the eigenvalues."
+    (.vectors (eigen-storage eigen)))
 
   (declare rotate-columns! (arr:LispArray F64 * UFix * UFix * UFix * F64 * F64 -> Void))
   (define (rotate-columns! w rows p q c s)
@@ -137,7 +158,10 @@
     ;; Without it the difference of two large diagonal entries can overflow, and a rotation
     ;; computed from an infinite ratio is the identity while its entry is still set to zero.
     (let top = (cell:read largest))
-    (let factor = (if (> top large-ratio) scale-down (if (and (> top 0.0d0) (< top small-ratio)) scale-up 1.0d0)))
+    (let factor = (cond
+                    ((> top large-ratio) scale-down)
+                    ((and (> top 0.0d0) (< top small-ratio)) scale-up)
+                    (True 1.0d0)))
     (for ((j 0 (+ j 1))) :while (< j n)
       (for ((i j (+ i 1))) :while (< i n)
         (let entry = (* (arr:aref a (+ i (* j n))) factor))
@@ -231,21 +255,33 @@
     (make-svd-with-limit m n default-entry-limit))
 
   (declare svd-rows (Svd -> UFix))
-  (define (svd-rows svd) (.rows (svd-storage svd)))
+  (define (svd-rows svd)
+    "Number of rows this handle was made for."
+    (.rows (svd-storage svd)))
   (declare svd-columns (Svd -> UFix))
-  (define (svd-columns svd) (.columns (svd-storage svd)))
+  (define (svd-columns svd)
+    "Number of columns this handle was made for."
+    (.columns (svd-storage svd)))
   (declare svd-ready? (Svd -> Boolean))
-  (define (svd-ready? svd) (== (arr:aref (.state (svd-storage svd)) 0) 1))
+  (define (svd-ready? svd)
+    "Whether singular values and vectors stand: the latest svd call on this handle succeeded."
+    (== (arr:aref (.state (svd-storage svd)) 0) 1))
   (declare svd-sweeps (Svd -> UFix))
   (define (svd-sweeps svd)
     "Sweeps made by the latest call, counting the final one that rotated nothing."
     (arr:aref (.state (svd-storage svd)) 1))
   (declare singular-values (Svd -> arr:LispArray F64))
-  (define (singular-values svd) (.values (svd-storage svd)))
+  (define (singular-values svd)
+    "Borrowed view: the singular values, descending."
+    (.values (svd-storage svd)))
   (declare left-vectors (Svd -> arr:LispArray F64))
-  (define (left-vectors svd) (.left (svd-storage svd)))
+  (define (left-vectors svd)
+    "Borrowed view: U, rows by columns, column-major; a column is zero where its singular value is exactly zero."
+    (.left (svd-storage svd)))
   (declare right-vectors (Svd -> arr:LispArray F64))
-  (define (right-vectors svd) (.right (svd-storage svd)))
+  (define (right-vectors svd)
+    "Borrowed view: the complete right factor as columns, column-major; the columns past the rank span the nullspace."
+    (.right (svd-storage svd)))
 
   (declare rank-above (Svd * F64 -> UFix))
   (define (rank-above svd threshold)
@@ -276,7 +312,10 @@
       (when (> (abs entry) (cell:read largest)) (cell:write! largest (abs entry))))
     ;; An exact scaling by a power of two keeps every sum of squares representable.
     (let top = (cell:read largest))
-    (let factor = (if (> top large-ratio) scale-down (if (and (> top 0.0d0) (< top small-ratio)) scale-up 1.0d0)))
+    (let factor = (cond
+                    ((> top large-ratio) scale-down)
+                    ((and (> top 0.0d0) (< top small-ratio)) scale-up)
+                    (True 1.0d0)))
     (for ((q 0 (+ q 1))) :while (< q (* m n))
       (arr:set! g q (* (arr:aref a q) factor)))
     (for ((j 0 (+ j 1))) :while (< j n)

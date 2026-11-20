@@ -7,10 +7,14 @@
 (coalton-toplevel
   ;; The product of two dimensions within this bound is representable as an array length.
   (declare maximum-dimension UFix)
-  (define maximum-dimension 32768)
+  (define maximum-dimension
+    "Largest row or column count of a dense factor; the product of two dimensions within it is a valid array length."
+    32768)
 
   (declare default-entry-limit UFix)
-  (define default-entry-limit 16777216)
+  (define default-entry-limit
+    "Default budget of stored entries for a dense factor, 2^24."
+    16777216)
 
   (declare check-storage! (UFix * UFix * UFix -> Void))
   (define (check-storage! rows columns maximum-entries)

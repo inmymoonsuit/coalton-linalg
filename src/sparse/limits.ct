@@ -8,11 +8,14 @@
 (coalton-toplevel
   (declare maximum-analysis-size UFix)
   (define maximum-analysis-size
+    "Largest order a sparse analysis accepts, and the cap on any entry budget: what the host can index."
     (lisp (-> UFix) ()
       (cl:min (cl:- cl:array-dimension-limit 2) (cl:floor cl:most-positive-fixnum 2))))
 
   (declare default-analysis-entry-limit UFix)
-  (define default-analysis-entry-limit 1048576)
+  (define default-analysis-entry-limit
+    "Default budget of analyzed output entries, 2^20, counting every diagonal."
+    1048576)
 
   (declare effective-entry-limit (UFix -> UFix))
   (define (effective-entry-limit requested)

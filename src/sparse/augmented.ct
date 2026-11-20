@@ -40,16 +40,26 @@
     "Columns of the source: the unknowns of the leading block come first in every vector."
     (.source-n (plan-storage plan)))
   (declare column-pointers (AugmentedPlan -> arr:LispArray UFix))
-  (define (column-pointers plan) (.columns (plan-storage plan)))
+  (define (column-pointers plan)
+    "Borrowed view: column pointers of the lower augmented pattern."
+    (.columns (plan-storage plan)))
   (declare row-indices (AugmentedPlan -> arr:LispArray UFix))
-  (define (row-indices plan) (.rows (plan-storage plan)))
+  (define (row-indices plan)
+    "Borrowed view: row indices of the lower augmented pattern, each column beginning with its diagonal."
+    (.rows (plan-storage plan)))
   (declare entry-count (AugmentedPlan -> UFix))
-  (define (entry-count plan) (arr:length (.rows (plan-storage plan))))
+  (define (entry-count plan)
+    "Number of stored entries of the lower augmented pattern, which is the length of a refill's output."
+    (arr:length (.rows (plan-storage plan))))
 
   (declare maximum-analysis-size UFix)
-  (define maximum-analysis-size limits:maximum-analysis-size)
+  (define maximum-analysis-size
+    "Largest augmented order an analysis accepts; shared with the factorization's analysis."
+    limits:maximum-analysis-size)
   (declare default-analysis-entry-limit UFix)
-  (define default-analysis-entry-limit limits:default-analysis-entry-limit)
+  (define default-analysis-entry-limit
+    "Default budget of stored augmented entries; shared with the factorization's analysis."
+    limits:default-analysis-entry-limit)
 
   (declare analyze-with-limit (csc:Matrix * UFix -> AugmentedPlan))
   (define (analyze-with-limit matrix requested-limit)

@@ -46,25 +46,56 @@
   (repr :enum)
   (define-type FactorStatus
     "Outcome of a pivoted QR factorization call."
-    FactorSuccess FactorNonFinite FactorBadSize)
+    FactorSuccess
+    "A factorization stands."
+    FactorNonFinite
+    "An input or a computed quantity was not finite; the contract lists which."
+    FactorBadSize
+    "The matrix array's length differs from rows times columns.")
 
   (derive Eq)
   (repr :enum)
   (define-type RankStatus
     "Outcome of selecting a rank and completing the decomposition for it."
-    RankSuccess RankInvalidFactor RankTooLarge RankSingular RankNonFinite)
+    RankSuccess
+    "The decomposition is complete for the chosen rank."
+    RankInvalidFactor
+    "No factorization stands."
+    RankTooLarge
+    "The rank exceeds the number of factorization steps."
+    RankSingular
+    "A diagonal entry of R inside the chosen rank is exactly zero."
+    RankNonFinite
+    "An intermediate result was not finite.")
 
   (derive Eq)
   (repr :enum)
   (define-type SolveStatus
     "Outcome of a solve, a nullspace request or a reflector application."
-    SolveSuccess SolveInvalidFactor SolveNoRank SolveBadSize SolveBadIndex SolveNonFiniteRhs SolveNonFiniteResult)
+    SolveSuccess
+    "The output holds the result."
+    SolveInvalidFactor
+    "No factorization stands."
+    SolveNoRank
+    "No rank has been set."
+    SolveBadSize
+    "A vector's length differs from the dimension it must match."
+    SolveBadIndex
+    "A nullspace index is not below the nullity."
+    SolveNonFiniteRhs
+    "An input vector holds a non-finite entry."
+    SolveNonFiniteResult
+    "The computed result was not finite.")
 
   (declare maximum-dimension UFix)
-  (define maximum-dimension limits:maximum-dimension)
+  (define maximum-dimension
+    "Largest row or column count a decomposition can be made for."
+    limits:maximum-dimension)
 
   (declare default-entry-limit UFix)
-  (define default-entry-limit limits:default-entry-limit)
+  (define default-entry-limit
+    "Default budget of the entries a decomposition stores."
+    limits:default-entry-limit)
 
   (declare make-decomposition-with-limit (UFix * UFix * UFix -> Decomposition))
   (define (make-decomposition-with-limit m n maximum-entries)
@@ -84,17 +115,25 @@
     (make-decomposition-with-limit m n default-entry-limit))
 
   (declare row-count (Decomposition -> UFix))
-  (define (row-count decomposition) (.rows (storage decomposition)))
+  (define (row-count decomposition)
+    "Number of rows this decomposition was made for."
+    (.rows (storage decomposition)))
   (declare column-count (Decomposition -> UFix))
-  (define (column-count decomposition) (.columns (storage decomposition)))
+  (define (column-count decomposition)
+    "Number of columns this decomposition was made for."
+    (.columns (storage decomposition)))
   (declare step-count (Decomposition -> UFix))
   (define (step-count decomposition)
     "The smaller dimension: the number of reflectors and of diagonal entries of R."
     (.steps (storage decomposition)))
   (declare factor-ready? (Decomposition -> Boolean))
-  (define (factor-ready? decomposition) (== (arr:aref (.state (storage decomposition)) 0) 1))
+  (define (factor-ready? decomposition)
+    "Whether a factorization stands: the latest factor! on this handle succeeded."
+    (== (arr:aref (.state (storage decomposition)) 0) 1))
   (declare rank-set? (Decomposition -> Boolean))
-  (define (rank-set? decomposition) (== (arr:aref (.state (storage decomposition)) 1) 1))
+  (define (rank-set? decomposition)
+    "Whether a rank has been set for the standing factorization."
+    (== (arr:aref (.state (storage decomposition)) 1) 1))
   (declare selected-rank (Decomposition -> UFix))
   (define (selected-rank decomposition)
     "The rank of the latest successful set-rank!; 0 when none stands."
@@ -104,11 +143,17 @@
     "Euclidean residual of the latest successful solve against the rank-truncated matrix; -1 when none stands."
     (arr:aref (.residual (storage decomposition)) 0))
   (declare factor-permutation (Decomposition -> arr:LispArray UFix))
-  (define (factor-permutation decomposition) (.permutation (storage decomposition)))
+  (define (factor-permutation decomposition)
+    "Borrowed view: the original column at each position of the pivoted order."
+    (.permutation (storage decomposition)))
   (declare factor-work (Decomposition -> arr:LispArray F64))
-  (define (factor-work decomposition) (.work (storage decomposition)))
+  (define (factor-work decomposition)
+    "Borrowed view: R on and above the diagonal and the tail of each reflector below it, column-major."
+    (.work (storage decomposition)))
   (declare factor-tau (Decomposition -> arr:LispArray F64))
-  (define (factor-tau decomposition) (.tau (storage decomposition)))
+  (define (factor-tau decomposition)
+    "Borrowed view: the scalar of each reflector."
+    (.tau (storage decomposition)))
 
   ;; Sums of squares are formed unscaled while the largest entry lies between these two powers
   ;; of two, and otherwise after an exact scaling by a power of two that brings it there.
@@ -130,35 +175,38 @@
       ;; A NaN is neither larger nor not larger; the comparison below is written so it is kept.
       (unless (<= v (cell:read largest)) (cell:write! largest v)))
     (let top = (cell:read largest))
-    (if (or (== top 0.0d0) (not (inline (finite? top))))
-        top
-        (progn
-          (let factor = (if (> top norm-ceiling) scale-down (if (< top norm-floor) scale-up 1.0d0)))
-          (let squares = (cell:new 0.0d0))
-          (for ((q 0 (+ q 1))) :while (< q count)
-            (let scaled = (* (arr:aref w (+ start (* q stride))) factor))
-            (cell:write! squares (+ (cell:read squares) (* scaled scaled))))
-          (/ (math:sqrt (cell:read squares)) factor))))
+    (cond
+      ((or (== top 0.0d0) (not (inline (finite? top)))) top)
+      (True
+       (let factor = (cond
+                       ((> top norm-ceiling) scale-down)
+                       ((< top norm-floor) scale-up)
+                       (True 1.0d0)))
+       (let squares = (cell:new 0.0d0))
+       (for ((q 0 (+ q 1))) :while (< q count)
+         (let scaled = (* (arr:aref w (+ start (* q stride))) factor))
+         (cell:write! squares (+ (cell:read squares) (* scaled scaled))))
+       (/ (math:sqrt (cell:read squares)) factor))))
 
   (declare make-reflector! (arr:LispArray F64 * UFix * UFix * UFix * UFix -> F64))
   (define (make-reflector! w head start count stride)
     "Turn (head, tail) into (beta, reflector tail) with an implicit leading 1; return tau. See docs/orthogonal.md."
     (let alpha = (arr:aref w head))
     (let sigma = (segment-norm w start count stride))
-    (if (== sigma 0.0d0)
-        0.0d0
-        (progn
-          (let top = (max (abs alpha) sigma))
-          (let ra = (/ alpha top))
-          (let rs = (/ sigma top))
-          (let reach = (* top (math:sqrt (+ (* ra ra) (* rs rs)))))
-          ;; beta takes the sign opposite to alpha, so alpha - beta adds magnitudes.
-          (let beta = (if (> alpha 0.0d0) (- 0.0d0 reach) reach))
-          (let divisor = (- alpha beta))
-          (for ((q 0 (+ q 1))) :while (< q count)
-            (arr:set! w (+ start (* q stride)) (/ (arr:aref w (+ start (* q stride))) divisor)))
-          (arr:set! w head beta)
-          (/ (- beta alpha) beta))))
+    (cond
+      ((== sigma 0.0d0) 0.0d0)
+      (True
+       (let top = (max (abs alpha) sigma))
+       (let ra = (/ alpha top))
+       (let rs = (/ sigma top))
+       (let reach = (* top (math:sqrt (+ (* ra ra) (* rs rs)))))
+       ;; beta takes the sign opposite to alpha, so alpha - beta adds magnitudes.
+       (let beta = (if (> alpha 0.0d0) (- 0.0d0 reach) reach))
+       (let divisor = (- alpha beta))
+       (for ((q 0 (+ q 1))) :while (< q count)
+         (arr:set! w (+ start (* q stride)) (/ (arr:aref w (+ start (* q stride))) divisor)))
+       (arr:set! w head beta)
+       (/ (- beta alpha) beta))))
 
   (declare apply-reflector! (F64 * arr:LispArray F64 * UFix * UFix * arr:LispArray F64 * UFix * UFix * UFix * UFix -> Void))
   (define (apply-reflector! tau v vstart vstride y head ystart ystride count)
@@ -179,27 +227,27 @@
                                        * arr:LispArray F64 * UFix -> Void))
   (define (apply-reflector-measuring! tau v vstart y head ystart count norms slot)
     "apply-reflector! at unit strides, writing the Euclidean norm of the tail it leaves into norms[slot]."
-    (if (== tau 0.0d0)
-        (arr:set! norms slot (segment-norm y ystart count 1))
-        (progn
-          (let dot = (cell:new (arr:aref y head)))
-          (for ((q 0 (+ q 1))) :while (< q count)
-            (cell:write! dot (+ (cell:read dot) (* (arr:aref v (+ vstart q)) (arr:aref y (+ ystart q))))))
-          (let scaled = (* tau (cell:read dot)))
-          (arr:set! y head (- (arr:aref y head) scaled))
-          (let largest = (cell:new 0.0d0))
-          (let squares = (cell:new 0.0d0))
-          (for ((q 0 (+ q 1))) :while (< q count)
-            (let updated = (- (arr:aref y (+ ystart q)) (* scaled (arr:aref v (+ vstart q)))))
-            (arr:set! y (+ ystart q) updated)
-            (unless (<= (abs updated) (cell:read largest)) (cell:write! largest (abs updated)))
-            (cell:write! squares (+ (cell:read squares) (* updated updated))))
-          ;; In the unscaled range this sum is the one segment-norm would form, term for term.
-          (let top = (cell:read largest))
-          (arr:set! norms slot
-                    (if (and (>= top norm-floor) (<= top norm-ceiling))
-                        (math:sqrt (cell:read squares))
-                        (segment-norm y ystart count 1))))))
+    (cond
+      ((== tau 0.0d0) (arr:set! norms slot (segment-norm y ystart count 1)))
+      (True
+       (let dot = (cell:new (arr:aref y head)))
+       (for ((q 0 (+ q 1))) :while (< q count)
+         (cell:write! dot (+ (cell:read dot) (* (arr:aref v (+ vstart q)) (arr:aref y (+ ystart q))))))
+       (let scaled = (* tau (cell:read dot)))
+       (arr:set! y head (- (arr:aref y head) scaled))
+       (let largest = (cell:new 0.0d0))
+       (let squares = (cell:new 0.0d0))
+       (for ((q 0 (+ q 1))) :while (< q count)
+         (let updated = (- (arr:aref y (+ ystart q)) (* scaled (arr:aref v (+ vstart q)))))
+         (arr:set! y (+ ystart q) updated)
+         (unless (<= (abs updated) (cell:read largest)) (cell:write! largest (abs updated)))
+         (cell:write! squares (+ (cell:read squares) (* updated updated))))
+       ;; In the unscaled range this sum is the one segment-norm would form, term for term.
+       (let top = (cell:read largest))
+       (arr:set! norms slot
+                 (if (and (>= top norm-floor) (<= top norm-ceiling))
+                     (math:sqrt (cell:read squares))
+                     (segment-norm y ystart count 1))))))
 
   (declare factor! (Decomposition * arr:LispArray F64 -> FactorStatus))
   (define (factor! decomposition a)

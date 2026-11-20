@@ -8,13 +8,19 @@
   (define-exception LinalgError
     "Validation and primitive arithmetic errors; messages describe context, not machine-readable codes."
     (InvalidStructure String)
+    "Malformed sparse arrays, an invalid index or ordering, or an invalid lower or diagonal structure."
     (InvalidDimensions String)
+    "A size that does not match: a vector against a matrix, or a matrix that had to be square."
     (InvalidPermutation String)
+    "A permutation of the wrong length, or with an index out of range or repeated."
     (InvalidAliasing String)
+    "An output that is the same array as an input it must be distinct from."
     (DuplicateEntry UFix UFix)
     "Repeated coordinate as zero-based row, then column."
     (NonFiniteInput String)
+    "A non-finite entry among the inputs."
     (NonFiniteResult String)
+    "A result that was not finite."
     (AnalysisLimitExceeded UFix UFix)
     "Requested analysis output dimension, then the supported maximum dimension."
     (AnalysisStorageExceeded Integer UFix)

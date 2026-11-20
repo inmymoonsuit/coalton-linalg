@@ -55,19 +55,46 @@
   (repr :enum)
   (define-type FactorStatus
     "Outcome of a factorization call; independent of later workspace validity."
-    FactorSuccess FactorNonPositive FactorNonFinite FactorBadValues FactorBadShift)
+    FactorSuccess
+    "A factor stands."
+    FactorNonPositive
+    "A computed pivot was not positive; refused-column names it."
+    FactorNonFinite
+    "A value or an intermediate result was not finite."
+    FactorBadValues
+    "The value count differs from the analyzed pattern's."
+    FactorBadShift
+    "The shift was not finite.")
 
   (derive Eq)
   (repr :enum)
   (define-type SignedFactorStatus
     "Outcome of a signed-pivot factorization call, which refuses a pivot only when it is zero."
-    SignedSuccess SignedZeroPivot SignedNonFinite SignedBadValues SignedBadShift)
+    SignedSuccess
+    "A factor stands; read its growth and pivot counts."
+    SignedZeroPivot
+    "A computed pivot was exactly zero; refused-column names it."
+    SignedNonFinite
+    "A value or an intermediate result was not finite."
+    SignedBadValues
+    "The value count differs from the analyzed pattern's."
+    SignedBadShift
+    "The shift was not finite.")
 
   (derive Eq)
   (repr :enum)
   (define-type SolveStatus
     "Outcome of a solve call; distinct from factorization outcomes."
-    SolveSuccess SolveInvalidFactor SolveBadSize SolveNonFiniteRhs SolveNonFiniteResult)
+    SolveSuccess
+    "The output holds the solution."
+    SolveInvalidFactor
+    "No solving factor stands."
+    SolveBadSize
+    "A vector's length differs from the order."
+    SolveNonFiniteRhs
+    "The right-hand side holds a non-finite entry."
+    SolveNonFiniteResult
+    "The computed solution was not finite; the output is unchanged.")
 
   (define-struct SymbolicStorage
     "Owns one reusable factor, scatter, row incidence and latest-call diagnostic."
@@ -96,19 +123,33 @@
     (arr:aref (.diagnostic (symbolic-storage s)) 0))
 
   (declare symbolic-factor (Symbolic -> NumericFactor))
-  (define (symbolic-factor s) (.numeric (symbolic-storage s)))
+  (define (symbolic-factor s)
+    "The one factor this analysis owns; every factorization call on the analysis overwrites it."
+    (.numeric (symbolic-storage s)))
   (declare factor-permutation (NumericFactor -> arr:LispArray UFix))
-  (define (factor-permutation f) (.permutation (numeric-storage f)))
+  (define (factor-permutation f)
+    "Borrowed view: the original index eliminated at each step."
+    (.permutation (numeric-storage f)))
   (declare factor-columns (NumericFactor -> arr:LispArray UFix))
-  (define (factor-columns f) (.columns (numeric-storage f)))
+  (define (factor-columns f)
+    "Borrowed view: column pointers of the strict lower triangle of L, in elimination numbering."
+    (.columns (numeric-storage f)))
   (declare factor-rows (NumericFactor -> arr:LispArray UFix))
-  (define (factor-rows f) (.rows (numeric-storage f)))
+  (define (factor-rows f)
+    "Borrowed view: row indices of the strict lower triangle of L, increasing within a column."
+    (.rows (numeric-storage f)))
   (declare factor-values (NumericFactor -> arr:LispArray F64))
-  (define (factor-values f) (.entries (numeric-storage f)))
+  (define (factor-values f)
+    "Borrowed view: the values of the strict lower triangle of L, in the order of factor-rows."
+    (.entries (numeric-storage f)))
   (declare factor-diagonal (NumericFactor -> arr:LispArray F64))
-  (define (factor-diagonal f) (.diagonal (numeric-storage f)))
+  (define (factor-diagonal f)
+    "Borrowed view: the pivots D in elimination order."
+    (.diagonal (numeric-storage f)))
   (declare factor-ready? (NumericFactor -> Boolean))
-  (define (factor-ready? f) (== (arr:aref (.state (numeric-storage f)) 0) 1))
+  (define (factor-ready? f)
+    "Whether a solving factor stands: the latest factor! or factor-signed! on its analysis succeeded."
+    (== (arr:aref (.state (numeric-storage f)) 0) 1))
   (declare cholesky-ready? (NumericFactor -> Boolean))
   (define (cholesky-ready? f)
     "Whether the storage holds the Cholesky-form factor of the latest factor-cholesky! call, which no solve accepts."
@@ -130,16 +171,26 @@
     "An upper bound on the Frobenius norm, hence the 2-norm, of P K P^T - L D L^T for the factor of the latest successful factor-signed!, K being the matrix as factored; -1 otherwise. It may be infinite. See docs/quasidefinite.md."
     (arr:aref (.estimate (numeric-storage f)) 2))
 
+  (inline)
+  (declare %count->float (UFix -> F64))
+  (define (%count->float count)
+    "A count as a floating-point number; exact below 2^53."
+    (lisp (-> F64) (count) (cl:coerce count 'cl:double-float)))
+
   (declare unit-roundoff F64)
   (define unit-roundoff (lisp (-> F64) () (cl:scale-float 1d0 -53)))
   (declare smallest-positive F64)
   (define smallest-positive (lisp (-> F64) () cl:least-positive-double-float))
 
   (declare maximum-analysis-size UFix)
-  (define maximum-analysis-size limits:maximum-analysis-size)
+  (define maximum-analysis-size
+    "Largest order an analysis accepts, and the cap on any entry budget."
+    limits:maximum-analysis-size)
 
   (declare default-analysis-entry-limit UFix)
-  (define default-analysis-entry-limit limits:default-analysis-entry-limit)
+  (define default-analysis-entry-limit
+    "Default budget of factor entries, 2^20, counting the unit diagonal."
+    limits:default-analysis-entry-limit)
 
   (declare refuse! (SymbolicStorage * UFix * UFix -> UFix))
   (define (refuse! s column code)
@@ -340,12 +391,12 @@
       (unless (inline (finite? pivot)) (return (refuse! s k 2)))
       ;; The positive definite entry refuses every pivot that is not positive; the signed entry
       ;; refuses only the pivot it cannot divide by.
-      (if signed
-          (when (== pivot 0.0d0) (return (refuse! s k 1)))
-          (unless (> pivot 0.0d0) (return (refuse! s k 1))))
-      (if (> pivot 0.0d0)
-          (arr:set! st 2 (+ (arr:aref st 2) 1))
-          (arr:set! st 3 (+ (arr:aref st 3) 1)))
+      (cond
+        (signed (when (== pivot 0.0d0) (return (refuse! s k 1))))
+        (True (unless (> pivot 0.0d0) (return (refuse! s k 1)))))
+      (cond
+        ((> pivot 0.0d0) (arr:set! st 2 (+ (arr:aref st 2) 1)))
+        (True (arr:set! st 3 (+ (arr:aref st 3) 1))))
       (arr:set! d k pivot)
       (when signed (arr:set! bound k (+ (arr:aref bound k) (abs pivot))))
       (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
@@ -370,9 +421,8 @@
       ;; entry of |L| |D| |L^T|, w the longest row of L, plus what underflow can add; the
       ;; Frobenius norm of |L| |D| |L^T| is at most its trace. Every factor here is rounded up
       ;; by a margin that covers the rounding of this arithmetic itself.
-      (let order = (lisp (-> F64) (n) (cl:coerce n 'cl:double-float)))
-      (let across-most = (cell:read longest))
-      (let reach = (lisp (-> F64) (across-most) (cl:coerce (cl:+ across-most 2) 'cl:double-float)))
+      (let order = (%count->float n))
+      (let reach = (%count->float (+ (cell:read longest) 2)))
       (let relative = (/ (* reach unit-roundoff) (- 1.0d0 (* reach unit-roundoff))))
       (let underflow = (* smallest-positive
                           (+ 3.0d0 (* (* order reach) (+ 2.0d0 (* 2.0d0 (cell:read steepest)))))))
@@ -385,21 +435,23 @@
   (define (factor! symbolic values shift)
     "Overwrite the owned factor, requiring every pivot positive. A refusal invalidates it. Values use the analyzed CSC order."
     (let code = (factor-kernel! symbolic values shift False))
-    (if (== code 0)
-        FactorSuccess
-        (if (== code 1)
-            FactorNonPositive
-            (if (== code 2) FactorNonFinite (if (== code 3) FactorBadValues FactorBadShift)))))
+    (cond
+      ((== code 0) FactorSuccess)
+      ((== code 1) FactorNonPositive)
+      ((== code 2) FactorNonFinite)
+      ((== code 3) FactorBadValues)
+      (True FactorBadShift)))
 
   (declare factor-signed! (Symbolic * arr:LispArray F64 * F64 -> SignedFactorStatus))
   (define (factor-signed! symbolic values shift)
     "Overwrite the owned factor, accepting pivots of either sign and refusing only a zero one. See docs/quasidefinite.md."
     (let code = (factor-kernel! symbolic values shift True))
-    (if (== code 0)
-        SignedSuccess
-        (if (== code 1)
-            SignedZeroPivot
-            (if (== code 2) SignedNonFinite (if (== code 3) SignedBadValues SignedBadShift)))))
+    (cond
+      ((== code 0) SignedSuccess)
+      ((== code 1) SignedZeroPivot)
+      ((== code 2) SignedNonFinite)
+      ((== code 3) SignedBadValues)
+      (True SignedBadShift)))
 
   (declare refuse-status! (SymbolicStorage * UFix * FactorStatus -> FactorStatus))
   (define (refuse-status! s column status)
@@ -500,14 +552,20 @@
   (repr :enum)
   (define-type ConditionStatus
     "Outcome of an inverse-norm estimate; distinct from factor and solve outcomes."
-    ConditionSuccess ConditionInvalidFactor ConditionNonFiniteResult)
+    ConditionSuccess
+    "An estimate stands."
+    ConditionInvalidFactor
+    "No solving factor stands."
+    ConditionNonFiniteResult
+    "A solve inside the estimate was not finite.")
 
   (declare maximum-estimate-steps UFix)
   (define maximum-estimate-steps 5)
 
   (declare maximum-estimate-solves UFix)
-  ;; Upper bound on solves in one estimate: two a step, and one for the alternating probe.
-  (define maximum-estimate-solves (+ (* 2 maximum-estimate-steps) 1))
+  (define maximum-estimate-solves
+    "Upper bound on the solves one estimate makes: two a step, and one for the alternating probe."
+    (+ (* 2 maximum-estimate-steps) 1))
 
   (declare inverse-norm1-estimate (NumericFactor -> F64))
   (define (inverse-norm1-estimate factor)
@@ -617,11 +675,11 @@
           :while (< q (arr:aref (.input-columns s) (+ k 1)))
         (let v = (arr:aref values (arr:aref (.input-indices s) q)))
         (let row = (arr:aref (.input-rows s) q))
-        (if (== row k)
-            (arr:set! w k (+ (arr:aref w k) (abs (- v shift))))
-            (progn
-              (arr:set! w k (+ (arr:aref w k) (abs v)))
-              (arr:set! w row (+ (arr:aref w row) (abs v)))))))
+        (cond
+          ((== row k) (arr:set! w k (+ (arr:aref w k) (abs (- v shift)))))
+          (True
+           (arr:set! w k (+ (arr:aref w k) (abs v)))
+           (arr:set! w row (+ (arr:aref w row) (abs v)))))))
     (let largest = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i n)
       (when (> (arr:aref w i) (cell:read largest)) (cell:write! largest (arr:aref w i))))
@@ -633,9 +691,8 @@
   (define (reciprocal-condition1 norm inverse-norm)
     "1 / (norm * inverse-norm) when that product is positive and finite; 1 for two zeros, the empty matrix; otherwise 0."
     (let product = (* norm inverse-norm))
-    (if (and (== norm 0.0d0) (== inverse-norm 0.0d0))
-        1.0d0
-        (if (and (> product 0.0d0) (inline (finite? product)))
-            (/ 1.0d0 product)
-            0.0d0)))
+    (cond
+      ((and (== norm 0.0d0) (== inverse-norm 0.0d0)) 1.0d0)
+      ((and (> product 0.0d0) (inline (finite? product))) (/ 1.0d0 product))
+      (True 0.0d0)))
 )

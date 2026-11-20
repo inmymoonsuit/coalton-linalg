@@ -40,18 +40,30 @@
   (define (plan-storage plan) (match plan ((MkGramPlan storage) storage)))
 
   (declare dimension (GramPlan -> UFix))
-  (define (dimension plan) (.size (plan-storage plan)))
+  (define (dimension plan)
+    "Order of the Gram matrix."
+    (.size (plan-storage plan)))
   (declare column-pointers (GramPlan -> arr:LispArray UFix))
-  (define (column-pointers plan) (.columns (plan-storage plan)))
+  (define (column-pointers plan)
+    "Borrowed view: column pointers of the lower Gram pattern."
+    (.columns (plan-storage plan)))
   (declare row-indices (GramPlan -> arr:LispArray UFix))
-  (define (row-indices plan) (.rows (plan-storage plan)))
+  (define (row-indices plan)
+    "Borrowed view: row indices of the lower Gram pattern, each column beginning with its diagonal."
+    (.rows (plan-storage plan)))
   (declare entry-count (GramPlan -> UFix))
-  (define (entry-count plan) (arr:length (.rows (plan-storage plan))))
+  (define (entry-count plan)
+    "Number of stored entries of the lower Gram pattern, which is the length of a refill's output."
+    (arr:length (.rows (plan-storage plan))))
 
   (declare maximum-analysis-size UFix)
-  (define maximum-analysis-size limits:maximum-analysis-size)
+  (define maximum-analysis-size
+    "Largest Gram order an analysis accepts; shared with the factorization's analysis."
+    limits:maximum-analysis-size)
   (declare default-analysis-entry-limit UFix)
-  (define default-analysis-entry-limit limits:default-analysis-entry-limit)
+  (define default-analysis-entry-limit
+    "Default budget of stored Gram entries; shared with the factorization's analysis."
+    limits:default-analysis-entry-limit)
 
   (define-struct NormalizedColumns
     "Temporary CSC of B where Gram=B^T B; values are positions in the original source array."
@@ -65,26 +77,27 @@
     "Transpose only when its row count is the already-checked Gram dimension; ATA never indexes by source row number."
     (let count = (arr:length source-ri))
     (let positions = (arr:make count (the UFix 0)))
-    (if aat
-        (let ((bcp (arr:make (+ m 1) (the UFix 0)))
-              (inner (arr:make count (the UFix 0))))
-          (for ((q 0 (+ q 1))) :while (< q count)
-            (let row = (arr:aref source-ri q))
-            (arr:set! bcp (+ row 1) (+ (arr:aref bcp (+ row 1)) 1)))
-          (for ((i 0 (+ i 1))) :while (< i m)
-            (arr:set! bcp (+ i 1) (+ (arr:aref bcp i) (arr:aref bcp (+ i 1)))))
-          (let cursor = (arr:copy bcp))
-          (for ((j 0 (+ j 1))) :while (< j n)
-            (for ((q (arr:aref source-cp j) (+ q 1))) :while (< q (arr:aref source-cp (+ j 1)))
-              (let row = (arr:aref source-ri q))
-              (let at = (arr:aref cursor row))
-              (arr:set! inner at j)
-              (arr:set! positions at q)
-              (arr:set! cursor row (+ at 1))))
-          (NormalizedColumns bcp inner positions))
-        (progn
-          (for ((q 0 (+ q 1))) :while (< q count) (arr:set! positions q q))
-          (NormalizedColumns source-cp source-ri positions))))
+    (cond
+      (aat
+       (let ((bcp (arr:make (+ m 1) (the UFix 0)))
+             (inner (arr:make count (the UFix 0))))
+         (for ((q 0 (+ q 1))) :while (< q count)
+           (let row = (arr:aref source-ri q))
+           (arr:set! bcp (+ row 1) (+ (arr:aref bcp (+ row 1)) 1)))
+         (for ((i 0 (+ i 1))) :while (< i m)
+           (arr:set! bcp (+ i 1) (+ (arr:aref bcp i) (arr:aref bcp (+ i 1)))))
+         (let cursor = (arr:copy bcp))
+         (for ((j 0 (+ j 1))) :while (< j n)
+           (for ((q (arr:aref source-cp j) (+ q 1))) :while (< q (arr:aref source-cp (+ j 1)))
+             (let row = (arr:aref source-ri q))
+             (let at = (arr:aref cursor row))
+             (arr:set! inner at j)
+             (arr:set! positions at q)
+             (arr:set! cursor row (+ at 1))))
+         (NormalizedColumns bcp inner positions)))
+      (True
+       (for ((q 0 (+ q 1))) :while (< q count) (arr:set! positions q q))
+       (NormalizedColumns source-cp source-ri positions))))
 
   (define-struct CompressedGroups
     "Incidence grouped by present inner indices only. For each B position, begins is its group's first sorted position, starts its own and stops its group's exclusive end; owners ascend within a group, so begins to starts holds exactly the owners before its own and starts to stops those at or after it."

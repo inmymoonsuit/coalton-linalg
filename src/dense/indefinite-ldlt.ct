@@ -39,23 +39,46 @@
   (repr :enum)
   (define-type FactorStatus
     "Outcome of a factorization call. An exactly zero pivot is FactorSuccess with a nonzero zero-count."
-    FactorSuccess FactorNonFinite FactorBadSize FactorBadShift)
+    FactorSuccess
+    "A factor stands; an exactly zero pivot is counted, not refused."
+    FactorNonFinite
+    "A value or an intermediate result was not finite."
+    FactorBadSize
+    "The matrix array's length differs from the square of the order."
+    FactorBadShift
+    "The shift was not finite.")
 
   (derive Eq)
   (repr :enum)
   (define-type SolveStatus
     "Outcome of a solve call; distinct from factorization outcomes."
-    SolveSuccess SolveInvalidFactor SolveBadSize SolveSingular SolveNonFiniteRhs SolveNonFiniteResult)
+    SolveSuccess
+    "The output holds the solution."
+    SolveInvalidFactor
+    "No factor stands."
+    SolveBadSize
+    "A vector's length differs from the order."
+    SolveSingular
+    "The factor holds an exactly zero pivot; no solve is attempted."
+    SolveNonFiniteRhs
+    "The right-hand side holds a non-finite entry."
+    SolveNonFiniteResult
+    "The computed solution was not finite.")
 
   (declare maximum-dimension UFix)
-  (define maximum-dimension limits:maximum-dimension)
+  (define maximum-dimension
+    "Largest order a factor can be made for."
+    limits:maximum-dimension)
 
-  ;; (1 + sqrt 17) / 8: the value at which two 1-by-1 steps and one 2-by-2 step have the same growth bound.
   (declare pivot-threshold F64)
-  (define pivot-threshold 0.6403882032022076d0)
+  (define pivot-threshold
+    "(1 + sqrt 17) / 8: the value at which two 1-by-1 steps and one 2-by-2 step have the same growth bound."
+    0.6403882032022076d0)
 
   (declare default-entry-limit UFix)
-  (define default-entry-limit limits:default-entry-limit)
+  (define default-entry-limit
+    "Default budget of the n^2 entries a factor stores."
+    limits:default-entry-limit)
 
   (declare make-factor-with-limit (UFix * UFix -> Factor))
   (define (make-factor-with-limit n maximum-entries)
@@ -71,9 +94,13 @@
     (make-factor-with-limit n default-entry-limit))
 
   (declare dimension (Factor -> UFix))
-  (define (dimension factor) (.size (storage factor)))
+  (define (dimension factor)
+    "The order this factor was made for."
+    (.size (storage factor)))
   (declare factor-ready? (Factor -> Boolean))
-  (define (factor-ready? factor) (== (arr:aref (.state (storage factor)) 0) 1))
+  (define (factor-ready? factor)
+    "Whether a factor stands: the latest factor! on this handle succeeded."
+    (== (arr:aref (.state (storage factor)) 0) 1))
   (declare positive-count (Factor -> UFix))
   (define (positive-count factor)
     "Positive eigenvalues of the computed block diagonal; 0 when no factor stands."
@@ -87,15 +114,25 @@
     "Exactly zero pivots of the computed block diagonal; 0 when no factor stands."
     (arr:aref (.state (storage factor)) 3))
   (declare factor-permutation (Factor -> arr:LispArray UFix))
-  (define (factor-permutation factor) (.permutation (storage factor)))
+  (define (factor-permutation factor)
+    "Borrowed view: the original index at each position of the factored order."
+    (.permutation (storage factor)))
   (declare factor-lower (Factor -> arr:LispArray F64))
-  (define (factor-lower factor) (.lower (storage factor)))
+  (define (factor-lower factor)
+    "Borrowed view: the unit lower triangular factor, column-major, n^2 entries."
+    (.lower (storage factor)))
   (declare factor-diagonal (Factor -> arr:LispArray F64))
-  (define (factor-diagonal factor) (.diagonal (storage factor)))
+  (define (factor-diagonal factor)
+    "Borrowed view: the diagonal of the block diagonal factor."
+    (.diagonal (storage factor)))
   (declare factor-subdiagonal (Factor -> arr:LispArray F64))
-  (define (factor-subdiagonal factor) (.subdiagonal (storage factor)))
+  (define (factor-subdiagonal factor)
+    "Borrowed view: the subdiagonal of the block diagonal factor, nonzero only inside a 2-by-2 block."
+    (.subdiagonal (storage factor)))
   (declare factor-block-sizes (Factor -> arr:LispArray UFix))
-  (define (factor-block-sizes factor) (.blocks (storage factor)))
+  (define (factor-block-sizes factor)
+    "Borrowed view: at each block's first position its size, 1 or 2, and 0 at a block's second position."
+    (.blocks (storage factor)))
 
   (declare column-argmax (arr:LispArray F64 * UFix * UFix * UFix -> UFix))
   (define (column-argmax w n k c)
@@ -118,11 +155,10 @@
   (declare off-magnitude (arr:LispArray F64 * UFix * UFix * UFix -> F64))
   (define (off-magnitude w n r c)
     "Magnitude of the symmetric entry (r,c); zero when r is c, the answer column-argmax gives for no entry."
-    (if (== r c)
-        0.0d0
-        (if (> r c)
-            (abs (arr:aref w (+ r (* c n))))
-            (abs (arr:aref w (+ c (* r n)))))))
+    (cond
+      ((== r c) 0.0d0)
+      ((> r c) (abs (arr:aref w (+ r (* c n)))))
+      (True (abs (arr:aref w (+ c (* r n)))))))
 
   (declare select-pivot! (arr:LispArray F64 * UFix * UFix * arr:LispArray UFix -> Void))
   (define (select-pivot! w n k choice)
@@ -139,32 +175,31 @@
     (for ((round 0 (+ round 1))) :while (and (cell:read searching) (<= round n))
       (let here = (cell:read i))
       (let diagonal = (abs (arr:aref w (+ here (* here n)))))
-      (if (or (== (cell:read omega) 0.0d0)
-              (>= diagonal (* pivot-threshold (cell:read omega))))
-          (progn
+      (cond
+        ((or (== (cell:read omega) 0.0d0)
+             (>= diagonal (* pivot-threshold (cell:read omega))))
+         (cell:write! searching False)
+         (arr:set! choice 1 here))
+        (True
+         (let c = (cell:read r))
+         (let next = (column-argmax w n k c))
+         (let omega-c = (off-magnitude w n next c))
+         (let diagonal-c = (abs (arr:aref w (+ c (* c n)))))
+         (cond
+           ((>= diagonal-c (* pivot-threshold omega-c))
             (cell:write! searching False)
-            (arr:set! choice 1 here))
-          (progn
-            (let c = (cell:read r))
-            (let next = (column-argmax w n k c))
-            (let omega-c = (off-magnitude w n next c))
-            (let diagonal-c = (abs (arr:aref w (+ c (* c n)))))
-            (if (>= diagonal-c (* pivot-threshold omega-c))
-                (progn
-                  (cell:write! searching False)
-                  (arr:set! choice 1 c))
-                (if (== omega-c (cell:read omega))
-                    ;; The entry (here, c) is the largest off-diagonal of both its columns.
-                    (progn
-                      (cell:write! searching False)
-                      (arr:set! choice 0 2)
-                      (arr:set! choice 1 here)
-                      (arr:set! choice 2 c))
-                    (progn
-                      (cell:write! i c)
-                      (cell:write! r next)
-                      (cell:write! omega omega-c)
-                      (arr:set! choice 1 c))))))))
+            (arr:set! choice 1 c))
+           ((== omega-c (cell:read omega))
+            ;; The entry (here, c) is the largest off-diagonal of both its columns.
+            (cell:write! searching False)
+            (arr:set! choice 0 2)
+            (arr:set! choice 1 here)
+            (arr:set! choice 2 c))
+           (True
+            (cell:write! i c)
+            (cell:write! r next)
+            (cell:write! omega omega-c)
+            (arr:set! choice 1 c)))))))
 
   (declare swap-symmetric! (arr:LispArray F64 * arr:LispArray UFix * UFix * UFix * UFix -> Void))
   (define (swap-symmetric! w permutation n p q)
@@ -197,23 +232,24 @@
     (let st = (.state f))
     (let d = (arr:aref w (+ k (* k n))))
     (unless (inline (finite? d)) (return False))
-    (if (== d 0.0d0)
-        ;; The selection rule takes a zero pivot only from a column that is entirely zero,
-        ;; so its multipliers are zero already and nothing is eliminated.
-        (arr:set! st 3 (+ (arr:aref st 3) 1))
-        (progn
-          (if (> d 0.0d0)
-              (arr:set! st 1 (+ (arr:aref st 1) 1))
-              (arr:set! st 2 (+ (arr:aref st 2) 1)))
-          (for ((j (+ k 1) (+ j 1))) :while (< j n)
-            (let multiplier = (/ (arr:aref w (+ j (* k n))) d))
-            (for ((i j (+ i 1))) :while (< i n)
-              (arr:set! w (+ i (* j n))
-                        (- (arr:aref w (+ i (* j n))) (* (arr:aref w (+ i (* k n))) multiplier)))))
-          (for ((i (+ k 1) (+ i 1))) :while (< i n)
-            (let multiplier = (/ (arr:aref w (+ i (* k n))) d))
-            (unless (inline (finite? multiplier)) (return False))
-            (arr:set! w (+ i (* k n)) multiplier))))
+    (cond
+      ((== d 0.0d0)
+       ;; The selection rule takes a zero pivot only from a column that is entirely zero,
+       ;; so its multipliers are zero already and nothing is eliminated.
+       (arr:set! st 3 (+ (arr:aref st 3) 1)))
+      (True
+       (cond
+         ((> d 0.0d0) (arr:set! st 1 (+ (arr:aref st 1) 1)))
+         (True (arr:set! st 2 (+ (arr:aref st 2) 1))))
+       (for ((j (+ k 1) (+ j 1))) :while (< j n)
+         (let multiplier = (/ (arr:aref w (+ j (* k n))) d))
+         (for ((i j (+ i 1))) :while (< i n)
+           (arr:set! w (+ i (* j n))
+                     (- (arr:aref w (+ i (* j n))) (* (arr:aref w (+ i (* k n))) multiplier)))))
+       (for ((i (+ k 1) (+ i 1))) :while (< i n)
+         (let multiplier = (/ (arr:aref w (+ i (* k n))) d))
+         (unless (inline (finite? multiplier)) (return False))
+         (arr:set! w (+ i (* k n)) multiplier))))
     (arr:set! (.diagonal f) k d)
     (arr:set! (.subdiagonal f) k 0.0d0)
     (arr:set! (.blocks f) k 1)
@@ -306,17 +342,17 @@
     (for ((k 0 (+ k (arr:aref choice 0)))) :while (< k n)
       (select-pivot! w n k choice)
       (let lead = (arr:aref choice 1))
-      (if (== (arr:aref choice 0) 1)
-          (progn
-            (unless (== lead k) (swap-symmetric! w permutation n k lead))
-            (unless (eliminate-one! f k) (return (refuse! f))))
-          (progn
-            (unless (== lead k) (swap-symmetric! w permutation n k lead))
-            ;; The partner is never k itself: the search leaves k only for a strictly larger entry,
-            ;; so no later column's largest entry lies in row k. The first exchange cannot move it.
-            (let partner = (arr:aref choice 2))
-            (unless (== partner (+ k 1)) (swap-symmetric! w permutation n (+ k 1) partner))
-            (unless (eliminate-two! f k) (return (refuse! f))))))
+      (cond
+        ((== (arr:aref choice 0) 1)
+         (unless (== lead k) (swap-symmetric! w permutation n k lead))
+         (unless (eliminate-one! f k) (return (refuse! f))))
+        (True
+         (unless (== lead k) (swap-symmetric! w permutation n k lead))
+         ;; The partner is never k itself: the search leaves k only for a strictly larger entry,
+         ;; so no later column's largest entry lies in row k. The first exchange cannot move it.
+         (let partner = (arr:aref choice 2))
+         (unless (== partner (+ k 1)) (swap-symmetric! w permutation n (+ k 1) partner))
+         (unless (eliminate-two! f k) (return (refuse! f))))))
     (arr:set! st 0 1)
     FactorSuccess)
 
@@ -343,23 +379,23 @@
       (for ((i (+ k 1) (+ i 1))) :while (< i n)
         (arr:set! w i (- (arr:aref w i) (* (arr:aref l (+ i (* k n))) v)))))
     (for ((k 0 (+ k (if (== (arr:aref blocks k) 2) 2 1)))) :while (< k n)
-      (if (== (arr:aref blocks k) 2)
-          (progn
-            (let pivot = (arr:aref e k))
-            (let ar = (/ (arr:aref d k) pivot))
-            (let cr = (/ (arr:aref d (+ k 1)) pivot))
-            (let scale = (* pivot (- (* ar cr) 1.0d0)))
-            (let u = (arr:aref w k))
-            (let v = (arr:aref w (+ k 1)))
-            (let p = (/ (- (* cr u) v) scale))
-            (let q = (/ (- (* ar v) u) scale))
-            (unless (and (inline (finite? p)) (inline (finite? q))) (return SolveNonFiniteResult))
-            (arr:set! w k p)
-            (arr:set! w (+ k 1) q))
-          (progn
-            (let v = (/ (arr:aref w k) (arr:aref d k)))
-            (unless (inline (finite? v)) (return SolveNonFiniteResult))
-            (arr:set! w k v))))
+      (cond
+        ((== (arr:aref blocks k) 2)
+         (let pivot = (arr:aref e k))
+         (let ar = (/ (arr:aref d k) pivot))
+         (let cr = (/ (arr:aref d (+ k 1)) pivot))
+         (let scale = (* pivot (- (* ar cr) 1.0d0)))
+         (let u = (arr:aref w k))
+         (let v = (arr:aref w (+ k 1)))
+         (let p = (/ (- (* cr u) v) scale))
+         (let q = (/ (- (* ar v) u) scale))
+         (unless (and (inline (finite? p)) (inline (finite? q))) (return SolveNonFiniteResult))
+         (arr:set! w k p)
+         (arr:set! w (+ k 1) q))
+        (True
+         (let v = (/ (arr:aref w k) (arr:aref d k)))
+         (unless (inline (finite? v)) (return SolveNonFiniteResult))
+         (arr:set! w k v))))
     (for ((remaining n (- remaining 1))) :while (> remaining 0)
       (let k = (- remaining 1))
       (let acc = (cell:new (arr:aref w k)))

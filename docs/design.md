@@ -118,6 +118,22 @@ improve analyse's readability; they do not need to become public packages.
 The Boolean-directed product helper is a measurement candidate, not a proven
 performance problem.
 
+### Style
+
+The sources follow the published Common Lisp and Coalton style rules of the Coalton
+developers: one package a file with package-local nicknames, a type declaration and a
+docstring on everything exported, `cond` where a conditional's branches act or chain,
+`for` loops, `Void` for calls made for effect, and `lisp` forms kept to small definitions
+of their own. A leading `%` marks a helper factored out for that reason.
+
+**One rule is deliberately not followed in the numeric kernels.** The rules prefer `Seq`
+and `HashMap` for collections where possible. A factorization's storage is a specialized
+mutable array instead, for three reasons that the contracts depend on: a repeated call
+must allocate nothing, which an immutable collection cannot offer; the values must be
+stored unboxed, which a specialized array guarantees and a general collection does not;
+and a pattern analyzed once is indexed by position thereafter. The same applies to the
+index arrays of the sparse formats. Nothing outside the kernels needs a collection type.
+
 ### Documentation roles
 
 The [mathematical glossary](../CONTEXT.md) defines shared terms. The

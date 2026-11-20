@@ -15,20 +15,37 @@
     "Owned canonical rectangular CSC. Inspection arrays are borrowed read-only views."
     (MkMatrix UFix UFix (arr:LispArray UFix) (arr:LispArray UFix) (arr:LispArray F64)))
 
-  (define-type DuplicatePolicy RejectDuplicates SumDuplicates)
+  (define-type DuplicatePolicy
+    "What from-coo does with a repeated coordinate."
+    RejectDuplicates
+    "Raise DuplicateEntry naming the coordinate."
+    SumDuplicates
+    "Add the values in their given order.")
 
   (declare row-count (Matrix -> UFix))
-  (define (row-count matrix) (match matrix ((MkMatrix m _ _ _ _) m)))
+  (define (row-count matrix)
+    "Number of rows."
+    (match matrix ((MkMatrix m _ _ _ _) m)))
   (declare column-count (Matrix -> UFix))
-  (define (column-count matrix) (match matrix ((MkMatrix _ n _ _ _) n)))
+  (define (column-count matrix)
+    "Number of columns."
+    (match matrix ((MkMatrix _ n _ _ _) n)))
   (declare column-pointers (Matrix -> arr:LispArray UFix))
-  (define (column-pointers matrix) (match matrix ((MkMatrix _ _ cp _ _) cp)))
+  (define (column-pointers matrix)
+    "Borrowed view: where each column starts in the row indices and entries, one more than the columns long."
+    (match matrix ((MkMatrix _ _ cp _ _) cp)))
   (declare row-indices (Matrix -> arr:LispArray UFix))
-  (define (row-indices matrix) (match matrix ((MkMatrix _ _ _ ri _) ri)))
+  (define (row-indices matrix)
+    "Borrowed view: the row of each stored entry, strictly increasing within a column."
+    (match matrix ((MkMatrix _ _ _ ri _) ri)))
   (declare entries (Matrix -> arr:LispArray F64))
-  (define (entries matrix) (match matrix ((MkMatrix _ _ _ _ vals) vals)))
+  (define (entries matrix)
+    "Borrowed view: the value of each stored entry, in the order of the row indices."
+    (match matrix ((MkMatrix _ _ _ _ vals) vals)))
   (declare entry-count (Matrix -> UFix))
-  (define (entry-count matrix) (arr:length (row-indices matrix)))
+  (define (entry-count matrix)
+    "Number of stored entries, explicit zeros included."
+    (arr:length (row-indices matrix)))
 
   (declare from-csc (UFix * UFix * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray F64 -> Matrix))
   (define (from-csc m n cp ri vals)
@@ -69,20 +86,22 @@
         (let right = (cell:new middle))
         (for ((at start (+ at 1))) :while (< at end)
           (let take-left =
-            (if (>= (cell:read right) end) True
-                (if (>= (cell:read left) middle) False
-                    (let ((a (arr:aref order (cell:read left)))
-                          (b (arr:aref order (cell:read right))))
-                      (or (< (arr:aref columns a) (arr:aref columns b))
-                          (and (== (arr:aref columns a) (arr:aref columns b))
-                               (<= (arr:aref rows a) (arr:aref rows b))))))))
-          (if take-left
-              (progn
-                (arr:set! scratch at (arr:aref order (cell:read left)))
-                (cell:write! left (+ (cell:read left) 1)))
-              (progn
-                (arr:set! scratch at (arr:aref order (cell:read right)))
-                (cell:write! right (+ (cell:read right) 1))))))
+            (cond
+              ((>= (cell:read right) end) True)
+              ((>= (cell:read left) middle) False)
+              (True
+               (let ((a (arr:aref order (cell:read left)))
+                     (b (arr:aref order (cell:read right))))
+                 (or (< (arr:aref columns a) (arr:aref columns b))
+                     (and (== (arr:aref columns a) (arr:aref columns b))
+                          (<= (arr:aref rows a) (arr:aref rows b))))))))
+          (cond
+            (take-left
+             (arr:set! scratch at (arr:aref order (cell:read left)))
+             (cell:write! left (+ (cell:read left) 1)))
+            (True
+             (arr:set! scratch at (arr:aref order (cell:read right)))
+             (cell:write! right (+ (cell:read right) 1))))))
       (for ((i 0 (+ i 1))) :while (< i count) (arr:set! order i (arr:aref scratch i))))
     order)
 
