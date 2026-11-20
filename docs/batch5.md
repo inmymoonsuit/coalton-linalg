@@ -165,6 +165,15 @@ files and checked by a separate NumPy program.
 - **Policy.** Safety 0 and safety 1 times are within 4% of each other, and the two
   policies produce identical output files.
 
+## After review
+
+An artifact driver, `scripts/check.ps1 -Task Orthogonal`, was added at the reviewer's
+request so that a held-back set can be checked from files alone. It writes Q and R once a
+system and, for each run by threshold or by forced rank, the rank, the solution, the
+residual and the whole nullspace basis; [the contract page](orthogonal.md#artifact-driver)
+has the protocol. Its regressions cover an exact QR file, a truncated solve with its
+nullspace vector, named rank and factor refusals, and removal of stale artifacts.
+
 ## Limits
 
 - The rank is the caller's decision. The diagonal of R can overstate the smallest singular

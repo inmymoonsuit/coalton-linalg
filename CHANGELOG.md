@@ -2,6 +2,11 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.5.1 — 2026-11-19
+
+Added: an artifact driver for the orthogonal decompositions, `scripts/check.ps1 -Task
+Orthogonal`. [Protocol](docs/orthogonal.md#artifact-driver). No library call changed.
+
 ## 0.5.0 — 2026-11-19
 
 Added:

@@ -122,6 +122,38 @@ of the remaining columns are measured in the same pass that updates each column,
 measuring adds no pass over the matrix. Completing for rank r costs about r²(n − r), and a
 solve O(m n + n r). The code is unblocked and sequential.
 
+## Artifact driver
+
+The optional tools system writes reviewable outputs for a folder of systems:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1 -Task Orthogonal `
+  -InputFolder <folder> -OutputFolder build/<name> -AllocationRepeats 20
+```
+
+Each `<name>.M.txt` holds m and n, then m n values in column-major order. `<name>.b.txt`
+holds m values. `<name>.meta.txt` is optional; each of its lines names one run, in order:
+`threshold: <value>` selects the rank counted strictly above that value times the largest
+diagonal magnitude of R, and `rank: <r>` selects exactly r. With no such line there is one
+run at a threshold of 1e-10.
+
+Once a system, `<name>.qr.out.txt` holds m, n, the permutation, the upper trapezoid of R as
+k n values column-major with k the smaller dimension and its zeros written out, then the
+first k columns of Q as m k values column-major, read back through `apply-q!`. Every value
+is on its own line, floating values with 17 significant digits.
+
+For run index i from 0: `<name>.<i>.x.out.txt` holds the n values of the solution;
+`<name>.<i>.null.out.txt` the n - rank basis vectors of the selected nullspace, n values
+each, one after another, and nothing at full column rank; `<name>.<i>.run.out.txt` the two
+lines `rank <r>` and `residual <value>`. A run whose rank or solve is refused writes only
+`<name>.<i>.refused.out.txt` holding the status name. A system refused at the factorization
+writes only `<name>.refused.out.txt`.
+
+`orthogonal-table.txt` and standard output carry one line a run:
+`name run m n rank factor_ms solve_ms factor_bytes solve_bytes`, or
+`name run m n refused <Status>`, with `factor` in place of the run index for a refused
+factorization. Reruns replace every artifact of a system.
+
 ## Derivation
 
 **A reflector.** For a vector with head α and tail of norm σ, the matrix

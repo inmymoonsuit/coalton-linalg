@@ -63,15 +63,14 @@
 (defun indexed-path (output name index suffix)
   (fixture-path output name (format nil ".~D~A" index suffix)))
 
-(defun delete-indexed-artifacts (output name)
-  "Remove every <name>.<index>.*.out.txt left by an earlier run of this system."
+(defun delete-indexed-artifacts (output name suffixes)
+  "Remove every <name>.<index><suffix> left by an earlier run of this system, for the given suffixes."
   (dolist (path (directory (merge-pathnames "*.out.txt" (uiop:ensure-directory-pathname output))))
     (let* ((file (file-namestring path)) (prefix (concatenate 'string name ".")))
       (when (and (< (length prefix) (length file)) (string= prefix file :end2 (length prefix)))
         (let* ((rest (subseq file (length prefix))) (dot (position #\. rest)))
           (when (and dot (plusp dot) (every #'digit-char-p (subseq rest 0 dot))
-                     (member (subseq rest dot) '(".factor.out.txt" ".x.out.txt" ".solve.out.txt" ".refused.out.txt")
-                             :test #'string=))
+                     (member (subseq rest dot) suffixes :test #'string=))
             (delete-file path)))))))
 
 (defun write-line-file (path line)
@@ -102,7 +101,8 @@
         (let* ((file (file-namestring path))
                (name (subseq file 0 (- (length file) (length ".S.txt")))))
           (incf count)
-          (delete-indexed-artifacts output name)
+          (delete-indexed-artifacts output name
+                                    '(".factor.out.txt" ".x.out.txt" ".solve.out.txt" ".refused.out.txt"))
           (handler-case
               (multiple-value-bind (n a) (read-dense-symmetric input name)
                 (let ((b (read-right-hand-side input name n))
