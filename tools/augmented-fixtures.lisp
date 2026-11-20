@@ -111,10 +111,12 @@
                                   (write-array-file (indexed-path output name index ".x.out.txt") x)))
                               (with-open-file (out (indexed-path output name index ".signed.out.txt")
                                                    :direction :output :if-exists :supersede :if-does-not-exist :create)
-                                (format out "status ~A~%refused-column ~D~%positive ~D~%negative ~D~%growth ~A~%solve ~A~%"
+                                (format out "status ~A~%refused-column ~D~%positive ~D~%negative ~D~%growth ~A~%~
+                                             backward-bound ~A~%solve ~A~%"
                                         (signed-status-name status) refused
                                         (ldlt:positive-pivot-count factor) (ldlt:negative-pivot-count factor)
                                         (f64-string (ldlt:factor-growth factor))
+                                        (f64-string (ldlt:factor-backward-bound factor))
                                         (if success (sparse-solve-status-name solved) "none")))
                               (let* ((analyse-ms (best-ms maker repeats))
                                      (refill-thunk (lambda () (aug:refill! plan source top bottom values)))

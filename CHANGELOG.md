@@ -2,6 +2,18 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.8.0 — 2026-11-20
+
+Added: `factor-backward-bound` in `coalton-linalg/sparse/spd-ldlt`, an upper bound on the
+norm of the signed factorization's backward error, with what underflow can add included,
+and with it a documented certificate that every singular value of a sparse matrix exceeds
+a threshold, from one signed factorization. [Contract](docs/quasidefinite.md#a-rank-certificate-from-the-inertia)
+· [record](docs/batch7a.md).
+
+Corrected: the signed factorization's entrywise error bound was stated without its
+condition. It holds barring underflow; the contract now says so and gives the term.
+No call changes meaning.
+
 ## 0.7.2 — 2026-11-20
 
 Changed: the fixed-pattern Gram analysis is faster and returns exactly the pattern it

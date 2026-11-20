@@ -108,6 +108,7 @@ plan's dimension, column pointers and row indices.
 | `SignedSuccess`, `SignedZeroPivot`, `SignedNonFinite`, `SignedBadValues`, `SignedBadShift` | SignedFactorStatus values |
 | `factor-signed!` | Symbolic * V * F64 -> SignedFactorStatus; pivots of either sign, no numerical pivoting |
 | `factor-growth` | NumericFactor -> F64; measured by the latest successful factor-signed!, otherwise -1 |
+| `factor-backward-bound` | NumericFactor -> F64; upper bound on the Frobenius norm of P K Pᵀ − L D Lᵀ for that factor, otherwise -1 |
 | `positive-pivot-count`, `negative-pivot-count` | NumericFactor -> UFix; signs of D in the standing factor |
 | `solve!` | NumericFactor * V * V -> SolveStatus |
 | `ConditionStatus` | Condition-estimate outcome type |

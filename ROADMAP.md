@@ -120,6 +120,12 @@ factorizations with entrywise bounds, twenty-two planted source controls and an 
 measurement per policy pass. [The batch record](docs/batch7.md) holds the measurements;
 [the contract](docs/quasidefinite.md) the bounds and what growth does and does not say.
 
+**Completed (7a):** `factor-backward-bound` gives the signed factorization's backward error
+as one number, with what underflow can add, and the contract sets out how the pivot
+counts and that number certify that every singular value of a sparse matrix exceeds a
+threshold. Over 342 cases checked against exact inertia no certificate was issued for a
+false statement. [The record](docs/batch7a.md).
+
 ### Batch 8: the same elimination order, computed faster
 
 **Completed.** Analysis returns the permutation and structure it returned before, for

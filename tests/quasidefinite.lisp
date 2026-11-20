@@ -13,6 +13,22 @@
 (defvar *qd-worst-residual* 0)
 (defvar *qd-largest-growth* 0)
 (defvar *qd-latest-growth* 0)
+(defvar *qd-worst-backward* 0)
+
+(defun exact-backward-bound (factor n longest bound)
+  "The contract's formula on the exported factor, in exact arithmetic: gamma(w + 2) trace(|L||D||L^T|) plus the
+underflow term eta N (w + 2) (2 + 2 max|L|). BOUND is |L||D||L^T| and LONGEST the longest row of L."
+  (let* ((reach (+ longest 2))
+         (relative (/ (* reach *unit-roundoff*) (- 1 (* reach *unit-roundoff*))))
+         (trace (loop for i below n sum (aref bound i i)))
+         (steepest (reduce #'max (ldlt:factor-values factor) :key (lambda (v) (abs (rational v))) :initial-value 0)))
+    (+ (* relative trace)
+       (* (rational least-positive-double-float) (* n reach (+ 2 (* 2 steepest)))))))
+
+(defun exact-frobenius-squared (exact perm product n)
+  "The squared Frobenius norm of P K P^T - L D L^T, exactly."
+  (loop for i below n sum
+    (loop for j below n sum (expt (- (aref exact (aref perm i) (aref perm j)) (aref product i j)) 2))))
 
 (defun csc-from-entries (m n entries)
   "A checked CSC matrix from a list of (row column value); a stored zero stays structural."
@@ -78,6 +94,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
                        (ldlt:analyze (ldlt:pattern n pointers row-indices))))
          (factor (ldlt:symbolic-factor symbolic)))
     (assert (= -1d0 (ldlt:factor-growth factor)) () "~A: a growth was reported before any factor." label)
+    (assert (= -1d0 (ldlt:factor-backward-bound factor)) () "~A: a backward bound was reported before any factor." label)
     (assert (= 0 (qd-caller:observe-signed symbolic values (coerce shift 'double-float))) ()
             "~A: signed factorization refused." label)
     (assert (ldlt:factor-ready? factor))
@@ -113,6 +130,17 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
           (setf *qd-largest-growth* (max *qd-largest-growth* growth))
           (assert (<= (abs (- (rational (ldlt:factor-growth factor)) growth)) (* (expt 2 -40) (+ 1 growth))) ()
                   "~A: reported growth ~S, exact ~E." label (ldlt:factor-growth factor) (float growth 1d0)))
+        ;; The backward bound holds for the exact Frobenius norm of P K P^T - L D L^T, and is the
+        ;; contract's formula on the exported factor, rounded up and by no more than rounding.
+        (let* ((reported (rational (ldlt:factor-backward-bound factor)))
+               (off (exact-frobenius-squared exact perm product n))
+               (formula (exact-backward-bound factor n (reduce #'max row-count :initial-value 0) bound)))
+          (assert (<= off (expt reported 2)) ()
+                  "~A: the backward error is ~E and the reported bound ~E." label (sqrt (float off 1d0))
+                  (float reported 1d0))
+          (assert (<= formula reported (+ (* formula (+ 1 (expt 2 -30))) (* 8 (rational least-positive-double-float))))
+                  () "~A: reported bound ~E, formula ~E." label (float reported 1d0) (float formula 1d0))
+          (setf *qd-worst-backward* (max *qd-worst-backward* (/ off (expt reported 2)))))
         (assert (= n (reduce #'+ (pivot-counts factor))) () "~A: pivot counts ~S do not sum to ~D." label
                 (pivot-counts factor) n)
         (multiple-value-bind (positive negative zero) (exact-inertia exact)
@@ -193,7 +221,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
       (values factor symbolic plan))))
 
 (defun run-quasidefinite-exact-tests ()
-  (setf *qd-worst-reconstruction* 0 *qd-worst-residual* 0 *qd-largest-growth* 0)
+  (setf *qd-worst-reconstruction* 0 *qd-worst-residual* 0 *qd-largest-growth* 0 *qd-worst-backward* 0)
   (let ((cases 0) (state (sb-ext:seed-random-state 20261126)))
     ;; Augmented systems of tall, square and wide sources, sparse and with a hub column, from
     ;; a well-separated regularization down to 2^-30.
@@ -277,10 +305,22 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
         (assert (equal '(3 0) (pivot-counts factor)) () "factor! counts ~S." (pivot-counts factor))
         ;; Growth is measured by the signed entry only.
         (assert (= -1d0 (ldlt:factor-growth factor)) () "factor! reported a growth of ~S." (ldlt:factor-growth factor))
+        (assert (= -1d0 (ldlt:factor-backward-bound factor)) () "factor! reported a backward bound.")
         (let ((positive (copied-sparse-factor factor)))
           (assert (= 0 (qd-caller:observe-signed symbolic values 0d0)))
           (assert (equal '(3 0) (pivot-counts factor)))
-          (assert (equalp positive (copied-sparse-factor factor)) () "The signed entry changed a definite factor."))
+          (assert (equalp positive (copied-sparse-factor factor)) () "The signed entry changed a definite factor.")
+          ;; The growth and the backward bound describe a signed factor only: each of the other
+          ;; two entries withdraws them.
+          (assert (and (plusp (ldlt:factor-growth factor)) (plusp (ldlt:factor-backward-bound factor))))
+          (assert (eq success (ldlt:factor! symbolic values 0d0)))
+          (assert (and (= -1d0 (ldlt:factor-growth factor)) (= -1d0 (ldlt:factor-backward-bound factor))) ()
+                  "factor! kept a signed factor's growth or backward bound.")
+          (assert (= 0 (qd-caller:observe-signed symbolic values 0d0)))
+          (assert (eq success (ldlt:factor-cholesky! symbolic values 0d0)))
+          (assert (and (= -1d0 (ldlt:factor-growth factor)) (= -1d0 (ldlt:factor-backward-bound factor))) ()
+                  "factor-cholesky! kept a signed factor's growth or backward bound.")
+          (assert (eq success (ldlt:factor! symbolic values 0d0))))
         ;; Negated, every pivot is negative: the positive definite entry refuses, the signed one does not.
         (let ((negated (map '(simple-array double-float (*)) #'- values)))
           (assert (eq non-positive (ldlt:factor! symbolic negated 0d0)))
@@ -345,6 +385,7 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
                 "~S refused at ~D." rows (ldlt:refused-column symbolic))
         (assert (not (ldlt:factor-ready? factor)))
         (assert (= -1d0 (ldlt:factor-growth factor)) () "A refused signed factorization kept a growth.")
+        (assert (= -1d0 (ldlt:factor-backward-bound factor)) () "A refused signed factorization kept a backward bound.")
         (assert (equal '(0 0) (pivot-counts factor)) () "A refused signed factorization kept counts.")
         (assert (eq (coalton:coalton coalton-linalg/sparse/spd-ldlt:SolveInvalidFactor)
                     (ldlt:solve! factor (doubles 1d0 1d0) out)))
@@ -372,7 +413,8 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
                (assert (= expected (funcall attempt)))
                (assert (and (not (ldlt:factor-ready? factor)) (equal '(0 0) (pivot-counts factor))
                             (= -1d0 (ldlt:inverse-norm1-estimate factor))
-                            (= -1d0 (ldlt:factor-growth factor)))
+                            (= -1d0 (ldlt:factor-growth factor))
+                            (= -1d0 (ldlt:factor-backward-bound factor)))
                        () "A refusal with code ~D left something standing." expected))))
   ;; The held analysis takes any leading dimension up to the size; at either end nothing
   ;; distinguishes the vertices and the order is plain minimum degree.
@@ -487,9 +529,118 @@ With LEADING the analysis holds the indices from LEADING on, as analyze-quasidef
   (format t "QUASIDEFINITE-ENCAPSULATION-PASS rejected=~D public-control=1~%"
           (length *augmented-encapsulation-probes*)))
 
+(defun run-quasidefinite-underflow-tests ()
+  "Near the bottom of the range the relative bound alone is false, and the reported bound still holds."
+  ;; [[a, b], [b, c]] with a = 2^-1060, b = (2^14 + 1) eta, c = 5 2^-1060. The multiplier is
+  ;; 1 + 2^-14 exactly and its product with b is (2^14 + 2 + 2^-14) eta, which rounds to a
+  ;; multiple of eta: the second pivot is off by 2^-14 eta, far more than gamma times anything here.
+  (let* ((eta least-positive-double-float)
+         (a (scale-float 1d0 -1060)) (b (* 16385d0 eta)) (c (scale-float 5d0 -1060))
+         (exact (rows-matrix (list (list (rational a) (rational b)) (list (rational b) (rational c)))))
+         (symbolic (ldlt:analyze (ldlt:pattern 2 (indices 0 2 3) (indices 0 1 1))))
+         (factor (ldlt:symbolic-factor symbolic)))
+    (assert (= 0 (qd-caller:observe-signed symbolic (doubles a b c) 0d0)))
+    (assert (equal '(2 0) (pivot-counts factor)))
+    (assert (equalp #(0 1) (ldlt:factor-permutation factor)))
+    (multiple-value-bind (product bound) (signed-factor-product factor 2)
+      (let ((off (abs (- (aref exact 1 1) (aref product 1 1))))
+            (relative-only (* 3 *unit-roundoff* (aref bound 1 1)))
+            (reported (rational (ldlt:factor-backward-bound factor))))
+        (assert (= off (* (expt 2 -14) (rational eta))) () "The planned underflow did not occur: off by ~E."
+                (float off 1d0))
+        (assert (> off (* 1000 relative-only)) () "The relative bound was meant to fail here.")
+        (assert (<= (exact-frobenius-squared exact (ldlt:factor-permutation factor) product 2) (expt reported 2))
+                () "The reported bound ~E does not cover an underflow of ~E." (float reported 1d0) (float off 1d0))
+        ;; The term is the stated one, a few dozen eta here and not a blanket allowance.
+        (let ((formula (exact-backward-bound factor 2 1 bound)))
+          (assert (<= formula reported (+ (* formula (+ 1 (expt 2 -30))) (* 8 (rational eta)))) ()
+                  "The reported bound is ~F eta and the formula ~F eta." (float (/ reported (rational eta)) 1d0)
+                  (float (/ formula (rational eta)) 1d0))))))
+  (format t "QUASIDEFINITE-UNDERFLOW-PASS~%"))
+
+(defun exactly-above-p (m n entries product)
+  "Whether every squared singular value of the source exceeds PRODUCT, by exact inertia of J J^T - PRODUCT I."
+  (let ((j (make-array (list m n) :initial-element 0)))
+    (dolist (entry entries)
+      (setf (aref j (first entry) (second entry)) (rational (coerce (third entry) 'double-float))))
+    (multiple-value-bind (positive negative zero)
+        (exact-inertia (build-matrix m (lambda (a b)
+                                         (- (loop for k below n sum (* (aref j a k) (aref j b k)))
+                                            (if (= a b) product 0)))))
+      (declare (ignore negative zero))
+      (= positive m))))
+
+(defun certify-singular-values (m n entries top-scale bottom-scale)
+  "The worked use of docs/quasidefinite.md. T when the factorization proves that every singular value of the
+source exceeds sqrt(TOP-SCALE BOTTOM-SCALE); NIL when it does not prove it, which is not a proof of the contrary."
+  (let* ((matrix (csc-from-entries m n entries)) (plan (aug:analyze matrix))
+         (symbolic (ldlt:analyze-quasidefinite
+                    (ldlt:pattern (aug:dimension plan) (aug:column-pointers plan) (aug:row-indices plan)) n))
+         (factor (ldlt:symbolic-factor symbolic))
+         (out (make-array (aug:entry-count plan) :element-type 'double-float :initial-element 0d0))
+         (margin (* top-scale (scale-float 1d0 -44))))
+    (loop repeat 4 do
+      (let ((top (+ top-scale margin)) (trailing (+ bottom-scale margin)))
+        ;; refill! writes minus its last scalar on the trailing diagonal; the proof wants plus.
+        (unless (= 0 (qd-caller:raw-error plan (csc:entries matrix) top (- trailing) out))
+          (return-from certify-singular-values nil))
+        (if (= 0 (qd-caller:observe-signed symbolic out 0d0))
+            (let ((needed (* (ldlt:factor-backward-bound factor) (+ 1d0 (scale-float 1d0 -50)))))
+              (when (and (equal (list n m) (pivot-counts factor))
+                         (>= (- top top-scale) needed) (>= (- trailing bottom-scale) needed))
+                (return-from certify-singular-values t))
+              (setf margin (max (* 2 margin) (* 2 needed))))
+            (setf margin (* 2 margin)))))
+    nil))
+
+(defun run-quasidefinite-certificate-tests ()
+  "A certificate is never issued for a false statement, and is issued where the margin is plain."
+  (let ((state (sb-ext:seed-random-state 20261130)) (issued 0) (withheld-true 0) (withheld-false 0) (cases 0))
+    (flet ((try (label m n entries top bottom)
+             (let ((certified (certify-singular-values m n entries top bottom))
+                   (true (exactly-above-p m n entries (* (rational top) (rational bottom)))))
+               (incf cases)
+               (assert (or (not certified) true) ()
+                       "~A: certified that sigma^2 exceeds ~E, which is false." label (* top bottom))
+               (cond (certified (incf issued)) (true (incf withheld-true)) (t (incf withheld-false)))
+               certified)))
+      ;; Plain margins: [I | B] has every singular value at least 1.
+      (assert (try "identity block" 3 5 '((0 0 1) (1 1 1) (2 2 1) (0 3 2) (1 4 -1) (2 4 3)) 3d0 (/ 0.25d0 3d0)))
+      (assert (try "one row" 1 2 '((0 0 3) (0 1 4)) 4d0 1d0))
+      (assert (not (try "one row, threshold above" 1 2 '((0 0 3) (0 1 4)) 4d0 7d0)))
+      ;; A threshold exactly at sigma^2 = 25 is not exceeded.
+      (assert (not (try "one row, threshold at" 1 2 '((0 0 3) (0 1 4)) 5d0 5d0)))
+      ;; Dependent rows have a zero singular value: nothing positive is ever certified.
+      (dolist (bottom (list (scale-float 1d0 -60) (scale-float 1d0 -30) 1d-3 1d0))
+        (assert (not (try "repeated row" 2 3 '((0 0 1) (0 1 2) (1 0 1) (1 1 2)) 2d0 bottom)))
+        (assert (not (try "sum of rows" 3 4 '((0 0 1) (0 1 1) (1 2 1) (1 3 1) (2 0 1) (2 1 1) (2 2 1) (2 3 1))
+                          1d0 bottom)))
+        (assert (not (try "more rows than columns" 3 2 '((0 0 1) (1 1 1) (2 0 1) (2 1 1)) 1d0 bottom))))
+      ;; Nearly dependent: sigma_min^2 is about 2^-41; a threshold far below it is provable, one above is false.
+      (let ((entries (list '(0 0 1) '(0 1 1) '(1 0 1) '(1 1 1) (list 1 2 (scale-float 1d0 -20)))))
+        (assert (try "nearly dependent, far below" 2 3 entries 1d0 (scale-float 1d0 -60)))
+        (assert (not (try "nearly dependent, above" 2 3 entries 1d0 (scale-float 1d0 -30)))))
+      ;; Seeded sources at thresholds from negligible to larger than any singular value.
+      (loop for (m n) in '((1 3) (2 2) (2 4) (3 3) (3 5) (4 4) (4 6) (5 7) (6 6)) do
+        (dotimes (repeat 6)
+          (let* ((entries (seeded-entries state m n 55 :hub (evenp repeat)))
+                 (top (coerce (max 1 (reduce #'max entries :key (lambda (e) (abs (third e))) :initial-value 0))
+                              'double-float)))
+            (dolist (bottom (list (scale-float 1d0 -40) 1d-6 1d-2 0.3d0 3d0 40d0))
+              (try (format nil "seeded ~Dx~D #~D bottom=~E" m n repeat bottom) m n entries top (/ bottom top)))))))
+    ;; The roster must show all three outcomes, or it shows nothing.
+    (assert (and (> issued 150) (> withheld-false 100)) ()
+            "The certificate roster issued ~D and rightly withheld ~D." issued withheld-false)
+    (format t "QUASIDEFINITE-CERTIFICATE-PASS cases=~D issued=~D withheld-though-true=~D withheld-false=~D~%"
+            cases issued withheld-true withheld-false)))
+
 (defun run-quasidefinite-tests ()
   (run-quasidefinite-exact-tests)
   (run-quasidefinite-identity-tests)
+  (format t "QUASIDEFINITE-BACKWARD-BOUND largest backward error over its reported bound=~,3E~%"
+          (sqrt (float *qd-worst-backward* 1d0)))
+  (run-quasidefinite-underflow-tests)
+  (run-quasidefinite-certificate-tests)
   (run-quasidefinite-lifetime-tests)
   (run-quasidefinite-encapsulation-tests)
   ;; Warmed repeated work through a compiled Coalton caller allocates nothing: a refill, a signed

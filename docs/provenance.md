@@ -110,6 +110,23 @@ The Gram analysis's grouping by digits is the classical least-significant-digit
 distribution sort, written from its definition, and its fill by row follows from the
 order in which a group lists its owners; neither was taken from a source.
 
+## Batch 7a: backward bound and rank certificate
+
+The norm bound is the entrywise bound of Batch 7 summed, with one observation made here:
+`|L| |D| |Lᵀ|` is positive semidefinite, so its Frobenius norm is at most its trace, which
+the kernel was already accumulating. The underflow term is the standard model of rounding
+with a gradual-underflow term, counted for this kernel on [the contract
+page](quasidefinite.md#derivation).
+
+**The certificate's argument is a consumer's.** That the inertia of
+`[[t I, Aᵀ], [A, s I]]` counts the singular values of A above √(s t), and that the computed
+pivots prove it once two diagonal margins cover the backward error, was proposed by the
+author of an application that uses this library, and checked here before it was written
+down; the conditions about underflow, the rounded margins and the rounding of the growth
+figure were added in that check. Sylvester's law of inertia and the monotonicity of
+eigenvalues under a positive semidefinite change are classical. The tests' truth is an
+exact rational inertia of `A Aᵀ − s t I`, written for the tests.
+
 ## Batch 7: signed pivots and the augmented matrix
 
 **The setting is published; the ordering rule and the growth figure were worked out here.**

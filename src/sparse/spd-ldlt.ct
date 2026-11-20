@@ -10,6 +10,7 @@
            #:SolveStatus #:SolveSuccess #:SolveInvalidFactor #:SolveBadSize #:SolveNonFiniteRhs #:SolveNonFiniteResult
            #:SignedFactorStatus #:SignedSuccess #:SignedZeroPivot #:SignedNonFinite #:SignedBadValues
            #:SignedBadShift #:factor-signed! #:positive-pivot-count #:negative-pivot-count #:factor-growth
+           #:factor-backward-bound
            #:analyze-quasidefinite #:analyze-quasidefinite-with-limit
            #:analyze #:analyze-csc #:analyze-with-limit #:analyze-csc-with-limit #:factor! #:solve! #:refused-column
            #:symbolic-factor #:factor-permutation #:factor-columns #:factor-rows
@@ -124,6 +125,15 @@
   (define (factor-growth f)
     "Largest entry of |L| |D| |L^T| over the largest magnitude factored, measured by the latest successful factor-signed!; -1 otherwise."
     (arr:aref (.estimate (numeric-storage f)) 1))
+  (declare factor-backward-bound (NumericFactor -> F64))
+  (define (factor-backward-bound f)
+    "An upper bound on the Frobenius norm, hence the 2-norm, of P K P^T - L D L^T for the factor of the latest successful factor-signed!, K being the matrix as factored; -1 otherwise. It may be infinite. See docs/quasidefinite.md."
+    (arr:aref (.estimate (numeric-storage f)) 2))
+
+  (declare unit-roundoff F64)
+  (define unit-roundoff (lisp (-> F64) () (cl:scale-float 1d0 -53)))
+  (declare smallest-positive F64)
+  (define smallest-positive (lisp (-> F64) () cl:least-positive-double-float))
 
   (declare maximum-analysis-size UFix)
   (define maximum-analysis-size limits:maximum-analysis-size)
@@ -270,7 +280,7 @@
         (arr:set! cursor k (+ slot 1))))
     (let f = (MkNumericFactor (NumericFactorStorage n perm lp lr (arr:make nzl 0.0d0) (arr:make n 0.0d0)
                     (arr:make n 0.0d0) (arr:make 4 (the UFix 0))
-                    (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make 2 -1.0d0))))
+                    (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make 3 -1.0d0))))
     (MkSymbolic (SymbolicStorage f nnz ap ar ai rp rc rq (arr:make 1 (the IFix -1)))))
 
   (declare factor-kernel! (Symbolic * arr:LispArray F64 * F64 * Boolean -> UFix))
@@ -286,6 +296,7 @@
     (arr:set! st 3 0)
     (arr:set! (.estimate f) 0 -1.0d0)
     (arr:set! (.estimate f) 1 -1.0d0)
+    (arr:set! (.estimate f) 2 -1.0d0)
     (arr:set! (.diagnostic s) 0 -1)
     (unless (== (arr:length values) (.input-count s)) (return 3))
     (unless (inline (finite? shift)) (return 4))
@@ -299,6 +310,8 @@
     ;; and top the largest magnitude factored. The estimate's probe vector is free until then.
     (let bound = (.probe f))
     (let top = (cell:new 0.0d0))
+    ;; The largest magnitude among the multipliers, for the underflow term.
+    (let steepest = (cell:new 0.0d0))
     (when signed
       (for ((i 0 (+ i 1))) :while (< i n) (arr:set! bound i 0.0d0)))
     (for ((k 0 (+ k 1))) :while (< k n)
@@ -339,14 +352,32 @@
         (let v = (/ (arr:aref w (arr:aref lr q)) pivot))
         (unless (inline (finite? v)) (return (refuse! s k 2)))
         (when signed
-          (arr:set! bound (arr:aref lr q) (+ (arr:aref bound (arr:aref lr q)) (* (* v v) (abs pivot)))))
+          (arr:set! bound (arr:aref lr q) (+ (arr:aref bound (arr:aref lr q)) (* (* v v) (abs pivot))))
+          (when (> (abs v) (cell:read steepest)) (cell:write! steepest (abs v))))
         (arr:set! lv q v)))
     (when signed
       ;; |L| |D| |L^T| is a Gram matrix, so its largest entry is on its diagonal.
       (let widest = (cell:new 0.0d0))
+      (let trace = (cell:new 0.0d0))
+      (let longest = (cell:new (the UFix 0)))
       (for ((i 0 (+ i 1))) :while (< i n)
-        (when (> (arr:aref bound i) (cell:read widest)) (cell:write! widest (arr:aref bound i))))
-      (arr:set! (.estimate f) 1 (if (> (cell:read top) 0.0d0) (/ (cell:read widest) (cell:read top)) 0.0d0)))
+        (when (> (arr:aref bound i) (cell:read widest)) (cell:write! widest (arr:aref bound i)))
+        (cell:write! trace (+ (cell:read trace) (arr:aref bound i)))
+        (let across = (- (arr:aref (.row-columns s) (+ i 1)) (arr:aref (.row-columns s) i)))
+        (when (> across (cell:read longest)) (cell:write! longest across)))
+      (arr:set! (.estimate f) 1 (if (> (cell:read top) 0.0d0) (/ (cell:read widest) (cell:read top)) 0.0d0))
+      ;; The backward error. Each entry of P K P^T - L D L^T is within gamma(w + 2) of the same
+      ;; entry of |L| |D| |L^T|, w the longest row of L, plus what underflow can add; the
+      ;; Frobenius norm of |L| |D| |L^T| is at most its trace. Every factor here is rounded up
+      ;; by a margin that covers the rounding of this arithmetic itself.
+      (let order = (lisp (-> F64) (n) (cl:coerce n 'cl:double-float)))
+      (let across-most = (cell:read longest))
+      (let reach = (lisp (-> F64) (across-most) (cl:coerce (cl:+ across-most 2) 'cl:double-float)))
+      (let relative = (/ (* reach unit-roundoff) (- 1.0d0 (* reach unit-roundoff))))
+      (let underflow = (* smallest-positive
+                          (+ 3.0d0 (* (* order reach) (+ 2.0d0 (* 2.0d0 (cell:read steepest)))))))
+      (let margin = (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order (+ (* 2.0d0 reach) 10.0d0)))))
+      (arr:set! (.estimate f) 2 (* margin (+ (* relative (cell:read trace)) underflow))))
     (arr:set! st 0 1)
     0)
 
@@ -386,6 +417,7 @@
     (arr:set! (.state f) 3 0)
     (arr:set! (.estimate f) 0 -1.0d0)
     (arr:set! (.estimate f) 1 -1.0d0)
+    (arr:set! (.estimate f) 2 -1.0d0)
     (arr:set! (.diagnostic s) 0 -1)
     (unless (== (arr:length values) (.input-count s)) (return FactorBadValues))
     (unless (inline (finite? shift)) (return FactorBadShift))

@@ -5,10 +5,15 @@
 ;;; refusal file, a system that names no run, and removal of stale artifacts.
 
 (defun expect-signed (output name index first-line numbers last-line)
+  "NUMBERS are the refused column, the two counts and the growth. The backward bound follows them: -1 with
+no factor, and otherwise positive and tiny, since these factors are exact."
   (let* ((path (fixture-path output name (format nil ".~D.signed.out.txt" index)))
-         (lines (file-lines path)))
-    (unless (and (= 6 (length lines)) (string= first-line (first lines)) (string= last-line (car (last lines)))
-                 (equalp numbers (file-numbers path)))
+         (lines (file-lines path)) (written (file-numbers path)))
+    (unless (and (= 7 (length lines)) (string= first-line (first lines)) (string= last-line (car (last lines)))
+                 (= 5 (length written)) (equalp numbers (subseq written 0 4))
+                 (if (string= last-line "solve none")
+                     (= -1d0 (fifth written))
+                     (< 0d0 (fifth written) 1d-12)))
       (error "Augmented driver wrote ~S for run ~D of ~A." lines index name))))
 
 (defun run-augmented-tools-tests ()
