@@ -1,7 +1,7 @@
 # Public interface reference
 
-This is the symbol index for the six public library packages, excluding examples,
-tooling and the private sparse/ordering package. The linked contracts specify storage, errors, ownership, numerical
+This is the symbol index for the seven public library packages, excluding examples,
+tooling and the private sparse/ordering, sparse/limits and dense/limits packages. The linked contracts specify storage, errors, ownership, numerical
 assumptions, and cost. See the [glossary](../CONTEXT.md) for mathematical terms.
 
 Below, `V` abbreviates `(coalton/lisparray:LispArray F64)`, and `I` abbreviates
@@ -146,9 +146,42 @@ i + j n, of which only the lower triangle is read.
 | `factor-permutation`, `factor-block-sizes` | Factor -> I |
 | `factor-lower`, `factor-diagonal`, `factor-subdiagonal` | Factor -> V |
 
-`FactorStatus` and `SolveStatus` here are distinct types from the sparse package's. A
-singular matrix is `FactorSuccess` with a nonzero `zero-count`. Inspection arrays are
+`FactorStatus` and `SolveStatus` here are distinct types from the sparse package's. An
+exactly zero pivot is `FactorSuccess` with a nonzero `zero-count`. Inspection arrays are
 borrowed, read-only by contract, and rewritten by the next `factor!`.
+
+## coalton-linalg/dense/orthogonal
+
+[Contract and derivation](orthogonal.md) · [Source](../src/dense/orthogonal.ct)
+
+A dense m-by-n matrix is a V of m n elements in column-major order, entry (i,j) at i + j m.
+
+| Export | Type or role |
+| --- | --- |
+| `Decomposition` | Reusable decomposition of one shape with private workspace; obtain from make-decomposition |
+| `make-decomposition` | UFix * UFix -> Decomposition; rows, columns, under default-entry-limit |
+| `make-decomposition-with-limit` | UFix * UFix * UFix -> Decomposition; explicit budget of m n entries |
+| `maximum-dimension`, `default-entry-limit` | UFix; 32,768 and 16,777,216 |
+| `row-count`, `column-count`, `step-count` | Decomposition -> UFix; step-count is the smaller dimension |
+| `FactorStatus` | `FactorSuccess`, `FactorNonFinite`, `FactorBadSize` |
+| `RankStatus` | `RankSuccess`, `RankInvalidFactor`, `RankTooLarge`, `RankSingular`, `RankNonFinite` |
+| `SolveStatus` | `SolveSuccess`, `SolveInvalidFactor`, `SolveNoRank`, `SolveBadSize`, `SolveBadIndex`, `SolveNonFiniteRhs`, `SolveNonFiniteResult` |
+| `factor!` | Decomposition * V -> FactorStatus; A P = Q R with column pivoting |
+| `factor-ready?`, `rank-set?` | Decomposition -> Boolean |
+| `pivot-magnitude` | Decomposition * UFix -> F64; magnitude of a diagonal entry of R |
+| `rank-above` | Decomposition * F64 -> UFix; leading diagonal entries strictly above an absolute threshold |
+| `set-rank!` | Decomposition * UFix -> RankStatus; complete the decomposition for a chosen rank |
+| `selected-rank` | Decomposition -> UFix |
+| `solve!` | Decomposition * V * V -> SolveStatus; minimum-norm least squares for the selected rank |
+| `solve-residual-norm` | Decomposition -> F64; latest successful solve, otherwise -1 |
+| `nullspace-vector!` | Decomposition * UFix * V -> SolveStatus; one orthonormal basis vector |
+| `apply-q!`, `apply-qt!` | Decomposition * V -> SolveStatus; in place on a vector of row-count entries |
+| `factor-permutation` | Decomposition -> I |
+| `factor-work`, `factor-tau` | Decomposition -> V; R with reflector tails below it, and the reflector scalars |
+
+The three status types are distinct from each other and from the other packages' types of
+the same names. The rank is always the caller's choice; nothing is solved until
+`set-rank!` succeeds.
 
 ## Choosing the entry point
 
@@ -156,7 +189,9 @@ Use [the SPD example](../examples/spd-solve.ct) for analyze/factor!/solve! and
 [the sparse example](../examples/sparse-operations.ct) for matrix construction
 and products. [The normal-equations example](../examples/normal-equations.ct) joins Gram
 products to the SPD factorization, and [the minimum-norm example](../examples/minimum-norm.ct)
-uses the dense indefinite factorization. All are compiled and exercised by the library tests.
+uses the dense indefinite factorization. [The dependent-constraints
+example](../examples/dependent-constraints.ct) picks a rank and solves through the
+orthogonal decomposition. All are compiled and exercised by the library tests.
 
 A general CSC matrix represents exactly its stored entries; it has no implicit
 symmetry. The SPD interface specifically interprets its lower triangle as a

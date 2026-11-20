@@ -32,7 +32,7 @@ The strict upper triangle may hold anything, including non-finite values.
 
 | FactorStatus | Meaning |
 | --- | --- |
-| FactorSuccess | A factor stands, **including for a singular matrix**; read `zero-count` |
+| FactorSuccess | A factor stands, **including one with exactly zero pivots**; read `zero-count` |
 | FactorNonFinite | A non-finite lower-triangle input, shifted diagonal, pivot or multiplier |
 | FactorBadSize | The array does not have n² elements |
 | FactorBadShift | Non-finite shift |
@@ -94,10 +94,14 @@ matrix, for exact small-integer cancellations, and rarely otherwise. A caller de
 rank near a threshold chooses the shift and reads the counts on both sides of it; this
 package makes no rank decision.
 
-**A singular matrix completes.** When the remaining matrix has an entirely zero pivot
+**An exactly zero pivot completes.** When the remaining matrix has an entirely zero pivot
 column, that pivot is recorded as zero with zero multipliers and elimination continues.
 The result is `FactorSuccess` with `zero-count` above 0, and `solve!` then returns
-`SolveSingular`. The factorization does not solve singular systems: whether a singular
+`SolveSingular`. **An exactly singular input does not always get there**: rounding in
+earlier steps usually leaves a pivot of rounding size instead, the zero count is 0, and a
+solve succeeds with a very large answer. Reading the counts either side of a threshold of
+the caller's choosing is the reliable test, and
+[the orthogonal decomposition](orthogonal.md) is the tool when rank itself is the question. The factorization does not solve singular systems: whether a singular
 system is consistent, and which solution is wanted, are different problems.
 
 For an m-by-n matrix J of rank r, the augmented matrix `[[I, Jᵀ], [J, 0]]` is congruent

@@ -1,0 +1,432 @@
+(cl:defpackage #:coalton-linalg/dense/orthogonal
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math) (#:limits #:coalton-linalg/dense/limits))
+  (:import-from #:coalton/math #:finite?)
+  (:export #:Decomposition #:make-decomposition #:make-decomposition-with-limit
+           #:maximum-dimension #:default-entry-limit #:row-count #:column-count #:step-count
+           #:FactorStatus #:FactorSuccess #:FactorNonFinite #:FactorBadSize
+           #:RankStatus #:RankSuccess #:RankInvalidFactor #:RankTooLarge #:RankSingular #:RankNonFinite
+           #:SolveStatus #:SolveSuccess #:SolveInvalidFactor #:SolveNoRank #:SolveBadSize #:SolveBadIndex
+           #:SolveNonFiniteRhs #:SolveNonFiniteResult
+           #:factor! #:factor-ready? #:pivot-magnitude #:rank-above
+           #:set-rank! #:rank-set? #:selected-rank
+           #:solve! #:solve-residual-norm #:nullspace-vector! #:apply-q! #:apply-qt!
+           #:factor-permutation #:factor-work #:factor-tau))
+(cl:in-package #:coalton-linalg/dense/orthogonal)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+(coalton-toplevel
+  (define-struct DecompositionStorage
+    "Owned pivoted QR, the completed trapezoid for one selected rank, and workspace."
+    (rows UFix)
+    (columns UFix)
+    (steps UFix)
+    (work (arr:LispArray F64))
+    (tau (arr:LispArray F64))
+    (permutation (arr:LispArray UFix))
+    (trapezoid (arr:LispArray F64))
+    (ztau (arr:LispArray F64))
+    (norms (arr:LispArray F64))
+    (left (arr:LispArray F64))
+    (right (arr:LispArray F64))
+    (state (arr:LispArray UFix))
+    (residual (arr:LispArray F64)))
+
+  (repr :transparent)
+  (define-type Decomposition
+    "Reusable orthogonal decomposition of one matrix shape; construction and workspace fields are private."
+    (MkDecomposition DecompositionStorage))
+
+  (inline)
+  (declare storage (Decomposition -> DecompositionStorage))
+  (define (storage decomposition) (match decomposition ((MkDecomposition held) held)))
+
+  (derive Eq)
+  (repr :enum)
+  (define-type FactorStatus
+    "Outcome of a pivoted QR factorization call."
+    FactorSuccess FactorNonFinite FactorBadSize)
+
+  (derive Eq)
+  (repr :enum)
+  (define-type RankStatus
+    "Outcome of selecting a rank and completing the decomposition for it."
+    RankSuccess RankInvalidFactor RankTooLarge RankSingular RankNonFinite)
+
+  (derive Eq)
+  (repr :enum)
+  (define-type SolveStatus
+    "Outcome of a solve, a nullspace request or a reflector application."
+    SolveSuccess SolveInvalidFactor SolveNoRank SolveBadSize SolveBadIndex SolveNonFiniteRhs SolveNonFiniteResult)
+
+  (declare maximum-dimension UFix)
+  (define maximum-dimension limits:maximum-dimension)
+
+  (declare default-entry-limit UFix)
+  (define default-entry-limit limits:default-entry-limit)
+
+  (declare make-decomposition-with-limit (UFix * UFix * UFix -> Decomposition))
+  (define (make-decomposition-with-limit m n maximum-entries)
+    "Allocate reusable storage for m-by-n matrices when m * n is within the entry budget."
+    (limits:check-storage! m n maximum-entries)
+    (let steps = (min m n))
+    (MkDecomposition
+     (DecompositionStorage m n steps (arr:make (* m n) 0.0d0) (arr:make steps 0.0d0)
+                           (arr:make n (the UFix 0)) (arr:make (* steps n) 0.0d0) (arr:make steps 0.0d0)
+                           (arr:make n 0.0d0)
+                           (arr:make m 0.0d0) (arr:make n 0.0d0) (arr:make 3 (the UFix 0))
+                           (arr:make 1 -1.0d0))))
+
+  (declare make-decomposition (UFix * UFix -> Decomposition))
+  (define (make-decomposition m n)
+    "Allocate reusable storage under default-entry-limit. Nothing is ready until factor! succeeds."
+    (make-decomposition-with-limit m n default-entry-limit))
+
+  (declare row-count (Decomposition -> UFix))
+  (define (row-count decomposition) (.rows (storage decomposition)))
+  (declare column-count (Decomposition -> UFix))
+  (define (column-count decomposition) (.columns (storage decomposition)))
+  (declare step-count (Decomposition -> UFix))
+  (define (step-count decomposition)
+    "The smaller dimension: the number of reflectors and of diagonal entries of R."
+    (.steps (storage decomposition)))
+  (declare factor-ready? (Decomposition -> Boolean))
+  (define (factor-ready? decomposition) (== (arr:aref (.state (storage decomposition)) 0) 1))
+  (declare rank-set? (Decomposition -> Boolean))
+  (define (rank-set? decomposition) (== (arr:aref (.state (storage decomposition)) 1) 1))
+  (declare selected-rank (Decomposition -> UFix))
+  (define (selected-rank decomposition)
+    "The rank of the latest successful set-rank!; 0 when none stands."
+    (arr:aref (.state (storage decomposition)) 2))
+  (declare solve-residual-norm (Decomposition -> F64))
+  (define (solve-residual-norm decomposition)
+    "Euclidean residual of the latest successful solve against the rank-truncated matrix; -1 when none stands."
+    (arr:aref (.residual (storage decomposition)) 0))
+  (declare factor-permutation (Decomposition -> arr:LispArray UFix))
+  (define (factor-permutation decomposition) (.permutation (storage decomposition)))
+  (declare factor-work (Decomposition -> arr:LispArray F64))
+  (define (factor-work decomposition) (.work (storage decomposition)))
+  (declare factor-tau (Decomposition -> arr:LispArray F64))
+  (define (factor-tau decomposition) (.tau (storage decomposition)))
+
+  ;; Sums of squares are formed unscaled while the largest entry lies between these two powers
+  ;; of two, and otherwise after an exact scaling by a power of two that brings it there.
+  (declare norm-ceiling F64)
+  (define norm-ceiling (lisp (-> F64) () (cl:scale-float 1d0 500)))
+  (declare norm-floor F64)
+  (define norm-floor (lisp (-> F64) () (cl:scale-float 1d0 -500)))
+  (declare scale-down F64)
+  (define scale-down (lisp (-> F64) () (cl:scale-float 1d0 -600)))
+  (declare scale-up F64)
+  (define scale-up (lisp (-> F64) () (cl:scale-float 1d0 600)))
+
+  (declare segment-norm (arr:LispArray F64 * UFix * UFix * UFix -> F64))
+  (define (segment-norm w start count stride)
+    "Euclidean norm of count entries from start at the given stride, safe against overflow and underflow."
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q count)
+      (let v = (abs (arr:aref w (+ start (* q stride)))))
+      ;; A NaN is neither larger nor not larger; the comparison below is written so it is kept.
+      (unless (<= v (cell:read largest)) (cell:write! largest v)))
+    (let top = (cell:read largest))
+    (if (or (== top 0.0d0) (not (inline (finite? top))))
+        top
+        (progn
+          (let factor = (if (> top norm-ceiling) scale-down (if (< top norm-floor) scale-up 1.0d0)))
+          (let squares = (cell:new 0.0d0))
+          (for ((q 0 (+ q 1))) :while (< q count)
+            (let scaled = (* (arr:aref w (+ start (* q stride))) factor))
+            (cell:write! squares (+ (cell:read squares) (* scaled scaled))))
+          (/ (math:sqrt (cell:read squares)) factor))))
+
+  (declare make-reflector! (arr:LispArray F64 * UFix * UFix * UFix * UFix -> F64))
+  (define (make-reflector! w head start count stride)
+    "Turn (head, tail) into (beta, reflector tail) with an implicit leading 1; return tau. See docs/orthogonal.md."
+    (let alpha = (arr:aref w head))
+    (let sigma = (segment-norm w start count stride))
+    (if (== sigma 0.0d0)
+        0.0d0
+        (progn
+          (let top = (max (abs alpha) sigma))
+          (let ra = (/ alpha top))
+          (let rs = (/ sigma top))
+          (let reach = (* top (math:sqrt (+ (* ra ra) (* rs rs)))))
+          ;; beta takes the sign opposite to alpha, so alpha - beta adds magnitudes.
+          (let beta = (if (> alpha 0.0d0) (- 0.0d0 reach) reach))
+          (let divisor = (- alpha beta))
+          (for ((q 0 (+ q 1))) :while (< q count)
+            (arr:set! w (+ start (* q stride)) (/ (arr:aref w (+ start (* q stride))) divisor)))
+          (arr:set! w head beta)
+          (/ (- beta alpha) beta))))
+
+  (declare apply-reflector! (F64 * arr:LispArray F64 * UFix * UFix * arr:LispArray F64 * UFix * UFix * UFix * UFix -> Void))
+  (define (apply-reflector! tau v vstart vstride y head ystart ystride count)
+    "y := (I - tau u u^T) y on one head entry and count tail entries, u = (1, v tail)."
+    (unless (== tau 0.0d0)
+      (let dot = (cell:new (arr:aref y head)))
+      (for ((q 0 (+ q 1))) :while (< q count)
+        (cell:write! dot (+ (cell:read dot)
+                            (* (arr:aref v (+ vstart (* q vstride))) (arr:aref y (+ ystart (* q ystride)))))))
+      (let scaled = (* tau (cell:read dot)))
+      (arr:set! y head (- (arr:aref y head) scaled))
+      (for ((q 0 (+ q 1))) :while (< q count)
+        (arr:set! y (+ ystart (* q ystride))
+                  (- (arr:aref y (+ ystart (* q ystride)))
+                     (* scaled (arr:aref v (+ vstart (* q vstride)))))))))
+
+  (declare apply-reflector-measuring! (F64 * arr:LispArray F64 * UFix * arr:LispArray F64 * UFix * UFix * UFix
+                                       * arr:LispArray F64 * UFix -> Void))
+  (define (apply-reflector-measuring! tau v vstart y head ystart count norms slot)
+    "apply-reflector! at unit strides, writing the Euclidean norm of the tail it leaves into norms[slot]."
+    (if (== tau 0.0d0)
+        (arr:set! norms slot (segment-norm y ystart count 1))
+        (progn
+          (let dot = (cell:new (arr:aref y head)))
+          (for ((q 0 (+ q 1))) :while (< q count)
+            (cell:write! dot (+ (cell:read dot) (* (arr:aref v (+ vstart q)) (arr:aref y (+ ystart q))))))
+          (let scaled = (* tau (cell:read dot)))
+          (arr:set! y head (- (arr:aref y head) scaled))
+          (let largest = (cell:new 0.0d0))
+          (let squares = (cell:new 0.0d0))
+          (for ((q 0 (+ q 1))) :while (< q count)
+            (let updated = (- (arr:aref y (+ ystart q)) (* scaled (arr:aref v (+ vstart q)))))
+            (arr:set! y (+ ystart q) updated)
+            (unless (<= (abs updated) (cell:read largest)) (cell:write! largest (abs updated)))
+            (cell:write! squares (+ (cell:read squares) (* updated updated))))
+          ;; In the unscaled range this sum is the one segment-norm would form, term for term.
+          (let top = (cell:read largest))
+          (arr:set! norms slot
+                    (if (and (>= top norm-floor) (<= top norm-ceiling))
+                        (math:sqrt (cell:read squares))
+                        (segment-norm y ystart count 1))))))
+
+  (declare factor! (Decomposition * arr:LispArray F64 -> FactorStatus))
+  (define (factor! decomposition a)
+    "Factor A P = Q R from column-major a, choosing at each step the remaining column of largest norm."
+    (let f = (storage decomposition))
+    (let m = (.rows f))
+    (let n = (.columns f))
+    (let steps = (.steps f))
+    (let st = (.state f))
+    (arr:set! st 0 0)
+    (arr:set! st 1 0)
+    (arr:set! st 2 0)
+    (arr:set! (.residual f) 0 -1.0d0)
+    (unless (== (arr:length a) (* m n)) (return FactorBadSize))
+    (let w = (.work f))
+    (let permutation = (.permutation f))
+    (for ((q 0 (+ q 1))) :while (< q (* m n))
+      (let v = (arr:aref a q))
+      (unless (inline (finite? v)) (return FactorNonFinite))
+      (arr:set! w q v))
+    (let norms = (.norms f))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! permutation j j)
+      (arr:set! norms j (segment-norm w (* j m) m 1)))
+    (for ((k 0 (+ k 1))) :while (< k steps)
+      ;; norms[j] is the norm of column j over rows k and below, measured from the current
+      ;; entries when they were last written, never updated by a formula.
+      (let best = (cell:new -1.0d0))
+      (let at = (cell:new k))
+      (for ((j k (+ j 1))) :while (< j n)
+        (let size = (arr:aref norms j))
+        (unless (inline (finite? size)) (return FactorNonFinite))
+        (when (> size (cell:read best))
+          (cell:write! best size)
+          (cell:write! at j)))
+      (let pivot = (cell:read at))
+      (unless (== pivot k)
+        (let held = (arr:aref permutation k))
+        (arr:set! permutation k (arr:aref permutation pivot))
+        (arr:set! permutation pivot held)
+        (for ((i 0 (+ i 1))) :while (< i m)
+          (let v = (arr:aref w (+ i (* k m))))
+          (arr:set! w (+ i (* k m)) (arr:aref w (+ i (* pivot m))))
+          (arr:set! w (+ i (* pivot m)) v)))
+      (let extent = (- (- m k) 1))
+      (let tau = (make-reflector! w (+ k (* k m)) (+ (+ k 1) (* k m)) extent 1))
+      (unless (and (inline (finite? tau)) (inline (finite? (arr:aref w (+ k (* k m))))))
+        (return FactorNonFinite))
+      (arr:set! (.tau f) k tau)
+      (for ((j (+ k 1) (+ j 1))) :while (< j n)
+        (apply-reflector-measuring! tau w (+ (+ k 1) (* k m))
+                                    w (+ k (* j m)) (+ (+ k 1) (* j m)) extent norms j)))
+    ;; Columns past the last step were updated but never measured again.
+    (for ((j steps (+ j 1))) :while (< j n)
+      (for ((i 0 (+ i 1))) :while (< i steps)
+        (unless (inline (finite? (arr:aref w (+ i (* j m))))) (return FactorNonFinite))))
+    (arr:set! st 0 1)
+    FactorSuccess)
+
+  (declare pivot-magnitude (Decomposition * UFix -> F64))
+  (define (pivot-magnitude decomposition k)
+    "Magnitude of diagonal entry k of R; 0 when no factor stands or k is not below step-count."
+    (let f = (storage decomposition))
+    (if (and (== (arr:aref (.state f) 0) 1) (< k (.steps f)))
+        (abs (arr:aref (.work f) (+ k (* k (.rows f)))))
+        0.0d0))
+
+  (declare rank-above (Decomposition * F64 -> UFix))
+  (define (rank-above decomposition threshold)
+    "Number of leading diagonal entries of R strictly larger in magnitude than threshold; 0 when no factor stands."
+    (let f = (storage decomposition))
+    (let m = (.rows f))
+    (let count = (cell:new (the UFix 0)))
+    (when (== (arr:aref (.state f) 0) 1)
+      (for ((k 0 (+ k 1))) :while (and (< k (.steps f))
+                                       (> (abs (arr:aref (.work f) (+ k (* k m)))) threshold))
+        (cell:write! count (+ k 1))))
+    (cell:read count))
+
+  (declare set-rank! (Decomposition * UFix -> RankStatus))
+  (define (set-rank! decomposition rank)
+    "Keep the leading rank rows of R and reduce them to a triangle by reflections from the right."
+    (let f = (storage decomposition))
+    (let m = (.rows f))
+    (let n = (.columns f))
+    (let steps = (.steps f))
+    (let st = (.state f))
+    (arr:set! st 1 0)
+    (arr:set! st 2 0)
+    (arr:set! (.residual f) 0 -1.0d0)
+    (unless (== (arr:aref st 0) 1) (return RankInvalidFactor))
+    (when (> rank steps) (return RankTooLarge))
+    (let w = (.work f))
+    (for ((i 0 (+ i 1))) :while (< i rank)
+      (when (== (arr:aref w (+ i (* i m))) 0.0d0) (return RankSingular)))
+    (let trapezoid = (.trapezoid f))
+    (let ztau = (.ztau f))
+    ;; The kept rows are stored row by row, entry (i,c) at c + i n, so each row is contiguous.
+    (for ((i 0 (+ i 1))) :while (< i rank)
+      (for ((c 0 (+ c 1))) :while (< c n)
+        (arr:set! trapezoid (+ c (* i n))
+                  (if (<= i c) (arr:aref w (+ i (* c m))) 0.0d0))))
+    (for ((i 0 (+ i 1))) :while (< i rank)
+      (arr:set! ztau i 0.0d0))
+    (when (< rank n)
+      (let extent = (- n rank))
+      ;; From the last kept row upward: each reflection folds a row's entries beyond the
+      ;; triangle into its diagonal entry and leaves the rows below it untouched.
+      (for ((remaining rank (- remaining 1))) :while (> remaining 0)
+        (let i = (- remaining 1))
+        (let tau = (make-reflector! trapezoid (+ i (* i n)) (+ rank (* i n)) extent 1))
+        (unless (and (inline (finite? tau)) (inline (finite? (arr:aref trapezoid (+ i (* i n))))))
+          (return RankNonFinite))
+        (arr:set! ztau i tau)
+        (for ((j 0 (+ j 1))) :while (< j i)
+          (apply-reflector! tau trapezoid (+ rank (* i n)) 1
+                            trapezoid (+ i (* j n)) (+ rank (* j n)) 1 extent))))
+    (arr:set! st 2 rank)
+    (arr:set! st 1 1)
+    RankSuccess)
+
+  (declare apply-qt-in-place! (DecompositionStorage * arr:LispArray F64 -> Void))
+  (define (apply-qt-in-place! f c)
+    (let m = (.rows f))
+    (let w = (.work f))
+    (for ((k 0 (+ k 1))) :while (< k (.steps f))
+      (apply-reflector! (arr:aref (.tau f) k) w (+ (+ k 1) (* k m)) 1 c k (+ k 1) 1 (- (- m k) 1))))
+
+  (declare apply-q-in-place! (DecompositionStorage * arr:LispArray F64 -> Void))
+  (define (apply-q-in-place! f c)
+    (let m = (.rows f))
+    (let w = (.work f))
+    (for ((remaining (.steps f) (- remaining 1))) :while (> remaining 0)
+      (let k = (- remaining 1))
+      (apply-reflector! (arr:aref (.tau f) k) w (+ (+ k 1) (* k m)) 1 c k (+ k 1) 1 (- (- m k) 1))))
+
+  (declare apply-z-in-place! (DecompositionStorage * arr:LispArray F64 -> Void))
+  (define (apply-z-in-place! f y)
+    (let n = (.columns f))
+    (let rank = (arr:aref (.state f) 2))
+    (when (< rank n)
+      (for ((i 0 (+ i 1))) :while (< i rank)
+        (apply-reflector! (arr:aref (.ztau f) i) (.trapezoid f) (+ rank (* i n)) 1
+                          y i rank 1 (- n rank)))))
+
+  (declare all-finite? (arr:LispArray F64 -> Boolean))
+  (define (all-finite? vector)
+    (let good = (cell:new True))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length vector))
+      (unless (inline (finite? (arr:aref vector i))) (cell:write! good False)))
+    (cell:read good))
+
+  (declare solve! (Decomposition * arr:LispArray F64 * arr:LispArray F64 -> SolveStatus))
+  (define (solve! decomposition b x)
+    "Minimum-norm least-squares solution of the rank-truncated problem into x; x is preserved on refusal."
+    (let f = (storage decomposition))
+    (let st = (.state f))
+    (arr:set! (.residual f) 0 -1.0d0)
+    (unless (== (arr:aref st 0) 1) (return SolveInvalidFactor))
+    (unless (== (arr:aref st 1) 1) (return SolveNoRank))
+    (let m = (.rows f))
+    (let n = (.columns f))
+    (unless (and (== (arr:length b) m) (== (arr:length x) n)) (return SolveBadSize))
+    (let c = (.left f))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let v = (arr:aref b i))
+      (unless (inline (finite? v)) (return SolveNonFiniteRhs))
+      (arr:set! c i v))
+    (apply-qt-in-place! f c)
+    (let rank = (arr:aref st 2))
+    (let residual = (segment-norm c rank (- m rank) 1))
+    (unless (inline (finite? residual)) (return SolveNonFiniteResult))
+    (let trapezoid = (.trapezoid f))
+    (let y = (.right f))
+    (for ((remaining rank (- remaining 1))) :while (> remaining 0)
+      (let i = (- remaining 1))
+      (let acc = (cell:new (arr:aref c i)))
+      (for ((j (+ i 1) (+ j 1))) :while (< j rank)
+        (cell:write! acc (- (cell:read acc) (* (arr:aref trapezoid (+ j (* i n))) (arr:aref y j)))))
+      (let v = (/ (cell:read acc) (arr:aref trapezoid (+ i (* i n)))))
+      (unless (inline (finite? v)) (return SolveNonFiniteResult))
+      (arr:set! y i v))
+    (for ((j rank (+ j 1))) :while (< j n)
+      (arr:set! y j 0.0d0))
+    (apply-z-in-place! f y)
+    (unless (all-finite? y) (return SolveNonFiniteResult))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! x (arr:aref (.permutation f) j) (arr:aref y j)))
+    (arr:set! (.residual f) 0 residual)
+    SolveSuccess)
+
+  (declare nullspace-vector! (Decomposition * UFix * arr:LispArray F64 -> SolveStatus))
+  (define (nullspace-vector! decomposition index out)
+    "Write basis vector index of the selected nullspace, of dimension columns minus rank, into out."
+    (let f = (storage decomposition))
+    (let st = (.state f))
+    (unless (== (arr:aref st 0) 1) (return SolveInvalidFactor))
+    (unless (== (arr:aref st 1) 1) (return SolveNoRank))
+    (let n = (.columns f))
+    (let rank = (arr:aref st 2))
+    (unless (== (arr:length out) n) (return SolveBadSize))
+    (unless (< index (- n rank)) (return SolveBadIndex))
+    (let y = (.right f))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! y j 0.0d0))
+    (arr:set! y (+ rank index) 1.0d0)
+    (apply-z-in-place! f y)
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! out (arr:aref (.permutation f) j) (arr:aref y j)))
+    SolveSuccess)
+
+  (declare apply-q! (Decomposition * arr:LispArray F64 -> SolveStatus))
+  (define (apply-q! decomposition v)
+    "v := Q v in place for a vector of row-count entries. A non-finite result leaves v unspecified."
+    (let f = (storage decomposition))
+    (unless (== (arr:aref (.state f) 0) 1) (return SolveInvalidFactor))
+    (unless (== (arr:length v) (.rows f)) (return SolveBadSize))
+    (unless (all-finite? v) (return SolveNonFiniteRhs))
+    (apply-q-in-place! f v)
+    (if (all-finite? v) SolveSuccess SolveNonFiniteResult))
+
+  (declare apply-qt! (Decomposition * arr:LispArray F64 -> SolveStatus))
+  (define (apply-qt! decomposition v)
+    "v := Q^T v in place for a vector of row-count entries. A non-finite result leaves v unspecified."
+    (let f = (storage decomposition))
+    (unless (== (arr:aref (.state f) 0) 1) (return SolveInvalidFactor))
+    (unless (== (arr:length v) (.rows f)) (return SolveBadSize))
+    (unless (all-finite? v) (return SolveNonFiniteRhs))
+    (apply-qt-in-place! f v)
+    (if (all-finite? v) SolveSuccess SolveNonFiniteResult)))

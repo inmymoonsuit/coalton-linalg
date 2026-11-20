@@ -83,6 +83,29 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 5: orthogonal decompositions
+
+**These are standard published methods.** Householder reflections, QR with column
+pivoting by largest remaining norm (Businger and Golub, 1965), and the reduction of the
+kept upper trapezoid to a triangle by reflections from the right, which gives the complete
+orthogonal decomposition and the minimum-norm solution, are textbook material; the
+planned-batch page asked for them by name and links prose descriptions. The code was
+written from the derivation on [the contract page](orthogonal.md), which was written
+first: the reflector's formulas are verified there from its definition, and the solve and
+the nullspace follow from the factorization's block form. The methods were known from
+their descriptions. No numerical-library implementation and no algorithm listing or
+pseudocode box was opened while writing it; the same open maintainer decision as for
+Batches 3d and 4 applies.
+
+Two choices are this library's own. Column norms are measured afresh from the current
+entries in the pass that updates each column, where the classical method updates old norms
+by a formula and guards the update. Sums of squares are scaled by fixed powers of two
+chosen by comparison. The Kahan matrix and its small diagonal perturbation are a published
+test case, used from its description. The tests' references are an exact rational product
+of Q read back column by column, and an exact minimum-norm solution from an exact rank
+factorization, both written for the tests. NumPy and SciPy were used after the
+implementation, as a comparison and a timing reference only.
+
 ## Batch 4: dense symmetric indefinite factorization
 
 **This factorization follows published methods.** Block-diagonal pivoting with 1-by-1 and

@@ -12,8 +12,9 @@ matrix, with 1-by-1 and 2-by-2 pivots chosen by a column search that bounds ever
 multiplier by 1/(1 - α) ≈ 2.78. The existing sparse SPD contract is unchanged.
 
 - The inertia counts both eigenvalues of each 2-by-2 block.
-- A singular matrix completes as `FactorSuccess` with a nonzero `zero-count`; `solve!`
-  then returns `SolveSingular`.
+- A matrix whose computed D holds an exactly zero pivot completes as `FactorSuccess` with a
+  nonzero `zero-count`, and `solve!` then returns `SolveSingular`. An exactly singular
+  input may instead show a pivot at rounding level and a zero count of 0.
 - A 2-by-2 block is inverted in a form divided by its off-diagonal entry, so no square of
   an entry is formed.
 - A compiled example, [minimum-norm.ct](../examples/minimum-norm.ct), solves a
@@ -151,6 +152,13 @@ A reviewer of the first delivery found no defect and made three points, each tak
   inertia and solution at named shifts for an independent checker; the contract page has
   the file protocol. Its regressions cover an exact factor file, shifts from the meta
   file, a named singular solve, a named factor refusal, and removal of stale artifacts.
+
+- A held-back set run by the reviewer on the follow-up, 21 systems and 37 runs, passed, and
+  corrected one sentence here and in the contract: two of its systems are exactly singular
+  in their stored values and complete with `zero-count` 0 and a smallest pivot of
+  -1.7 × 10⁻³⁰ and 4.4 × 10⁻¹⁶. The limits already said the inertia is that of the computed
+  D; the sentences that promised a zero count for every singular matrix now say what is
+  true.
 
 ## Limits
 

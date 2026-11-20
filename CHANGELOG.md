@@ -2,6 +2,21 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.5.0 — 2026-11-19
+
+Added:
+
+- `coalton-linalg/dense/orthogonal`: column-pivoted Householder QR of a dense matrix of
+  any shape, a rank chosen by the caller from the diagonal of R, the complete orthogonal
+  decomposition for that rank, the minimum-norm least-squares solution with its residual
+  norm, an orthonormal nullspace basis, and Q applied without being formed.
+  [Contract](docs/orthogonal.md) · [record](docs/batch5.md).
+- A compiled example with a repeated equation, `examples/dependent-constraints.ct`.
+
+Corrected: the dense indefinite documents said a singular matrix completes with a nonzero
+zero count. That holds when a computed pivot is exactly zero; an exactly singular input
+can show a pivot at rounding level instead. No code changed.
+
 ## 0.4.1 — 2026-11-19
 
 Added: `make-factor-with-limit` and `default-entry-limit` in

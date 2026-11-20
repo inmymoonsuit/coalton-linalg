@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.4.1"
+  :version "0.5.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -16,13 +16,14 @@
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
                                            (:ct-file "gram") (:ct-file "spd-ldlt")))
                              (:module "dense" :serial t
-                              :components ((:ct-file "indefinite-ldlt")))))))
+                              :components ((:ct-file "limits") (:ct-file "indefinite-ldlt")
+                                           (:ct-file "orthogonal")))))))
 
 (asdf:defsystem "coalton-linalg/examples"
   :description "Runnable public-interface examples."
   :depends-on ("coalton-linalg")
   :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
-                                                (:ct-file "normal-equations") (:ct-file "minimum-norm")))))
+                                                (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -38,7 +39,8 @@
                              (:ct-file "gram-callers") (:file "gram-runtime")
                              (:file "gram-properties")
                              (:ct-file "condition-callers") (:file "condition")
-                             (:ct-file "indefinite-callers") (:file "indefinite") (:file "suite"))))
+                             (:ct-file "indefinite-callers") (:file "indefinite")
+                             (:ct-file "orthogonal-callers") (:file "orthogonal") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))

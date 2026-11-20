@@ -1,0 +1,95 @@
+(cl:defpackage #:coalton-linalg/tests/orthogonal-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:og #:coalton-linalg/dense/orthogonal)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:observe-factor #:observe-rank #:observe-solve #:observe-nullspace
+           #:observe-apply-q #:observe-apply-qt #:pipeline-loop #:storage-error))
+(cl:in-package #:coalton-linalg/tests/orthogonal-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare factor-code (og:FactorStatus -> UFix))
+  (define (factor-code status)
+    (match status
+      ((og:FactorSuccess) 0)
+      ((og:FactorNonFinite) 1)
+      ((og:FactorBadSize) 2)))
+
+  (declare rank-code (og:RankStatus -> UFix))
+  (define (rank-code status)
+    (match status
+      ((og:RankSuccess) 0)
+      ((og:RankInvalidFactor) 1)
+      ((og:RankTooLarge) 2)
+      ((og:RankSingular) 3)
+      ((og:RankNonFinite) 4)))
+
+  (declare solve-code (og:SolveStatus -> UFix))
+  (define (solve-code status)
+    (match status
+      ((og:SolveSuccess) 0)
+      ((og:SolveInvalidFactor) 1)
+      ((og:SolveNoRank) 2)
+      ((og:SolveBadSize) 3)
+      ((og:SolveBadIndex) 4)
+      ((og:SolveNonFiniteRhs) 5)
+      ((og:SolveNonFiniteResult) 6)))
+
+  (declare observe-factor (og:Decomposition * arr:LispArray F64 -> UFix))
+  (define (observe-factor decomposition a)
+    "Exhaustively matched factor outcome: success 0, non-finite 1, size 2."
+    (factor-code (og:factor! decomposition a)))
+
+  (declare observe-rank (og:Decomposition * UFix -> UFix))
+  (define (observe-rank decomposition rank)
+    "Exhaustively matched rank outcome: success 0, invalid 1, too large 2, singular 3, non-finite 4."
+    (rank-code (og:set-rank! decomposition rank)))
+
+  (declare observe-solve (og:Decomposition * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (observe-solve decomposition b x)
+    "Exhaustively matched outcome: success 0, invalid 1, no rank 2, size 3, index 4, rhs 5, result 6."
+    (solve-code (og:solve! decomposition b x)))
+
+  (declare observe-nullspace (og:Decomposition * UFix * arr:LispArray F64 -> UFix))
+  (define (observe-nullspace decomposition index out)
+    (solve-code (og:nullspace-vector! decomposition index out)))
+
+  (declare observe-apply-q (og:Decomposition * arr:LispArray F64 -> UFix))
+  (define (observe-apply-q decomposition v)
+    (solve-code (og:apply-q! decomposition v)))
+
+  (declare observe-apply-qt (og:Decomposition * arr:LispArray F64 -> UFix))
+  (define (observe-apply-qt decomposition v)
+    (solve-code (og:apply-qt! decomposition v)))
+
+  (declare pipeline-loop (og:Decomposition * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64
+                          * arr:LispArray F64 * F64 * UFix -> UFix))
+  (define (pipeline-loop decomposition a b x basis relative count)
+    "A real external caller: factor, choose a rank by a relative threshold, complete, solve, read one nullspace vector."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (og:factor! decomposition a) og:FactorSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (let rank = (og:rank-above decomposition (* relative (og:pivot-magnitude decomposition 0))))
+      (unless (== (og:set-rank! decomposition rank) og:RankSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (og:solve! decomposition b x) og:SolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (>= (og:solve-residual-norm decomposition) 0.0d0)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (when (< rank (og:column-count decomposition))
+        (unless (== (og:nullspace-vector! decomposition 0 basis) og:SolveSuccess)
+          (cell:write! failures (+ (cell:read failures) 1)))))
+    (cell:read failures))
+
+  (declare storage-error (UFix * UFix * UFix -> UFix))
+  (define (storage-error m n maximum-entries)
+    "Test-only codes for make-decomposition-with-limit: success 0, dimension limit 3, entry budget 4, unexpected 99."
+    (catch (progn (og:make-decomposition-with-limit m n maximum-entries) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisLimitExceeded _ _) 3)
+         ((err:AnalysisStorageExceeded _ _) 4)
+         (_ 99)))
+      (_ 99))))

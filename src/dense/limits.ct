@@ -1,0 +1,23 @@
+(cl:defpackage #:coalton-linalg/dense/limits
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:err #:coalton-linalg/errors))
+  (:export #:maximum-dimension #:default-entry-limit #:check-storage!))
+(cl:in-package #:coalton-linalg/dense/limits)
+
+(coalton-toplevel
+  ;; The product of two dimensions within this bound is representable as an array length.
+  (declare maximum-dimension UFix)
+  (define maximum-dimension 32768)
+
+  (declare default-entry-limit UFix)
+  (define default-entry-limit 16777216)
+
+  (declare check-storage! (UFix * UFix * UFix -> Void))
+  (define (check-storage! rows columns maximum-entries)
+    "Refuse by name before any allocation sized by rows * columns."
+    (when (> rows maximum-dimension)
+      (throw (err:AnalysisLimitExceeded rows maximum-dimension)))
+    (when (> columns maximum-dimension)
+      (throw (err:AnalysisLimitExceeded columns maximum-dimension)))
+    (when (> (* rows columns) maximum-entries)
+      (throw (err:AnalysisStorageExceeded (into (* rows columns)) maximum-entries)))))

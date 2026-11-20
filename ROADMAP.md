@@ -38,7 +38,7 @@ artifacts. The exact-singular regression demonstrates the computed-pivot contrac
 
 ## Batches 3 through 6
 
-Batch 3, in four steps 3a through 3d, and Batch 4 are completed; Batches 5 and 6 are planned. [The batch record](docs/batch3a.md)
+Batch 3, in four steps 3a through 3d, and Batches 4 and 5 are completed; Batch 6 is planned. [The batch record](docs/batch3a.md)
 reports independent review, both safety gates and measurements through 65,536 rows. [Detailed contracts and acceptance
 gates](docs/planned-batches.md) incorporate application feedback while preserving
 this library's generic mathematical scope. Each step receives independent review
@@ -72,8 +72,8 @@ with an explicit factor-entry budget and overflow-safe representability limits.
 
 **Completed.** `coalton-linalg/dense/indefinite-ldlt` factors a dense symmetric matrix
 with 1-by-1 and 2-by-2 pivots under bounded multipliers, solves, and reports the inertia
-of the computed block diagonal with both eigenvalues of each 2-by-2 block. A singular
-matrix completes with a zero count and its solve is refused by name. 365 exact-reference
+of the computed block diagonal with both eigenvalues of each 2-by-2 block. An exactly zero
+pivot completes with a zero count and its solve is refused by name. 365 exact-reference
 factorizations, shifted eigenvalue counts, augmented systems, thirteen planted source
 controls and an allocation measurement per policy pass. [The batch record](docs/batch4.md)
 holds the measurements; [the contract](docs/indefinite-ldlt.md) the derivation and what a
@@ -81,10 +81,14 @@ count near a threshold does not say. Dense delivery does not establish large spa
 
 ### Batch 5: orthogonal decompositions
 
-Build Householder QR and full-rank least squares, then column pivoting and complete
-orthogonal decomposition for rank-deficient minimum-norm least squares. Caller
-rank tolerances remain explicit. This extends and moves the earlier Batch 4 QR
-plan; independent verification is required before Batch 6 exists.
+**Completed.** `coalton-linalg/dense/orthogonal` gives column-pivoted Householder QR of
+any shape, a rank the caller chooses from the diagonal of R against an explicit strict
+threshold, the complete orthogonal decomposition for that rank, minimum-norm least
+squares with its residual norm, an orthonormal nullspace basis, and Q applied without
+being formed. 215 exact-reference decompositions, the Kahan matrix, seventeen planted
+source controls and an allocation measurement per policy pass. [The batch
+record](docs/batch5.md) holds the measurements; [the contract](docs/orthogonal.md) the
+derivation and what the diagonal of R does not say.
 
 ### Batch 6: dense symmetric eigenvalues and SVD
 

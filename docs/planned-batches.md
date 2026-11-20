@@ -1,6 +1,7 @@
 # Planned numerical batches
 
-State: Batches 3 (3a through 3d) and 4 completed; Batches 5 and 6 planned.
+State: Batches 3 (3a through 3d), 4 and 5 completed; Batch 6 planned.
+[Batch 5 evidence](batch5.md) records the orthogonal decompositions.
 [Batch 4 evidence](batch4.md) records the dense indefinite factorization.
 [Batch 3d evidence](batch3d.md) records the condition estimate.
 [Batch 3c evidence](batch3c.md) records the Gram products.
@@ -166,6 +167,12 @@ congruences with known inertia; singular blocks and clustered thresholds; compat
 and incompatible augmented systems; independent references and planted controls.
 
 ## Batch 5: orthogonal decompositions and minimum-norm least squares
+
+Implementation note: delivered as `coalton-linalg/dense/orthogonal`;
+[the contract](orthogonal.md) is the current statement and carries the derivation. Column
+pivoting is always on; plain QR, full-rank least squares and the full-row-rank wide case
+are selected ranks of the one factorization, not separate entry points. The rank
+criterion is one absolute, strict threshold on the diagonal of R, supplied by the caller.
 
 Stages: stable Householder transformations and QR; full-column-rank least squares
 (and transpose/LQ treatment of full-row-rank wide systems); column-pivoted QR;

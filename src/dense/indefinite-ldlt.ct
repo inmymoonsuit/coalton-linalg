@@ -1,7 +1,7 @@
 (cl:defpackage #:coalton-linalg/dense/indefinite-ldlt
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:err #:coalton-linalg/errors))
+                    (#:limits #:coalton-linalg/dense/limits))
   (:import-from #:coalton/math #:finite?)
   (:export #:Factor #:make-factor #:make-factor-with-limit #:maximum-dimension #:default-entry-limit
            #:pivot-threshold #:dimension
@@ -38,7 +38,7 @@
   (derive Eq)
   (repr :enum)
   (define-type FactorStatus
-    "Outcome of a factorization call. A singular matrix is FactorSuccess with a nonzero zero-count."
+    "Outcome of a factorization call. An exactly zero pivot is FactorSuccess with a nonzero zero-count."
     FactorSuccess FactorNonFinite FactorBadSize FactorBadShift)
 
   (derive Eq)
@@ -48,22 +48,19 @@
     SolveSuccess SolveInvalidFactor SolveBadSize SolveSingular SolveNonFiniteRhs SolveNonFiniteResult)
 
   (declare maximum-dimension UFix)
-  (define maximum-dimension 32768)
+  (define maximum-dimension limits:maximum-dimension)
 
   ;; (1 + sqrt 17) / 8: the value at which two 1-by-1 steps and one 2-by-2 step have the same growth bound.
   (declare pivot-threshold F64)
   (define pivot-threshold 0.6403882032022076d0)
 
   (declare default-entry-limit UFix)
-  (define default-entry-limit 16777216)
+  (define default-entry-limit limits:default-entry-limit)
 
   (declare make-factor-with-limit (UFix * UFix -> Factor))
   (define (make-factor-with-limit n maximum-entries)
     "Allocate reusable storage for n-by-n factorizations when n * n is within the entry budget."
-    (when (> n maximum-dimension)
-      (throw (err:AnalysisLimitExceeded n maximum-dimension)))
-    (when (> (* n n) maximum-entries)
-      (throw (err:AnalysisStorageExceeded (into (* n n)) maximum-entries)))
+    (limits:check-storage! n n maximum-entries)
     (MkFactor (FactorStorage n (arr:make (* n n) 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0)
                              (arr:make n (the UFix 0)) (arr:make n (the UFix 0)) (arr:make n 0.0d0)
                              (arr:make 3 (the UFix 0)) (arr:make 4 (the UFix 0)))))
