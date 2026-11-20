@@ -13,6 +13,7 @@ loaded or required.
 
 - Owned rectangular CSC/COO construction with explicit duplicate handling.
 - Transpose, row/column permutations, A*x and transpose(A)*x.
+- Caller-buffer matvec! and transpose-matvec!, with measured allocation-free success.
 - Stable Euclidean/infinity norms using Coalton standard numeric primitives.
 - Lower compressed sparse column (CSC) factorization input, double-precision values.
 - Deterministic exact minimum-degree ordering and symbolic factor structure.
@@ -79,9 +80,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check.ps1 -Safety 
 Run these **serially**. They cover interface and allocation regressions, a Coalton
 caller and examples, fixture tooling, checker controls, all 20 original matrices,
 336 seeded matrices, 96 repeated refactors, independent primitive tests, and 161
-structural cases (13 above the former 4096 cap).
+structural cases (13 above the former 4096 cap), plus 416 independent buffered products.
 Generated artifacts stay under `build/`. The scripts rebuild the library for
-each safety policy. See the [compact-analysis evidence](docs/batch3a.md) for the latest full runs, the
+each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the latest full runs,
+[compact-analysis measurements](docs/batch3a.md), the
 [initial review evidence](docs/initial-review.md) for fresh-source setup verification, and
 [pinned toolchain details](docs/toolchain.md) for the measurement protocol.
 

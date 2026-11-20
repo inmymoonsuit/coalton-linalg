@@ -5,7 +5,8 @@
   (:export #:Matrix #:DuplicatePolicy #:RejectDuplicates #:SumDuplicates
            #:from-csc #:from-coo #:row-count #:column-count #:entry-count
            #:column-pointers #:row-indices #:entries
-           #:transpose #:permute #:matvec #:transpose-matvec))
+           #:transpose #:permute #:matvec #:transpose-matvec
+           #:matvec! #:transpose-matvec!))
 (cl:in-package #:coalton-linalg/sparse/csc)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -195,20 +196,22 @@
         (cell:write! used (+ 1 (cell:read used)))))
     (from-coo m n rr cc vv RejectDuplicates))
 
-  (declare multiply (Matrix * arr:LispArray F64 * Boolean -> arr:LispArray F64))
-  (define (multiply matrix x transposed)
-    "Checked ordinary F64 accumulation into a fresh result; no caller buffer changes."
-    (let m = (row-count matrix))
-    (let n = (column-count matrix))
-    (unless (== (arr:length x) (if transposed m n))
-      (throw (err:InvalidDimensions "Matrix-vector dimensions differ.")))
+  (declare validate-product-vector (arr:LispArray F64 -> Void))
+  (define (validate-product-vector x)
+    "Validate every input component, including those unused by the matrix structure."
     (for ((i 0 (+ i 1))) :while (< i (arr:length x))
       (unless (inline (math:finite? (arr:aref x i)))
-        (throw (err:NonFiniteInput "Vector input must be finite."))))
-    (let output = (arr:make (if transposed n m) 0.0d0))
+        (throw (err:NonFiniteInput "Vector input must be finite.")))))
+
+  (declare multiply-into! (Matrix * arr:LispArray F64 * arr:LispArray F64 * Boolean -> Void))
+  (define (multiply-into! matrix x output transposed)
+    "Overwrite a checked, nonaliased result in CSC accumulation order; arithmetic refusal leaves it unspecified."
+    (let n = (column-count matrix))
     (let cp = (column-pointers matrix))
     (let ri = (row-indices matrix))
     (let vals = (entries matrix))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length output))
+      (arr:set! output i 0.0d0))
     (for ((j 0 (+ j 1))) :while (< j n)
       (for ((q (arr:aref cp j) (+ q 1))) :while (< q (arr:aref cp (+ j 1)))
         (let i = (arr:aref ri q))
@@ -218,8 +221,33 @@
                                   (* (arr:aref vals q) (arr:aref x source))))))
     (for ((i 0 (+ i 1))) :while (< i (arr:length output))
       (unless (inline (math:finite? (arr:aref output i)))
-        (throw (err:NonFiniteResult "Matrix-vector result is not finite."))))
+        (throw (err:NonFiniteResult "Matrix-vector result is not finite.")))))
+
+  (declare multiply (Matrix * arr:LispArray F64 * Boolean -> arr:LispArray F64))
+  (define (multiply matrix x transposed)
+    "Validate input before allocating the result, then use the shared product kernel."
+    (let m = (row-count matrix))
+    (let n = (column-count matrix))
+    (unless (== (arr:length x) (if transposed m n))
+      (throw (err:InvalidDimensions "Matrix-vector dimensions differ.")))
+    (validate-product-vector x)
+    (let output = (arr:make (if transposed n m) 0.0d0))
+    (multiply-into! matrix x output transposed)
     output)
+
+  (declare multiply! (Matrix * arr:LispArray F64 * arr:LispArray F64 * Boolean -> Void))
+  (define (multiply! matrix x output transposed)
+    "Check dimensions, output identity and input finiteness before the first output write."
+    (let m = (row-count matrix))
+    (let n = (column-count matrix))
+    (unless (and (== (arr:length x) (if transposed m n))
+                 (== (arr:length output) (if transposed n m)))
+      (throw (err:InvalidDimensions "Matrix-vector dimensions differ.")))
+    (when (or (unsafe-pointer-eq? output x)
+              (unsafe-pointer-eq? output (entries matrix)))
+      (throw (err:InvalidAliasing "Output must be distinct from the vector input and matrix entries.")))
+    (validate-product-vector x)
+    (multiply-into! matrix x output transposed))
 
   (declare matvec (Matrix * arr:LispArray F64 -> arr:LispArray F64))
   (define (matvec matrix x)
@@ -229,4 +257,14 @@
   (declare transpose-matvec (Matrix * arr:LispArray F64 -> arr:LispArray F64))
   (define (transpose-matvec matrix x)
     "Return transpose(A)*x without materializing a transpose; no caller mutation."
-    (multiply matrix x True)))
+    (multiply matrix x True))
+
+  (declare matvec! (Matrix * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (matvec! matrix x output)
+    "Overwrite output with A*x. Output must differ from x and matrix entries; preflight errors preserve it, while NonFiniteResult leaves it unspecified."
+    (multiply! matrix x output False))
+
+  (declare transpose-matvec! (Matrix * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (transpose-matvec! matrix x output)
+    "Overwrite output with transpose(A)*x. Output must differ from x and matrix entries; preflight errors preserve it, while NonFiniteResult leaves it unspecified."
+    (multiply! matrix x output True)))

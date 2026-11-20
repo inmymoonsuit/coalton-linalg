@@ -16,7 +16,8 @@
       ((err:NonFiniteInput _) 5)
       ((err:NonFiniteResult _) 6)
       ((err:AnalysisLimitExceeded _ _) 7)
-      ((err:AnalysisStorageExceeded _ _) 8)))
+      ((err:AnalysisStorageExceeded _ _) 8)
+      ((err:InvalidAliasing _) 9)))
 
   (declare observe-error ((Void -> :a) -> UFix))
   (define (observe-error operation)

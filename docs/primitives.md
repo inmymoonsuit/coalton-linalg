@@ -49,6 +49,8 @@ finite; explicit zeros remain stored.
 | `permute(A,row-order,column-order)` | Fresh B where B[i,j]=A[row-order[i],column-order[j]]. |
 | `matvec(A,x)` | A freshly allocated vector A*x. |
 | `transpose-matvec(A,x)` | A freshly allocated vector transpose(A)*x, without constructing the transpose. |
+| `matvec!(A,x,out)` | Overwrite caller storage with A*x; return Void. |
+| `transpose-matvec!(A,x,out)` | Overwrite caller storage with transpose(A)*x; return Void. |
 
 Coordinate arrays have equal length. Out-of-range coordinates and nonfinite
 values are errors. `RejectDuplicates` signals an error if a coordinate repeats.
@@ -62,18 +64,57 @@ Permutation arrays must be bijections of the corresponding dimensions. Both
 are **new index to old index**, including non-involutive permutations. A row or
 column permutation never changes the number of stored entries.
 
-All operations leave their inputs unchanged. Constructors, transpose and
-permute return independent storage. Inspection arrays must not be changed by
+All operations preserve the matrix and input vector. Only the two buffered
+products mutate their explicit output. Constructors, transpose and permute return
+independent storage. Inspection arrays must not be changed by
 callers; the borrowed-view convention is contractual, not a runtime copy or
-write-protection mechanism. There is no public matrix mutation interface in this
-batch, and no zero-allocation claim for these allocating operations.
+write-protection mechanism. There is no public matrix mutation interface.
+Allocating operations have no zero-allocation contract.
 
 Products validate every vector component, including those unused by an empty
 row/column. Input length mismatch or nonfinite input/output signals an error.
 They use deterministic ordinary F64 accumulation in CSC traversal order. They
 do not offer compensated products or an exact accumulator; a nonfinite
 intermediate is not recovered through later mathematical cancellation.
-No partial caller-owned output exists to expose on refusal.
+The allocating operations validate the input before allocating their result;
+no partial result is returned on refusal. They share the arithmetic kernel with
+the buffered operations.
+
+### Caller-provided output
+
+For matvec!, x has n elements and out has m; for transpose-matvec!, x has m and
+out has n. Every output element is overwritten, including empty rows/columns.
+Existing output contents need not be finite. Supported arrays are simple,
+specialized F64 arrays, so two arrays overlap only when they are the same object.
+
+Output must be distinct from x and from the matrix's borrowed entries array,
+including when arrays are empty. Violations raise InvalidAliasing. Equal-valued
+but distinct arrays are permitted. The read-only alias x == entries(A) remains
+permitted when its length is appropriate. Inspection arrays are otherwise still
+read-only by contract.
+
+Buffered validation order is dimensions, forbidden aliases, then every input
+component (including unused ones). InvalidDimensions, InvalidAliasing and
+NonFiniteInput leave out, x and the matrix unchanged. Once arithmetic starts,
+NonFiniteResult leaves **all output contents unspecified**; x and the matrix
+remain unchanged. Callers needing an unchanged output on arithmetic refusal
+must supply their own separate destination and commit it after success.
+
+For example, inside a Coalton function with an existing matrix and input:
+
+```lisp
+(let output = (arr:make (csc:row-count matrix) 0.0d0))
+(csc:matvec! matrix input output)
+```
+
+Allocate output once and reuse it for subsequent calls. The external
+[Coalton test caller](../tests/buffered-callers.ct) exercises both public functions.
+
+Successful buffered products use O(1) auxiliary storage and reuse caller memory.
+Warmed zero allocation is a measured contract on the pinned compiler/runtime;
+typed exception construction on refusal may allocate. Separate outputs permit
+concurrent reads of a shared matrix and input, subject to the read-only contract.
+Calls writing a shared output are not reentrant or concurrent.
 
 ## Cost and construction
 
@@ -88,6 +129,7 @@ while visiting original columns in ascending order. This yields sorted destinati
 rows directly: O(m+n+nnz) time/storage. Permute validates both bijections and
 uses the COO constructor to recover canonical order: O(m+n+nnz log nnz).
 Products cost O(m+n+nnz), including input validation and result initialization.
+Allocating products create O(output length) storage; buffered products do not.
 Norms take O(vector length) time with constant scalar workspace.
 
 ## Consuming the structure in SPD analysis

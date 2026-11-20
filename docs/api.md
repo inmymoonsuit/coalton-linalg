@@ -17,7 +17,7 @@ outcomes have distinct named types.
 | Export | Type or role |
 | --- | --- |
 | `LinalgError` | Exception family for construction, validation and primitive arithmetic |
-| `InvalidStructure`, `InvalidDimensions`, `InvalidPermutation` | String -> LinalgError |
+| `InvalidStructure`, `InvalidDimensions`, `InvalidPermutation`, `InvalidAliasing` | String -> LinalgError |
 | `DuplicateEntry` | UFix * UFix -> LinalgError; row, column |
 | `NonFiniteInput`, `NonFiniteResult` | String -> LinalgError |
 | `AnalysisLimitExceeded` | UFix * UFix -> LinalgError; requested dimension, representability maximum |
@@ -50,6 +50,7 @@ Use `coalton/math:finite?` for finiteness; this library does not duplicate that 
 | `transpose` | Matrix -> Matrix |
 | `permute` | Matrix * I * I -> Matrix |
 | `matvec`, `transpose-matvec` | Matrix * V -> V |
+| `matvec!`, `transpose-matvec!` | Matrix * V * V -> Void; caller-provided output |
 
 Constructor argument order is in the contract. Inspection arrays are borrowed
 read-only views by agreement; they are ordinary mutable arrays at runtime.

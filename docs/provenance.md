@@ -74,3 +74,11 @@ were read; no numerical-library implementation or algorithm listing was used.
 The entry-budget identity is n plus original edges plus distinct fill edges.
 Independent set elimination, analytic graph families and planted artifact defects
 check the resulting structure. This remains an independently derived implementation.
+
+## Batch 3b: caller-buffer products
+
+Both output-buffer product directions reuse the original independently derived
+CSC sum kernel. Identity checks use Coalton's existing pointer-equality primitive;
+no new array representation or numerical dependency is introduced. Independent
+rational dot products and adversarial calling-contract tests verify the new entry
+points without relying only on the allocating versions as a reference.

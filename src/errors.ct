@@ -1,6 +1,6 @@
 (cl:defpackage #:coalton-linalg/errors
   (:use #:coalton #:coalton-prelude)
-  (:export #:LinalgError #:InvalidStructure #:InvalidDimensions #:InvalidPermutation
+  (:export #:LinalgError #:InvalidStructure #:InvalidDimensions #:InvalidPermutation #:InvalidAliasing
            #:DuplicateEntry #:NonFiniteInput #:NonFiniteResult #:AnalysisLimitExceeded #:AnalysisStorageExceeded))
 (cl:in-package #:coalton-linalg/errors)
 
@@ -10,6 +10,7 @@
     (InvalidStructure String)
     (InvalidDimensions String)
     (InvalidPermutation String)
+    (InvalidAliasing String)
     (DuplicateEntry UFix UFix)
     "Repeated coordinate as zero-based row, then column."
     (NonFiniteInput String)

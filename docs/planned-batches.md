@@ -1,6 +1,7 @@
 # Planned numerical batches
 
-State: Batch 3a completed; remaining steps planned.
+State: Batches 3a and 3b completed; remaining steps planned.
+[Batch 3b evidence](batch3b.md) records buffered-product delivery.
 [Batch 3a evidence](batch3a.md) records the implemented contract and measurements.
 Updated 2026-11-19 after application review.
 [ROADMAP.md](../ROADMAP.md) owns the sequence; this page records contracts and
@@ -44,6 +45,10 @@ arithmetic order is unchanged. No fixed benchmark promise before the brief suppl
 sizes and resource budgets.
 
 ### 3b. Products into caller storage
+
+Completed: the three-argument Void operations use no scratch. Preflight refusals
+preserve output; arithmetic refusal leaves it unspecified. See the current
+[caller-buffer contract](primitives.md#caller-provided-output).
 
 Add matvec! and transpose-matvec! using caller output and, where needed, explicitly
 prepared scratch. Keep allocating convenience operations on the same mathematical

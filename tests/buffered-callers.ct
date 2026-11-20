@@ -1,0 +1,50 @@
+(cl:defpackage #:coalton-linalg/tests/buffered-products
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:err #:coalton-linalg/errors))
+  (:export #:forward! #:transposed! #:forward-error #:transposed-error
+           #:repeat-forward! #:repeat-transposed!))
+(cl:in-package #:coalton-linalg/tests/buffered-products)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare forward! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (forward! matrix input output)
+    "Compile a real external caller of the public buffer operation."
+    (csc:matvec! matrix input output))
+
+  (declare transposed! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (transposed! matrix input output)
+    (csc:transpose-matvec! matrix input output))
+
+  (declare classify ((Void -> Void) -> UFix))
+  (define (classify operation)
+    "Test-only codes: success 0, dimensions 2, input 5, result 6, alias 9, unexpected 99."
+    (catch (progn (operation) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:InvalidDimensions _) 2)
+         ((err:NonFiniteInput _) 5)
+         ((err:NonFiniteResult _) 6)
+         ((err:InvalidAliasing _) 9)
+         (_ 99)))
+      (_ 99)))
+
+  (declare forward-error (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (forward-error matrix input output)
+    (classify (fn () (forward! matrix input output))))
+
+  (declare transposed-error (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (transposed-error matrix input output)
+    (classify (fn () (transposed! matrix input output))))
+
+  (declare repeat-forward! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * UFix -> Void))
+  (define (repeat-forward! matrix input output count)
+    "Measure repeated public calls from an actual compiled Coalton loop."
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (csc:matvec! matrix input output)))
+
+  (declare repeat-transposed! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * UFix -> Void))
+  (define (repeat-transposed! matrix input output count)
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (csc:transpose-matvec! matrix input output))))

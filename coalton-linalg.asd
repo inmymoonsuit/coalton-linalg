@@ -28,7 +28,9 @@
   :components ((:module "tests" :serial t
                 :components ((:file "interface") (:ct-file "callers")
                              (:file "runtime") (:static-file "exact-singular-rounding.sexp") (:file "property-tests")
-                             (:file "primitives") (:file "encapsulation") (:ct-file "typed-errors") (:ct-file "typed-status") (:file "suite"))))
+                             (:file "primitives") (:file "encapsulation") (:ct-file "typed-errors") (:ct-file "typed-status")
+                             (:ct-file "buffered-callers") (:file "buffered-products")
+                             (:file "buffered-properties") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))
