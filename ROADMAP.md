@@ -169,7 +169,9 @@ what solving in CAD and engineering work is likely to need. The order is a consu
 ranking of what it would use first:
 
 1. Dependent rows with a certificate: which rows of a sparse matrix are dependent, and
-   what can be proved about it. A written design comes before any code.
+   what can be proved about it. A written design comes before any code:
+   [the design](docs/design-dependent-rows.md) is out for review and nothing of it is
+   built.
 2. Sparse LU with partial pivoting for a square nonsymmetric matrix.
 3. Iterative least squares and minimum norm on an operator, with damping, and conjugate
    gradients for the definite case.
