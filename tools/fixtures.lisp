@@ -1,6 +1,6 @@
 (defpackage #:coalton-linalg/tools
   (:use #:cl)
-  (:export #:run-fixtures #:small-tests))
+  (:export #:run-fixtures #:run-gram-fixtures #:small-tests))
 (in-package #:coalton-linalg/tools)
 (declaim (optimize (speed 3) (safety 1)))
 

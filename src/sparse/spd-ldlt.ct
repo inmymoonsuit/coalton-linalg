@@ -2,6 +2,7 @@
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:ord #:coalton-linalg/sparse/ordering)
+                    (#:limits #:coalton-linalg/sparse/limits)
                     (#:csc #:coalton-linalg/sparse/csc) (#:err #:coalton-linalg/errors))
   (:import-from #:coalton/math #:finite?)
   (:export #:Pattern #:Symbolic #:NumericFactor #:maximum-analysis-size #:default-analysis-entry-limit
@@ -94,12 +95,10 @@
   (define (factor-ready? f) (== (arr:aref (.state (numeric-storage f)) 0) 1))
 
   (declare maximum-analysis-size UFix)
-  (define maximum-analysis-size
-    (lisp (-> UFix) ()
-      (cl:min (cl:- cl:array-dimension-limit 2) (cl:floor cl:most-positive-fixnum 2))))
+  (define maximum-analysis-size limits:maximum-analysis-size)
 
   (declare default-analysis-entry-limit UFix)
-  (define default-analysis-entry-limit 1048576)
+  (define default-analysis-entry-limit limits:default-analysis-entry-limit)
 
   (declare refuse! (SymbolicStorage * UFix * FactorStatus -> FactorStatus))
   (define (refuse! s column status)
@@ -154,9 +153,8 @@
     "Analyze with an nnz(L) budget including the diagonal; refuse before exceeding it."
     (let n = (.size pattern))
     ;; Bound n+1 and heap child arithmetic before validation or allocation.
-    (when (> n maximum-analysis-size)
-      (throw (err:AnalysisLimitExceeded n maximum-analysis-size)))
-    (let maximum-entries = (min requested-entries maximum-analysis-size))
+    (limits:check-dimension! n)
+    (let maximum-entries = (limits:effective-entry-limit requested-entries))
     (when (> n maximum-entries)
       (throw (err:AnalysisStorageExceeded (into n) maximum-entries)))
     (validate-pattern pattern)

@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
-  :description "Numerical linear algebra in Coalton; currently sparse SPD LDL factorization."
-  :version "0.1.0"
+  :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
+  :version "0.2.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -13,12 +13,14 @@
   :components ((:module "src" :serial t
                 :components ((:ct-file "errors") (:ct-file "numeric")
                              (:module "sparse" :serial t
-                              :components ((:ct-file "csc") (:ct-file "ordering") (:ct-file "spd-ldlt")))))))
+                              :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
+                                           (:ct-file "gram") (:ct-file "spd-ldlt")))))))
 
 (asdf:defsystem "coalton-linalg/examples"
   :description "Runnable public-interface examples."
   :depends-on ("coalton-linalg")
-  :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")))))
+  :components ((:module "examples" :components ((:ct-file "spd-solve") (:ct-file "sparse-operations")
+                                                (:ct-file "normal-equations")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -30,7 +32,9 @@
                              (:file "runtime") (:static-file "exact-singular-rounding.sexp") (:file "property-tests")
                              (:file "primitives") (:file "encapsulation") (:ct-file "typed-errors") (:ct-file "typed-status")
                              (:ct-file "buffered-callers") (:file "buffered-products")
-                             (:file "buffered-properties") (:file "suite"))))
+                             (:file "buffered-properties")
+                             (:ct-file "gram-callers") (:file "gram-runtime")
+                             (:file "gram-properties") (:file "suite"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (uiop:symbol-call :coalton-linalg/tests :run-tests)))
@@ -38,12 +42,13 @@
 (asdf:defsystem "coalton-linalg/tools"
   :description "Optional fixture reader, artifact writer, and benchmark driver."
   :depends-on ("coalton-linalg")
-  :components ((:module "tools" :components ((:file "fixtures")))))
+  :components ((:module "tools" :serial t :components ((:file "fixtures") (:file "gram-fixtures")))))
 
 (asdf:defsystem "coalton-linalg/tools-tests"
   :description "Fixture parser and artifact lifecycle regressions."
   :depends-on ("coalton-linalg/tools")
-  :components ((:module "tests" :components ((:file "tools"))))
+  :components ((:module "tests" :serial t :components ((:file "tools") (:file "gram-tools"))))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
-             (uiop:symbol-call :coalton-linalg/tools :run-tools-tests)))
+             (uiop:symbol-call :coalton-linalg/tools :run-tools-tests)
+             (uiop:symbol-call :coalton-linalg/tools :run-gram-tools-tests)))

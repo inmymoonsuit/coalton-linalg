@@ -1,0 +1,70 @@
+(in-package #:coalton-linalg/tools)
+
+;;; Regressions for the Gram artifact driver: exact small products in both orientations,
+;;; a source column with no entry, a typed refusal file, and artifact replacement on rerun.
+
+(defun write-text (path text)
+  (with-open-file (out path :direction :output :if-exists :supersede :if-does-not-exist :create)
+    (write-string text out)))
+
+(defun read-gram-output (path)
+  "The header and the (row column value) triplets of one written Gram file."
+  (with-open-file (in path)
+    (let* ((n (read-numeric in)) (nz (read-numeric in)))
+      (list n nz (loop repeat nz collect (list (read-numeric in) (read-numeric in) (read-numeric in)))))))
+
+(defun expect-gram (output name suffix expected)
+  (let ((actual (read-gram-output (fixture-path output name suffix))))
+    (unless (equalp actual expected)
+      (error "Gram driver wrote ~S for ~A~A; expected ~S." actual name suffix expected))))
+
+(defun run-gram-tools-tests ()
+  (let* ((base (asdf:system-source-directory "coalton-linalg"))
+         (dir (merge-pathnames "build/gram-runner-input/" base))
+         (output (merge-pathnames "build/gram-runner-output/" base))
+         (j "2 2 3~%0 0 1~%1 0 2~%1 1 3~%"))
+    (ensure-directories-exist dir)
+    (dolist (stale (directory (merge-pathnames "*.*" dir))) (delete-file stale))
+    ;; J = [[1,0],[2,3]]: Jt J = [[5,6],[6,9]] and J Jt = [[1,2],[2,13]], exactly.
+    (write-text (merge-pathnames "tall.J.txt" dir) (format nil j))
+    (write-text (merge-pathnames "tall.meta.txt" dir) (format nil "name: tall~%gram: Jt J, 2 a side~%"))
+    (write-text (merge-pathnames "wide.J.txt" dir) (format nil j))
+    (write-text (merge-pathnames "wide.meta.txt" dir) (format nil "gram: J Jt, 2 a side~%"))
+    ;; Column 1 holds no entry: its diagonal is still stored, as an exact zero.
+    (write-text (merge-pathnames "gap.J.txt" dir) (format nil "2 3 2~%0 0 2~%1 2 3~%"))
+    (write-text (merge-pathnames "gap.meta.txt" dir) (format nil "gram: Jt J~%"))
+    (write-text (merge-pathnames "twice.J.txt" dir) (format nil "1 1 2~%0 0 1~%0 0 1~%"))
+    (write-text (merge-pathnames "twice.meta.txt" dir) (format nil "gram: Jt J~%"))
+    (run-gram-fixtures dir output :repeats 1 :allocation-repeats 1000)
+    (expect-gram output "tall" ".G.out.txt" '(2 3 ((0 0 5d0) (1 0 6d0) (1 1 9d0))))
+    (expect-gram output "tall" ".G2.out.txt" '(2 3 ((0 0 1.25d0) (1 0 1.5d0) (1 1 2.25d0))))
+    (expect-gram output "wide" ".G.out.txt" '(2 3 ((0 0 1d0) (1 0 2d0) (1 1 13d0))))
+    (expect-gram output "gap" ".G.out.txt" '(3 3 ((0 0 4d0) (1 1 0d0) (2 2 9d0))))
+    (with-open-file (in (fixture-path output "twice" ".refused.out.txt"))
+      (let ((name (read-line in)))
+        (unless (string= name "DuplicateEntry")
+          (error "Gram driver named the refusal ~S; expected DuplicateEntry." name))))
+    (assert (not (probe-file (fixture-path output "twice" ".G.out.txt"))))
+    ;; A corrected rerun replaces the refusal with outputs, and a refused rerun removes them.
+    (write-text (merge-pathnames "twice.J.txt" dir) (format nil "1 1 1~%0 0 3~%"))
+    (run-gram-fixtures dir output :repeats 1 :allocation-repeats 1000)
+    (assert (not (probe-file (fixture-path output "twice" ".refused.out.txt"))))
+    (expect-gram output "twice" ".G.out.txt" '(1 1 ((0 0 9d0))))
+    (write-text (merge-pathnames "twice.J.txt" dir) (format nil "1 1 2~%0 0 1~%0 0 1~%"))
+    (run-gram-fixtures dir output :repeats 1 :allocation-repeats 1000)
+    (assert (probe-file (fixture-path output "twice" ".refused.out.txt")))
+    (assert (not (probe-file (fixture-path output "twice" ".G.out.txt"))))
+    (assert (not (probe-file (fixture-path output "twice" ".G2.out.txt"))))
+    ;; A system whose meta file names no orientation is a driver error, never a silent default.
+    (write-text (merge-pathnames "unnamed.J.txt" dir) (format nil "1 1 1~%0 0 1~%"))
+    (write-text (merge-pathnames "unnamed.meta.txt" dir) (format nil "name: unnamed~%"))
+    (unless (handler-case (progn (run-gram-fixtures dir output :repeats 1 :allocation-repeats 1000) nil)
+              (error () t))
+      (error "Gram driver accepted a system with no named orientation."))
+    (delete-file (merge-pathnames "unnamed.J.txt" dir))
+    ;; Every exported LinalgError constructor has its source spelling, so a new one cannot be written upcased.
+    (do-external-symbols (symbol "COALTON-LINALG/ERRORS")
+      (unless (or (string= (symbol-name symbol) "LINALGERROR")
+                  (find (symbol-name symbol) *constructor-spellings* :test #'string-equal))
+        (error "No source spelling recorded for the error constructor ~A." symbol)))
+    (format t "GRAM-RUNNER-TESTS-PASS~%")))

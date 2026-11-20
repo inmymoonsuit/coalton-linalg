@@ -16,6 +16,6 @@
     (NonFiniteInput String)
     (NonFiniteResult String)
     (AnalysisLimitExceeded UFix UFix)
-    "Requested analysis dimension, then the supported maximum dimension."
+    "Requested analysis output dimension, then the supported maximum dimension."
     (AnalysisStorageExceeded Integer UFix)
-    "Required factor entries including the diagonal, then the effective entry budget."))
+    "Required analyzed output entries including the diagonal, then the effective entry budget."))

@@ -1,6 +1,7 @@
 # Planned numerical batches
 
-State: Batches 3a and 3b completed; remaining steps planned.
+State: Batches 3a, 3b and 3c completed; remaining steps planned.
+[Batch 3c evidence](batch3c.md) records the Gram products.
 [Batch 3b evidence](batch3b.md) records buffered-product delivery.
 [Batch 3a evidence](batch3a.md) records the implemented contract and measurements.
 Updated 2026-11-19 after application review.
@@ -64,6 +65,8 @@ Centralize the standard finite? inline hint if it simplifies the shared internal
 retain actual allocation checks at every new repeated operation.
 
 ### 3c. Fixed-pattern Gram products
+
+Completed: see [the contract](gram.md) and [the batch record](batch3c.md).
 
 Provide analysis plus repeated numeric refill for A^T A and A A^T. The plan is tied
 to a checked canonical input pattern; values may change, structure may not. Specify

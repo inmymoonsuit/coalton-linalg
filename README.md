@@ -14,6 +14,7 @@ loaded or required.
 - Owned rectangular CSC/COO construction with explicit duplicate handling.
 - Transpose, row/column permutations, A*x and transpose(A)*x.
 - Caller-buffer matvec! and transpose-matvec!, with measured allocation-free success.
+- Fixed-pattern Gram products AᵀA and AAᵀ: analyze once, refill caller storage without allocating.
 - Stable Euclidean/infinity norms using Coalton standard numeric primitives.
 - Lower compressed sparse column (CSC) factorization input, double-precision values.
 - Deterministic exact minimum-degree ordering and symbolic factor structure.
@@ -95,6 +96,8 @@ each safety policy. See the [buffered-product evidence](docs/batch3b.md) for the
 | `src/numeric.ct` | Stable norms |
 | `src/sparse/csc.ct` | Owned sparse matrices and operations |
 | `src/sparse/ordering.ct` | Private compact graph ordering |
+| `src/sparse/gram.ct` | Fixed-pattern AᵀA and AAᵀ products |
+| `src/sparse/ordering.ct` | Private minimum-degree ordering |
 | `src/sparse/spd-ldlt.ct` | SPD factorization and solves |
 | `tests/` | Interface/runtime tests and small generic fixtures |
 | `tools/` | Optional artifact driver and independent Python verifier |

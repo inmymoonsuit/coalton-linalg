@@ -17,7 +17,7 @@ codes; callers should match constructors, not text.
 | `NonFiniteInput(message)` | Nonfinite entries passed to matrix construction, products or norms. |
 | `NonFiniteResult(message)` | Nonfinite primitive result or duplicate accumulation. |
 | `AnalysisLimitExceeded(requested,maximum)` | Analysis dimension exceeds its representability bound; both payloads UFix. |
-| `AnalysisStorageExceeded(required,budget)` | Analysis total factor entries, including the diagonal, exceed the entry budget. Required is an Integer lower bound; budget is the effective UFix budget (capped for representability). |
+| `AnalysisStorageExceeded(required,budget)` | Analyzed output entries exceed the entry budget: total factor entries including implicit diagonals for SPD, or stored lower Gram entries including explicit diagonals for Gram analysis. Required is an Integer lower bound; budget is the effective UFix budget (capped for representability). |
 
 SPD Pattern validation reports InvalidStructure for repeated rows as well as other
 structural violations. General CSC/COO constructors specifically identify repeated

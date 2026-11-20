@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Test','Fixtures','Inspect')][string]$Task = 'Test',
+    [ValidateSet('Test','Fixtures','Gram','Inspect')][string]$Task = 'Test',
     [ValidateSet(0,1)][int]$Safety = 1,
     [string]$Sbcl = '',
     [string]$Python = '',
@@ -9,7 +9,8 @@ param(
     [string]$InputFolder = '',
     [string]$OutputFolder = '',
     [ValidateRange(1,1000000)][int]$Repeats = 20,
-    [ValidateRange(1,1000000)][int]$AllocationRepeats = 100
+    [ValidateRange(1,1000000)][int]$AllocationRepeats = 100,
+    [ValidateRange(0,1048576)][int]$DynamicSpaceMb = 0
 )
 $ErrorActionPreference = 'Stop'
 $libraryRoot = Split-Path -Parent $PSScriptRoot
@@ -44,6 +45,10 @@ if (-not $OutputFolder.StartsWith($buildPrefix, [System.StringComparison]::Ordin
 if ($Task -eq 'Fixtures' -and
     -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.A.txt' -File -ErrorAction Stop)) {
     throw "No matrix fixtures in $InputFolder"
+}
+if ($Task -eq 'Gram' -and
+    -not (Get-ChildItem -LiteralPath $InputFolder -Filter '*.J.txt' -File -ErrorAction Stop)) {
+    throw "No rectangular fixtures in $InputFolder"
 }
 [System.IO.Directory]::CreateDirectory($OutputFolder) | Out-Null
 [System.IO.Directory]::CreateDirectory($CacheRoot) | Out-Null
@@ -86,9 +91,13 @@ try {
     $entry = switch ($Task) {
         Test { 'check.lisp' }
         Fixtures { 'fixtures.lisp' }
+        Gram { 'gram.lisp' }
         Inspect { 'inspect.lisp' }
     }
-    & $Sbcl --noinform --no-sysinit --no-userinit --disable-debugger --script (Join-Path $PSScriptRoot $entry)
+    # A runtime option must precede the toplevel options. Zero keeps SBCL's own default heap.
+    $runtimeOptions = @()
+    if ($DynamicSpaceMb -gt 0) { $runtimeOptions = @('--dynamic-space-size', "$DynamicSpaceMb") }
+    & $Sbcl @runtimeOptions --noinform --no-sysinit --no-userinit --disable-debugger --script (Join-Path $PSScriptRoot $entry)
     if ($LASTEXITCODE -ne 0) { throw "Lisp $Task failed with exit code $LASTEXITCODE." }
     if ($Task -eq 'Test') {
         $verifier = Join-Path $libraryRoot 'tools/verify.py'

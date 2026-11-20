@@ -1,0 +1,82 @@
+(cl:defpackage #:coalton-linalg/tests/gram-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:gram #:coalton-linalg/sparse/gram)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:err #:coalton-linalg/errors))
+  (:export #:raw-error #:matrix-error #:ata-limit-error #:aat-limit-error
+           #:ata-default-error #:aat-default-error #:repeat-raw! #:repeat-matrix!))
+(cl:in-package #:coalton-linalg/tests/gram-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure1, dimensions2, input5, result6, dimension-limit7, storage8, alias9."
+    (match problem
+      ((err:InvalidStructure _) 1)
+      ((err:InvalidDimensions _) 2)
+      ((err:NonFiniteInput _) 5)
+      ((err:NonFiniteResult _) 6)
+      ((err:AnalysisLimitExceeded _ _) 7)
+      ((err:AnalysisStorageExceeded _ _) 8)
+      ((err:InvalidAliasing _) 9)
+      (_ 99)))
+
+  (declare classify ((Void -> Void) -> UFix))
+  (define (classify operation)
+    (catch (progn (operation) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare raw-error (gram:GramPlan * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (raw-error plan input output)
+    (classify (fn () (gram:refill! plan input output))))
+
+  (declare matrix-error (gram:GramPlan * csc:Matrix * arr:LispArray F64 -> UFix))
+  (define (matrix-error plan matrix output)
+    (classify (fn () (gram:refill-csc! plan matrix output))))
+
+  (declare classify-analysis ((Void -> gram:GramPlan) * UFix * UFix * Integer -> UFix))
+  (define (classify-analysis operation dimension limit expected-storage)
+    "Validate the complete typed limit payload; wrong payloads use codes77/88."
+    (catch (progn (operation) 0)
+      ((the err:LinalgError problem)
+       (match problem
+         ((err:AnalysisLimitExceeded requested maximum)
+          (if (and (== requested dimension) (== maximum gram:maximum-analysis-size)) 7 77))
+         ((err:AnalysisStorageExceeded requested effective)
+          (let ((permitted (if (< limit gram:maximum-analysis-size) limit gram:maximum-analysis-size)))
+            (if (and (== requested expected-storage) (== effective permitted)) 8 88)))
+         (_ (error-code problem))))
+      (_ 99)))
+
+  (declare ata-limit-error (csc:Matrix * UFix * Integer -> UFix))
+  (define (ata-limit-error matrix limit expected-storage)
+    (classify-analysis (fn () (gram:analyze-ata-with-limit matrix limit))
+                       (csc:column-count matrix) limit expected-storage))
+
+  (declare aat-limit-error (csc:Matrix * UFix * Integer -> UFix))
+  (define (aat-limit-error matrix limit expected-storage)
+    (classify-analysis (fn () (gram:analyze-aat-with-limit matrix limit))
+                       (csc:row-count matrix) limit expected-storage))
+
+  (declare ata-default-error (csc:Matrix * Integer -> UFix))
+  (define (ata-default-error matrix expected-storage)
+    (classify-analysis (fn () (gram:analyze-ata matrix))
+                       (csc:column-count matrix) gram:default-analysis-entry-limit expected-storage))
+
+  (declare aat-default-error (csc:Matrix * Integer -> UFix))
+  (define (aat-default-error matrix expected-storage)
+    (classify-analysis (fn () (gram:analyze-aat matrix))
+                       (csc:row-count matrix) gram:default-analysis-entry-limit expected-storage))
+
+  (declare repeat-raw! (gram:GramPlan * arr:LispArray F64 * arr:LispArray F64 * UFix -> Void))
+  (define (repeat-raw! plan input output count)
+    "Exercise repeated refill through the public API from an actual external Coalton loop."
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (gram:refill! plan input output)))
+
+  (declare repeat-matrix! (gram:GramPlan * csc:Matrix * arr:LispArray F64 * UFix -> Void))
+  (define (repeat-matrix! plan matrix output count)
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (gram:refill-csc! plan matrix output))))

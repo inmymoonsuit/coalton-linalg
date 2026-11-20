@@ -1,6 +1,6 @@
 # Public interface reference
 
-This is the symbol index for the four public library packages, excluding examples,
+This is the symbol index for the five public library packages, excluding examples,
 tooling and the private sparse/ordering package. The linked contracts specify storage, errors, ownership, numerical
 assumptions, and cost. See the [glossary](../CONTEXT.md) for mathematical terms.
 
@@ -21,7 +21,7 @@ outcomes have distinct named types.
 | `DuplicateEntry` | UFix * UFix -> LinalgError; row, column |
 | `NonFiniteInput`, `NonFiniteResult` | String -> LinalgError |
 | `AnalysisLimitExceeded` | UFix * UFix -> LinalgError; requested dimension, representability maximum |
-| `AnalysisStorageExceeded` | Integer * UFix -> LinalgError; required total factor entries, budget |
+| `AnalysisStorageExceeded` | Integer * UFix -> LinalgError; required analyzed output entries (factor or Gram), budget |
 
 ## coalton-linalg/numeric
 
@@ -55,6 +55,25 @@ Use `coalton/math:finite?` for finiteness; this library does not duplicate that 
 Constructor argument order is in the contract. Inspection arrays are borrowed
 read-only views by agreement; they are ordinary mutable arrays at runtime.
 Constructors and transforming operations return owned storage.
+
+## coalton-linalg/sparse/gram
+
+[Contract](gram.md) · [Source](../src/sparse/gram.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `GramPlan` | Fixed-pattern product plan with private workspace; obtain from the analyze operations |
+| `analyze-ata`, `analyze-aat` | coalton-linalg/sparse/csc:Matrix -> GramPlan; lower A^T A or A A^T |
+| `analyze-ata-with-limit`, `analyze-aat-with-limit` | Matrix * UFix -> GramPlan; explicit stored-entry budget |
+| `dimension`, `entry-count` | GramPlan -> UFix |
+| `column-pointers`, `row-indices` | GramPlan -> I; lower CSC pattern with every diagonal |
+| `refill!` | GramPlan * V * V -> Void; source values in analyzed order, caller output |
+| `refill-csc!` | GramPlan * Matrix * V -> Void; checks the source pattern first |
+| `maximum-analysis-size`, `default-analysis-entry-limit` | UFix; the bounds shared with SPD analysis |
+
+A plan owns scratch, so refills sharing one plan are not reentrant. The output
+values belong to the caller and feed `factor!` with a `Pattern` built from the
+plan's dimension, column pointers and row indices.
 
 ## coalton-linalg/sparse/spd-ldlt
 

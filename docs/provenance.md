@@ -82,3 +82,14 @@ CSC sum kernel. Identity checks use Coalton's existing pointer-equality primitiv
 no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
+
+## Batch 3c: fixed-pattern Gram products
+
+The product pattern and refill follow the defining sums G[i,j] = sum_k B[k,i] B[k,j]
+with B = A or its transpose. Entries are grouped by inner index with a stable sort;
+the lower-triangle scan starts at an entry's own sorted position, which follows
+from canonical CSC ordering alone. No numerical-library implementation or algorithm
+listing was consulted. Independent exact rational products check every value. On
+thirteen application systems the stored values also agree bit for bit with an
+independently produced reference product wherever that reference stores an entry;
+the reference was used as a comparison only, after the implementation was written.

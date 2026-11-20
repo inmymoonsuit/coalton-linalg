@@ -1,0 +1,26 @@
+(cl:defpackage #:coalton-linalg/sparse/limits
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:err #:coalton-linalg/errors))
+  (:export #:maximum-analysis-size #:default-analysis-entry-limit
+           #:effective-entry-limit #:check-dimension!))
+(cl:in-package #:coalton-linalg/sparse/limits)
+
+(coalton-toplevel
+  (declare maximum-analysis-size UFix)
+  (define maximum-analysis-size
+    (lisp (-> UFix) ()
+      (cl:min (cl:- cl:array-dimension-limit 2) (cl:floor cl:most-positive-fixnum 2))))
+
+  (declare default-analysis-entry-limit UFix)
+  (define default-analysis-entry-limit 1048576)
+
+  (declare effective-entry-limit (UFix -> UFix))
+  (define (effective-entry-limit requested)
+    "Bound analyzed output entries by the caller budget and representable array sizes."
+    (min requested maximum-analysis-size))
+
+  (declare check-dimension! (UFix -> Void))
+  (define (check-dimension! n)
+    "Check before n+1, heap child arithmetic, or dimension-sized allocation."
+    (when (> n maximum-analysis-size)
+      (throw (err:AnalysisLimitExceeded n maximum-analysis-size)))))
