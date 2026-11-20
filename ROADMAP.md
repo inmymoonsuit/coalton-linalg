@@ -129,18 +129,18 @@ and columns are sorted by one pass through the rows. On thirteen public patterns
 `analyze` takes between 1.7 and 25 times less, 5.3 times less on the loose grid a
 consumer measured as its cost. An independent set-based elimination agrees on 1,188
 analyses and agreed with the earlier code first; 392 driver output files are unchanged
-byte for byte; twenty-three planted source controls pass. [The batch
-record](docs/batch8.md) holds the measurements and what was tried and removed.
+byte for byte; twenty-three planted source controls pass. The fixed-pattern Gram analysis
+was then changed the same way, without sorts and with an unchanged pattern, and takes
+between 1.7 and 13 times less on the same systems. [The batch record](docs/batch8.md)
+holds the measurements and what was tried and removed.
 
 ### Next
 
 Each decided by a consumer's measurement and not before it:
 
-1. The fixed-pattern Gram analysis, which a consumer measured as large as the ordering
-   on long chains.
-2. A further gain in ordering time, which now needs an approximate degree or merged
+1. A further gain in ordering time, which now needs an approximate degree or merged
    vertices and so a decision about changing the order.
-3. Dense fronts in the numeric factor, only if factorization comes to dominate.
+2. Dense fronts in the numeric factor, only if factorization comes to dominate.
 
 ### Later, when measured need justifies it
 

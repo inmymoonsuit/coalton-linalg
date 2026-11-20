@@ -106,6 +106,10 @@ verifier is the Python program of Batch 3a.
 Whether following a published representation this closely from its description meets
 this repository's clean-room rule is the same open maintainer decision as for Batch 3d.
 
+The Gram analysis's grouping by digits is the classical least-significant-digit
+distribution sort, written from its definition, and its fill by row follows from the
+order in which a group lists its owners; neither was taken from a source.
+
 ## Batch 7: signed pivots and the augmented matrix
 
 **The setting is published; the ordering rule and the growth figure were worked out here.**

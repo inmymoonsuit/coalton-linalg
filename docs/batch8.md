@@ -160,6 +160,80 @@ dense fill is where elements absorb one another and nothing is read twice. The l
 grid is in between: its fill grows in fronts that overlap without nesting, and its
 vertices read several large elements at each update.
 
+## Addition: the fixed-pattern Gram analysis
+
+The same consumer measured the Gram analyses as large as the ordering on its long chains.
+[The Gram plan](gram.md) had the same two costs in another form, and the same answer
+applied. **Its pattern, its refill and every refusal are unchanged.**
+
+- Grouping the stored entries by inner index was a comparison sort through a closure. It
+  is now a distribution by one base-2048 digit of the inner index at a time, least
+  significant first, at most six passes. No array is indexed by an inner index, so a
+  matrix with a vast unused height costs what it did.
+- Each output column was collected and then sorted. The pattern is now filled by row: row
+  i is appended to every column before it that it shares an inner index with, so each
+  column receives its rows in increasing order and nothing is sorted. That uses the half
+  of each group the counting pass does not, from the group's beginning to the entry's
+  own position.
+
+Verification, at both safety policies within the complete checks:
+
+- The plan's exact-reference rosters pass unchanged: 76 seeded sources in both
+  orientations with 912 refills against exact rational products, the lifetime, preflight,
+  budget, overflow and encapsulation tests.
+- **Scattered rows.** A^T A does not depend on what the rows are called. Twenty-four
+  seeded sources are analysed twice, once with their twelve rows numbered 0 to 11 and
+  once with the same rows scattered over indices that differ in every digit the
+  distribution reads, up to two below the largest index. The patterns are equal and the
+  refilled values are equal bit for bit. This test was run against the earlier code
+  first, and passed.
+- The Gram driver's 26 output files on the thirteen public systems are identical byte for
+  byte to those written before.
+
+Planted source controls, each applied alone, compiled and caught, with the restored source
+passing:
+
+| Planted defect | Caught |
+| --- | --- |
+| Only the lowest digit of an inner index is sorted on | yes |
+| The placing pass reads the lowest digit whatever the counting pass read | yes |
+| The sorted positions are read from the array a pass has just left | yes |
+| A pass places equal digits from the end, reversing their order | yes |
+| A group's beginning is never moved on | yes |
+| A group's end stops one entry short | yes |
+| The fill skips the first owner of each group | yes |
+| The fill reads the owners after its own, not before | yes |
+| The diagonal is not written | yes |
+| The fill writes a row into a column once for each shared inner index | yes |
+| The count takes a neighbour once for each shared inner index | yes |
+| The count leaves out the diagonal | yes |
+| A^T A is analysed as A A^T | yes |
+
+One control was missed, and the source changed instead of the tests: resetting the marker
+stamps between the two passes. It is not needed, because the first pass stamps an index
+only with a column at or before it and the second asks about a row after it, so the reset
+was removed.
+
+Gram analysis on the public systems, the Gram driver, safety 1, best of 20. "Before" was
+measured the day before on an idle desktop; "after" with another program using about half
+the processor, so the gains are understated.
+
+| System | Product | Order | Stored entries | Before, ms | After, ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Chain, 25 | AᵀA | 400 | 1,048 | 0.156 | 0.077 |
+| Chain, 100 | AᵀA | 1,600 | 4,198 | 0.592 | 0.127 |
+| Chain, 200 | AᵀA | 3,200 | 8,398 | 1.234 | 0.266 |
+| Wheel, 100 | AᵀA | 402 | 1,697 | 0.273 | 0.123 |
+| Wheel, 400 | AᵀA | 1,602 | 6,797 | 1.022 | 0.187 |
+| Grid, 15 × 15 | AᵀA | 1,290 | 4,818 | 0.686 | 0.148 |
+| Grid, 21 × 21 | AᵀA | 2,562 | 9,642 | 1.439 | 0.311 |
+| Frame, medium | AAᵀ | 602 | 1,608 | 0.283 | 0.159 |
+| Frame, large | AAᵀ | 2,052 | 6,309 | 1.059 | 0.456 |
+| Loose chain, 25 | AAᵀ | 352 | 1,152 | 0.148 | 0.087 |
+| Loose chain, 100 | AAᵀ | 1,402 | 4,602 | 0.681 | 0.323 |
+| Loose grid, 15 × 15 | AAᵀ | 1,277 | 10,191 | 0.832 | 0.193 |
+| Loose wheel, 100 (dense) | AAᵀ | 354 | 35,705 | 2.192 | 0.169 |
+
 ## Limits
 
 - The degree is exact. Its cost has no better worst-case bound than the earlier sum of

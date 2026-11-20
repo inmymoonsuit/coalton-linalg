@@ -84,8 +84,12 @@ inner dimension is never expanded into a row-pointer array: for example, ATA of
 one entry at row maxUFix-1 in a maxUFix-by-1 matrix still has scalar structure.
 AAT of that matrix refuses its unrepresentable output dimension.
 
-Column candidates are marked and counted before output-pattern allocation, then
-collected again and sorted into CSC. Marker stamps reset between the two passes.
+Column candidates are marked and counted before output-pattern allocation. The
+pattern is then filled by row: row i is appended to every column at or before it
+that it shares an inner index with, so each column receives its rows in increasing
+order, diagonal first, and nothing is sorted. The marker stamps need no reset
+between the passes: the first stamps an index only with a column at or before it,
+and the second asks whether a column carries the stamp of a row after it.
 Numeric refill maps each current output column's rows into preallocated scatter
 positions and accumulates directly; no list of all individual multiplication
 contributions is cached.
@@ -95,11 +99,19 @@ position and the exclusive end of its inner-index group. Within a group the
 owning columns ascend, because B is canonical CSC with one entry per column and
 inner index. So the range from an entry's own position to its group's end holds
 exactly the columns at or after its own, which are the lower-triangle partners.
-Analysis and refill scan that range and nothing before it.
+The counting pass and refill scan that range and nothing before it. The fill
+uses the other half, from the group's beginning to the entry's own position,
+which analysis keeps only while it runs.
+
+The incidence is ordered by inner index and then by position without comparing:
+positions start in increasing order and are distributed by one base-2048 digit of
+the inner index at a time, least significant first, each pass keeping the order it
+was given among equal digits. The number of passes follows the largest inner index
+present, at most six, and no array is indexed by an inner index.
 
 With d the output dimension, s=nnz(A), g=nnz(G), live and retained storage is
-O(source-columns + s + d + g). Source ordering costs O(s log s); symbolic candidate
-traversal and refill work are sum_k degree_k (degree_k + 1) / 2, where degree_k is
+O(source-columns + s + d + g). Source ordering costs O(s) for each digit of the
+largest inner index; symbolic candidate traversal and refill work are sum_k degree_k (degree_k + 1) / 2, where degree_k is
 a source row degree for ATA or column degree for AAT: one product for each
 lower-triangle pair sharing inner index k. Refill also validates values and
 initializes output. The checked-Matrix variant additionally compares the entire

@@ -2,6 +2,13 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.7.2 — 2026-11-20
+
+Changed: the fixed-pattern Gram analysis is faster and returns exactly the pattern it
+returned before; refills and refusals are unchanged. On thirteen public systems
+`analyze-ata` and `analyze-aat` take between 1.7 and 13 times less.
+[Record](docs/batch8.md#addition-the-fixed-pattern-gram-analysis).
+
 ## 0.7.1 — 2026-11-20
 
 Changed: sparse analysis is faster and returns exactly what it returned before. On
