@@ -36,9 +36,9 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 10
+## Batches 3 through 11
 
-Batches 3 through 10 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+Batches 3 through 11 are completed, Batch 3 in four steps 3a through 3d, with one addition,
 [6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
 8 were set by a consuming application's measurements; what follows is listed under
 *Next*. [The batch record](docs/batch3a.md)
@@ -162,22 +162,37 @@ checked against exact rational solutions, twenty-two planted source controls and
 allocation measurements per policy pass. [The batch record](docs/batch10.md) holds the
 controls; [the contract](docs/refinement.md) says what refinement converges to.
 
+### Batch 11: dependent rows, and a factorization that leaves small pivots out
+
+**Completed.** `factor-skipping!` factors a symmetric matrix in the analyzed order and
+leaves out each index whose pivot is at or below a floor, so that the factor of the kept
+principal submatrix stands; `solve-skipping!` solves with it and `skipped-null-vector!`
+gives an index left out its combination of the kept ones.
+`coalton-linalg/sparse/dependent-rows` applies that to `A Aᵀ`: the rows to keep, a left
+null vector for each row left out, refined against A, a bound on what each leaves that
+holds for the exact product, and from those a bound on the singular values beyond the
+kept count. That the kept rows are independent is proved by the existing certificate on
+the whole matrix's own plan. [The design](docs/design-dependent-rows.md) came first and
+was read by the consumer that asked for it; [the batch record](docs/batch11.md) holds the
+controls, and [the contract](docs/dependent-rows.md) says what is proved and where the
+method stops resolving.
+
 ### Next
 
 From 2026-11-20 the library develops ahead of any one consumer's measurements, toward
 what solving in CAD and engineering work is likely to need. The order is a consumer's
 ranking of what it would use first:
 
-1. Dependent rows with a certificate: which rows of a sparse matrix are dependent, and
-   what can be proved about it. A written design comes before any code:
-   [the design](docs/design-dependent-rows.md) is out for review and nothing of it is
-   built.
-2. Sparse LU with partial pivoting for a square nonsymmetric matrix.
-3. Iterative least squares and minimum norm on an operator, with damping, and conjugate
+1. Sparse LU with partial pivoting for a square nonsymmetric matrix.
+2. Iterative least squares and minimum norm on an operator, with damping, and conjugate
    gradients for the definite case.
-4. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
+3. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
-5. Continuous integration on the pinned toolchain.
+4. Continuous integration on the pinned toolchain.
+
+Dependent rows, first in that ranking, is Batch 11. Its second method, a triangular
+factor of Aᵀ by rotations that resolves distances the first cannot, is designed and not
+built: it waits for a consumer whose tolerance is finer than about 10⁻⁷ of a row's size.
 
 **Measured since, and settled:** a consumer timed its whole first step on its loose grids
 after Batch 8. Analysis fell from 141 to 17 ms and from 272 to 47 ms and is now a sixth

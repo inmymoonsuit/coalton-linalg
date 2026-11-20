@@ -1,8 +1,12 @@
 # Design: dependent rows of a sparse matrix, with certificates
 
-State: **a design for review; nothing here is built.** It answers the roadmap item
-"dependent rows with a certificate" and is written to be read by the consumer that asked
-for it before any code is written. Where it says "proved" it means a statement that
+State: **reviewed, and built in part.** The consumer that asked for this read it and
+answered [its questions](#questions-for-the-consumer); Method G and the statements P1 to
+P3 were then built as Batch 11, and [the contract](dependent-rows.md) is the description
+of what exists. Method Q and P5 are not built. The text below is the design as it was
+reviewed, kept for its reasoning, with the answers added at the end. It answers the
+roadmap item "dependent rows with a certificate" and was written to be read before any
+code. Where it says "proved" it means a statement that
 follows from quantities the library computes together with a bound on their rounding;
 where it says "found" it means a choice that is then checked, and that could have been
 made differently.
@@ -221,6 +225,39 @@ pattern, repeated numeric calls that allocate nothing, outcomes as values.
    row.
 5. **Is a row of A a constraint, always?** The methods factor Aᵀ; a caller with constraints
    as columns passes the transpose.
+
+## The answers, and what was built
+
+The consumer's answers, in the order of the questions:
+
+1. **Tolerance.** Its test is relative to the whole matrix's largest singular value, and a
+   row's norm does not exceed that, so relative to a row's own size its threshold is
+   coarser still: above Method G's floor by a factor of about 60 at the least. Decisions
+   near the threshold are common in its data and must be handed back to another method,
+   never cut.
+2. **Proof or diagnosis.** Both. The rank is a proof at its tolerance, P1 with P3's gap,
+   or it is handed back. The sets shown to a user must agree with those it shows now,
+   which puts a demand on the accuracy of the multipliers and is why they are refined.
+3. **Small sets.** Not needed. It reduces whatever basis of the left null space it is
+   given to the same canonical form, so any basis gives the same sets.
+4. **Shapes.** Up to about 1,600 rows and columns, two to eight entries a row apart from
+   hub columns, and zero to three rows left out.
+5. **What it replaces.** A call returning the rank and a basis of the left null space. So
+   the interface gives the kept count, one null vector for each row left out, and what
+   is needed to tell a proved result from one to hand back.
+
+What was built differs from the interface proposed above in these ways:
+
+- **Method G, not Q.** The tolerance allows it, and it is one branch in an existing
+  kernel. The rotation count that would have decided Q's cost was not needed.
+- **The multipliers come from the factor and are then refined against A**, by the
+  correction the design mentioned only in passing. The consumer's second answer made
+  their accuracy matter.
+- **The vector is returned whole**, 1 at the row and the negated multipliers at the kept
+  rows, since a basis of the left null space is what the consumer consumes.
+- **P1 on the whole matrix's plan was confirmed by test**: stored zeros are accepted, and
+  the certificate was issued 177 times with rows left out and never falsely.
+- `row-distance` was not built; nothing asked for it.
 
 ## Provenance, in advance
 

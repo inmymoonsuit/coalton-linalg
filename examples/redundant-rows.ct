@@ -1,0 +1,56 @@
+(cl:defpackage #:coalton-linalg/examples/redundant-rows
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:rows #:coalton-linalg/sparse/dependent-rows))
+  (:export #:redundant-row-count #:redundant-row-product))
+(cl:in-package #:coalton-linalg/examples/redundant-rows)
+
+(coalton-toplevel
+  (declare constraints (Void -> csc:Matrix))
+  (define (constraints)
+    "Three constraints on four unknowns, the third being the sum of the first two.
+
+    x0 + x1           = ...
+              x2 + x3 = ...
+    x0 + x1 + x2 + x3 = ..."
+    (let rows = (arr:make 8 (the UFix 0)))
+    (let columns = (arr:make 8 (the UFix 0)))
+    (let values = (arr:make 8 1.0d0))
+    ;; (row, column) of each entry: row 0 holds columns 0 and 1, row 1 columns 2 and 3, row 2 all four.
+    (arr:set! rows 0 0) (arr:set! columns 0 0)
+    (arr:set! rows 1 0) (arr:set! columns 1 1)
+    (arr:set! rows 2 1) (arr:set! columns 2 2)
+    (arr:set! rows 3 1) (arr:set! columns 3 3)
+    (arr:set! rows 4 2) (arr:set! columns 4 0)
+    (arr:set! rows 5 2) (arr:set! columns 5 1)
+    (arr:set! rows 6 2) (arr:set! columns 6 2)
+    (arr:set! rows 7 2) (arr:set! columns 7 3)
+    (csc:from-coo 3 4 rows columns values csc:RejectDuplicates))
+
+  (declare redundant-row-count (Void -> UFix))
+  (define (redundant-row-count)
+    "How many of the three constraints the others already imply: 1."
+    (let matrix = (constraints))
+    (let analysis = (rows:analyze matrix))
+    (unless (== (rows:find-dependent-rows! analysis matrix 1.0d-6) rows:RowsFound)
+      (return 99))
+    (rows:left-out-count analysis))
+
+  (declare redundant-row-product (Void -> F64))
+  (define (redundant-row-product)
+    "What is left of the redundant constraint when its combination of the others is taken away, as a proved bound on the norm: below 1e-12.
+
+Which of the three is left out depends on the order the rows are met in; the vector for it
+has 1 at that row and the negated multipliers at the two kept rows, and the bound is on the
+exact product of the stored matrix with that vector."
+    (let matrix = (constraints))
+    (let analysis = (rows:analyze matrix))
+    (let vector = (arr:make 3 0.0d0))
+    (unless (== (rows:find-dependent-rows! analysis matrix 1.0d-6) rows:RowsFound)
+      (return -1.0d0))
+    (unless (== (rows:null-vector! analysis 0 vector) rows:NullFound)
+      (return -1.0d0))
+    ;; One row left out, so the gap bound is this one residual bound: no singular value of
+    ;; the matrix beyond the second exceeds it.
+    (rows:gap-bound analysis)))

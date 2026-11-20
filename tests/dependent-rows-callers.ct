@@ -1,0 +1,142 @@
+(cl:defpackage #:coalton-linalg/tests/dependent-rows-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:rows #:coalton-linalg/sparse/dependent-rows)
+                    (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:observe-skipping #:observe-skipping-solve #:observe-plain-solve #:observe-skipped-null
+           #:observe-rows #:observe-null #:kept-values-code #:analysis-code #:bound-code
+           #:skipping-loop #:rows-loop))
+(cl:in-package #:coalton-linalg/tests/dependent-rows-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare observe-skipping (ldlt:Symbolic * arr:LispArray F64 * F64 * F64 -> UFix))
+  (define (observe-skipping symbolic values shift floor)
+    "Exhaustively matched outcome: success 0, non-finite 2, values 3, shift 4, floor 5."
+    (match (ldlt:factor-skipping! symbolic values shift floor)
+      ((ldlt:SkipSuccess) 0)
+      ((ldlt:SkipNonFinite) 2)
+      ((ldlt:SkipBadValues) 3)
+      ((ldlt:SkipBadShift) 4)
+      ((ldlt:SkipBadFloor) 5)))
+
+  (declare solve-code (ldlt:SolveStatus -> UFix))
+  (define (solve-code status)
+    (match status
+      ((ldlt:SolveSuccess) 0)
+      ((ldlt:SolveInvalidFactor) 1)
+      ((ldlt:SolveBadSize) 2)
+      ((ldlt:SolveNonFiniteRhs) 3)
+      ((ldlt:SolveNonFiniteResult) 4)))
+
+  (declare observe-skipping-solve (ldlt:NumericFactor * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (observe-skipping-solve factor b out)
+    "Exhaustively matched outcome of solve-skipping!: success 0, no factor 1, size 2, right-hand side 3, result 4."
+    (solve-code (ldlt:solve-skipping! factor b out)))
+
+  (declare observe-plain-solve (ldlt:NumericFactor * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (observe-plain-solve factor b out)
+    "The same codes for solve!."
+    (solve-code (ldlt:solve! factor b out)))
+
+  (declare observe-skipped-null (ldlt:Symbolic * UFix * arr:LispArray F64 -> UFix))
+  (define (observe-skipped-null symbolic index out)
+    "Exhaustively matched outcome: success 0, no factor 1, not skipped 2, size 3, non-finite 4."
+    (match (ldlt:skipped-null-vector! symbolic index out)
+      ((ldlt:NullVectorSuccess) 0)
+      ((ldlt:NullVectorNoFactor) 1)
+      ((ldlt:NullVectorNotSkipped) 2)
+      ((ldlt:NullVectorBadSize) 3)
+      ((ldlt:NullVectorNonFinite) 4)))
+
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure 91, dimensions 92, input 95, result 96, dimension limit 97, storage 98."
+    (match problem
+      ((err:InvalidStructure _) 91)
+      ((err:InvalidDimensions _) 92)
+      ((err:NonFiniteInput _) 95)
+      ((err:NonFiniteResult _) 96)
+      ((err:AnalysisLimitExceeded _ _) 97)
+      ((err:AnalysisStorageExceeded _ _) 98)
+      (_ 99)))
+
+  (declare rows-code (rows:RowStatus -> UFix))
+  (define (rows-code status)
+    (match status
+      ((rows:RowsFound) 0)
+      ((rows:RowsNonFinite) 1)
+      ((rows:RowsBadThreshold) 2)))
+
+  (declare observe-rows (rows:RowAnalysis * csc:Matrix * F64 -> UFix))
+  (define (observe-rows analysis matrix threshold)
+    "Exhaustively matched outcome: found 0, non-finite 1, threshold 2; a typed error's category from 91."
+    (catch (rows-code (rows:find-dependent-rows! analysis matrix threshold))
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare observe-null (rows:RowAnalysis * UFix * arr:LispArray F64 -> UFix))
+  (define (observe-null analysis position out)
+    "Exhaustively matched outcome: found 0, no rows 1, position 2, size 3, non-finite 4."
+    (match (rows:null-vector! analysis position out)
+      ((rows:NullFound) 0)
+      ((rows:NullNoRows) 1)
+      ((rows:NullBadPosition) 2)
+      ((rows:NullBadSize) 3)
+      ((rows:NullNonFinite) 4)))
+
+  (declare kept-values-code (rows:RowAnalysis * arr:LispArray F64 -> UFix))
+  (define (kept-values-code analysis out)
+    "1 when the values were written, 0 when no kept set stands; a typed error's category from 91."
+    (catch (if (rows:kept-values! analysis out) 1 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare analysis-code (csc:Matrix * UFix -> UFix))
+  (define (analysis-code matrix limit)
+    "0 when the analysis was made under the budget; a typed error's category from 91."
+    (catch (progn (rows:analyze-with-limit matrix limit) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare bound-code (csc:Matrix * arr:LispArray F64 -> UFix))
+  (define (bound-code matrix v)
+    "0 when a bound was returned; a typed error's category from 91."
+    (catch (progn (rows:transpose-product-bound matrix v) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare skipping-loop (ldlt:Symbolic * arr:LispArray F64 * F64 * UFix * arr:LispArray F64
+                          * arr:LispArray F64 * UFix -> UFix))
+  (define (skipping-loop symbolic values floor skipped rhs out count)
+    "A real external caller: factor leaving small pivots out, solve on what was kept, ask for one skipped index's vector."
+    (let failures = (cell:new (the UFix 0)))
+    (let factor = (ldlt:symbolic-factor symbolic))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (ldlt:factor-skipping! symbolic values 0.0d0 floor) ldlt:SkipSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (and (ldlt:skipping-ready? factor) (> (ldlt:skipped-count factor) 0))
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (ldlt:solve-skipping! factor rhs out) ldlt:SolveSuccess)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (ldlt:skipped-null-vector! symbolic skipped out) ldlt:NullVectorSuccess)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare rows-loop (rows:RowAnalysis * csc:Matrix * F64 * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (rows-loop analysis matrix threshold out kept count)
+    "A real external caller: find the rows, take every left null vector, read the gap bound and the kept values."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (unless (== (rows:find-dependent-rows! analysis matrix threshold) rows:RowsFound)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (for ((position 0 (+ position 1))) :while (< position (rows:left-out-count analysis))
+        (unless (== (rows:null-vector! analysis position out) rows:NullFound)
+          (cell:write! failures (+ (cell:read failures) 1))))
+      (unless (>= (rows:gap-bound analysis) 0.0d0)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (rows:kept-values! analysis kept)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))

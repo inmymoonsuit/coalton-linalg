@@ -18,7 +18,8 @@ rank, perturbs a pivot or retries. No application code is loaded or required.
 | `coalton-linalg/refinement` | Iterative refinement of any approximate solve against an operator the caller applies: stopping rule, stall test, best iterate and residual history | [refinement](docs/refinement.md) | [10](docs/batch10.md) |
 | `coalton-linalg/sparse/csc` | Checked CSC and COO construction, transpose, permutations, products into caller storage | [primitives](docs/primitives.md) | [3b](docs/batch3b.md) |
 | `coalton-linalg/sparse/gram` | AᵀA and AAᵀ on a fixed pattern: analyze once, refill values | [gram](docs/gram.md) | [3c](docs/batch3c.md) |
-| `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, a 1-norm condition estimate, a Cholesky-form entry for positivity proofs, and a signed-pivot entry that measures its own growth | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md), [Cholesky form](docs/cholesky-form.md), [signed pivots](docs/quasidefinite.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md), [6a](docs/batch6a.md), [7](docs/batch7.md), [7a](docs/batch7a.md), [8](docs/batch8.md), [10](docs/batch10.md) |
+| `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, a 1-norm condition estimate, a Cholesky-form entry for positivity proofs, a signed-pivot entry that measures its own growth, and an entry that leaves small pivots out and factors what is kept | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md), [Cholesky form](docs/cholesky-form.md), [signed pivots](docs/quasidefinite.md), [skipped pivots](docs/skipping.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md), [6a](docs/batch6a.md), [7](docs/batch7.md), [7a](docs/batch7a.md), [8](docs/batch8.md), [10](docs/batch10.md), [11](docs/batch11.md) |
+| `coalton-linalg/sparse/dependent-rows` | Which rows of a sparse matrix depend on the others: a kept set, a left null vector for each row left out, and proved bounds on what each leaves and on the singular values beyond the kept count | [dependent rows](docs/dependent-rows.md) | [11](docs/batch11.md) |
 | `coalton-linalg/sparse/scaling` | Row and column equilibration, and diagonal scaling of a symmetric positive definite matrix, by powers of two: exact, with the vector maps | [scaling](docs/scaling.md) | [9](docs/batch9.md) |
 | `coalton-linalg/sparse/augmented` | The augmented matrix `[[top I, Aᵀ], [A, −bottom I]]` of a sparse A on a fixed pattern: analyze once, refill values | [signed pivots](docs/quasidefinite.md) | [7](docs/batch7.md) |
 | `coalton-linalg/dense/indefinite-ldlt` | Dense symmetric indefinite LDLᵀ with 1-by-1 and 2-by-2 pivots, solves, and inertia | [indefinite](docs/indefinite-ldlt.md) | [4](docs/batch4.md) |
@@ -104,7 +105,7 @@ The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
 `coalton-linalg/refinement`,
 `coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/scaling`,
 `coalton-linalg/sparse/augmented`,
-`coalton-linalg/sparse/spd-ldlt`,
+`coalton-linalg/sparse/spd-ldlt`, `coalton-linalg/sparse/dependent-rows`,
 `coalton-linalg/dense/indefinite-ldlt`, `coalton-linalg/dense/orthogonal` and
 `coalton-linalg/dense/jacobi`. The [interface reference](docs/api.md) indexes
 all exported symbols and links to their contracts. The compiled examples are
@@ -112,8 +113,9 @@ all exported symbols and links to their contracts. The compiled examples are
 [normal equations](examples/normal-equations.ct), [a minimum-norm solve through an augmented
 system](examples/minimum-norm.ct), [dependent constraints](examples/dependent-constraints.ct),
 [a rank from singular values](examples/singular-rank.ct),
-[a sparse minimum-norm solve with signed pivots](examples/augmented-minimum-norm.ct) and
-[a solve through a scaled matrix](examples/scaled-solve.ct). The
+[a sparse minimum-norm solve with signed pivots](examples/augmented-minimum-norm.ct),
+[a solve through a scaled matrix](examples/scaled-solve.ct) and
+[redundant constraints found and bounded](examples/redundant-rows.ct). The
 [mathematical glossary](CONTEXT.md) explains shared terms.
 
 The main system loads only the library. `/tests`, `/examples`, `/tools`, and
@@ -156,7 +158,8 @@ recorded in the batch records, not rerun by this command.
 | `src/sparse/scaling.ct` | Exact scaling of rows, columns and symmetric diagonals by powers of two |
 | `src/sparse/ordering.ct` | Private minimum-degree ordering, with held indices |
 | `src/sparse/limits.ct`, `src/dense/limits.ct` | Private dimension bounds and entry budgets |
-| `src/sparse/spd-ldlt.ct` | SPD and signed-pivot factorization, solves and condition estimate |
+| `src/sparse/spd-ldlt.ct` | SPD, signed-pivot and pivot-skipping factorization, solves and condition estimate |
+| `src/sparse/dependent-rows.ct` | Dependent rows of a sparse matrix, their null vectors and proved bounds |
 | `src/dense/indefinite-ldlt.ct` | Dense symmetric indefinite factorization and inertia |
 | `src/dense/orthogonal.ct` | Dense pivoted QR, complete orthogonal decomposition, least squares |
 | `src/dense/jacobi.ct` | Dense symmetric eigenvalues and singular values by Jacobi rotations |

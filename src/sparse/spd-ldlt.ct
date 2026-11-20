@@ -11,6 +11,10 @@
            #:SignedFactorStatus #:SignedSuccess #:SignedZeroPivot #:SignedNonFinite #:SignedBadValues
            #:SignedBadShift #:factor-signed! #:positive-pivot-count #:negative-pivot-count #:factor-growth
            #:factor-backward-bound
+           #:SkipFactorStatus #:SkipSuccess #:SkipNonFinite #:SkipBadValues #:SkipBadShift #:SkipBadFloor
+           #:factor-skipping! #:skipping-ready? #:skipped-count #:solve-skipping!
+           #:NullVectorStatus #:NullVectorSuccess #:NullVectorNoFactor #:NullVectorNotSkipped
+           #:NullVectorBadSize #:NullVectorNonFinite #:skipped-null-vector!
            #:analyze-quasidefinite #:analyze-quasidefinite-with-limit
            #:analyze #:analyze-csc #:analyze-with-limit #:analyze-csc-with-limit #:factor! #:solve! #:refused-column
            #:symbolic-factor #:factor-permutation #:factor-columns #:factor-rows
@@ -80,6 +84,36 @@
     "The value count differs from the analyzed pattern's."
     SignedBadShift
     "The shift was not finite.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type SkipFactorStatus
+    "Outcome of a pivot-skipping factorization call, which refuses no pivot that is finite."
+    SkipSuccess
+    "A factor of the kept principal submatrix stands; read skipped-count."
+    SkipNonFinite
+    "A value or an intermediate result was not finite."
+    SkipBadValues
+    "The value count differs from the analyzed pattern's."
+    SkipBadShift
+    "The shift was not finite."
+    SkipBadFloor
+    "The pivot floor was negative or not finite.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type NullVectorStatus
+    "Outcome of a request for the vector that belongs to a skipped index."
+    NullVectorSuccess
+    "The output holds the vector."
+    NullVectorNoFactor
+    "No pivot-skipping factor stands."
+    NullVectorNotSkipped
+    "The index is out of range or was not skipped."
+    NullVectorBadSize
+    "The output's length differs from the order."
+    NullVectorNonFinite
+    "A computed entry was not finite; the output is unchanged.")
 
   (derive Eq)
   (repr :enum)
@@ -154,6 +188,15 @@
   (define (cholesky-ready? f)
     "Whether the storage holds the Cholesky-form factor of the latest factor-cholesky! call, which solve-cholesky! accepts and solve! does not."
     (== (arr:aref (.state (numeric-storage f)) 0) 2))
+  (declare skipping-ready? (NumericFactor -> Boolean))
+  (define (skipping-ready? f)
+    "Whether the storage holds the factor of the latest factor-skipping! call, which solve-skipping! accepts and solve! does not."
+    (== (arr:aref (.state (numeric-storage f)) 0) 3))
+  (declare skipped-count (NumericFactor -> UFix))
+  (define (skipped-count f)
+    "Indices the standing pivot-skipping factor left out; 0 when none stands. A skipped index has a zero in factor-diagonal."
+    (let st = (.state (numeric-storage f)))
+    (if (== (arr:aref st 0) 3) (- (.size (numeric-storage f)) (arr:aref st 2)) 0))
   (declare positive-pivot-count (NumericFactor -> UFix))
   (define (positive-pivot-count f)
     "Positive entries of D in the factor as it now stands; 0 when no factor stands."
@@ -334,9 +377,9 @@
                     (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make 3 -1.0d0))))
     (MkSymbolic (SymbolicStorage f nnz ap ar ai rp rc rq (arr:make 1 (the IFix -1)))))
 
-  (declare factor-kernel! (Symbolic * arr:LispArray F64 * F64 * Boolean -> UFix))
-  (define (factor-kernel! symbolic values shift signed)
-    "The numeric factorization both entry points share: 0 success, 1 refused pivot, 2 non-finite, 3 bad values, 4 bad shift."
+  (declare factor-kernel! (Symbolic * arr:LispArray F64 * F64 * Boolean * Boolean * F64 -> UFix))
+  (define (factor-kernel! symbolic values shift signed skipping floor)
+    "The numeric factorization the entry points share: 0 success, 1 refused pivot, 2 non-finite, 3 bad values, 4 bad shift, 5 bad floor. With skipping, a pivot at or below floor is left out and not refused."
     (let s = (symbolic-storage symbolic))
     (let f = (numeric-storage (.numeric s)))
     (let st = (.state f))
@@ -351,6 +394,7 @@
     (arr:set! (.diagnostic s) 0 -1)
     (unless (== (arr:length values) (.input-count s)) (return 3))
     (unless (inline (finite? shift)) (return 4))
+    (unless (and (>= floor 0.0d0) (inline (finite? floor))) (return 5))
     (let n = (.size f))
     (let lp = (.columns f))
     (let lr = (.rows f))
@@ -390,22 +434,33 @@
       (let pivot = (arr:aref w k))
       (unless (inline (finite? pivot)) (return (refuse! s k 2)))
       ;; The positive definite entry refuses every pivot that is not positive; the signed entry
-      ;; refuses only the pivot it cannot divide by.
+      ;; refuses only the pivot it cannot divide by; the skipping entry refuses none.
+      (let skip = (and skipping (<= pivot floor)))
+      (unless skip
+        (cond
+          (signed (when (== pivot 0.0d0) (return (refuse! s k 1))))
+          (True (unless (> pivot 0.0d0) (return (refuse! s k 1))))))
       (cond
-        (signed (when (== pivot 0.0d0) (return (refuse! s k 1))))
-        (True (unless (> pivot 0.0d0) (return (refuse! s k 1)))))
-      (cond
-        ((> pivot 0.0d0) (arr:set! st 2 (+ (arr:aref st 2) 1)))
-        (True (arr:set! st 3 (+ (arr:aref st 3) 1))))
-      (arr:set! d k pivot)
-      (when signed (arr:set! bound k (+ (arr:aref bound k) (abs pivot))))
-      (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
-        (let v = (/ (arr:aref w (arr:aref lr q)) pivot))
-        (unless (inline (finite? v)) (return (refuse! s k 2)))
-        (when signed
-          (arr:set! bound (arr:aref lr q) (+ (arr:aref bound (arr:aref lr q)) (* (* v v) (abs pivot))))
-          (when (> (abs v) (cell:read steepest)) (cell:write! steepest (abs v))))
-        (arr:set! lv q v)))
+        ;; A skipped index keeps a zero pivot and an empty column, so no later column receives
+        ;; anything from it: what follows is the factorization of the matrix without it. Its
+        ;; row, in the columns before it, stays as computed and is what its null vector needs.
+        (skip
+         (arr:set! d k 0.0d0)
+         (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+           (arr:set! lv q 0.0d0)))
+        (True
+         (cond
+           ((> pivot 0.0d0) (arr:set! st 2 (+ (arr:aref st 2) 1)))
+           (True (arr:set! st 3 (+ (arr:aref st 3) 1))))
+         (arr:set! d k pivot)
+         (when signed (arr:set! bound k (+ (arr:aref bound k) (abs pivot))))
+         (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+           (let v = (/ (arr:aref w (arr:aref lr q)) pivot))
+           (unless (inline (finite? v)) (return (refuse! s k 2)))
+           (when signed
+             (arr:set! bound (arr:aref lr q) (+ (arr:aref bound (arr:aref lr q)) (* (* v v) (abs pivot))))
+             (when (> (abs v) (cell:read steepest)) (cell:write! steepest (abs v))))
+           (arr:set! lv q v)))))
     (when signed
       ;; |L| |D| |L^T| is a Gram matrix, so its largest entry is on its diagonal.
       (let widest = (cell:new 0.0d0))
@@ -428,13 +483,13 @@
                           (+ 3.0d0 (* (* order reach) (+ 2.0d0 (* 2.0d0 (cell:read steepest)))))))
       (let margin = (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order (+ (* 2.0d0 reach) 10.0d0)))))
       (arr:set! (.estimate f) 2 (* margin (+ (* relative (cell:read trace)) underflow))))
-    (arr:set! st 0 1)
+    (arr:set! st 0 (if skipping 3 1))
     0)
 
   (declare factor! (Symbolic * arr:LispArray F64 * F64 -> FactorStatus))
   (define (factor! symbolic values shift)
     "Overwrite the owned factor, requiring every pivot positive. A refusal invalidates it. Values use the analyzed CSC order."
-    (let code = (factor-kernel! symbolic values shift False))
+    (let code = (factor-kernel! symbolic values shift False False 0.0d0))
     (cond
       ((== code 0) FactorSuccess)
       ((== code 1) FactorNonPositive)
@@ -445,13 +500,24 @@
   (declare factor-signed! (Symbolic * arr:LispArray F64 * F64 -> SignedFactorStatus))
   (define (factor-signed! symbolic values shift)
     "Overwrite the owned factor, accepting pivots of either sign and refusing only a zero one. See docs/quasidefinite.md."
-    (let code = (factor-kernel! symbolic values shift True))
+    (let code = (factor-kernel! symbolic values shift True False 0.0d0))
     (cond
       ((== code 0) SignedSuccess)
       ((== code 1) SignedZeroPivot)
       ((== code 2) SignedNonFinite)
       ((== code 3) SignedBadValues)
       (True SignedBadShift)))
+
+  (declare factor-skipping! (Symbolic * arr:LispArray F64 * F64 * F64 -> SkipFactorStatus))
+  (define (factor-skipping! symbolic values shift floor)
+    "Overwrite the owned factor, leaving out every index whose pivot is at or below floor: what stands is the factor of the principal submatrix of the kept indices. See docs/skipping.md."
+    (let code = (factor-kernel! symbolic values shift False True floor))
+    (cond
+      ((== code 0) SkipSuccess)
+      ((== code 2) SkipNonFinite)
+      ((== code 3) SkipBadValues)
+      ((== code 4) SkipBadShift)
+      (True SkipBadFloor)))
 
   (declare refuse-status! (SymbolicStorage * UFix * FactorStatus -> FactorStatus))
   (define (refuse-status! s column status)
@@ -585,6 +651,94 @@
     (for ((k 0 (+ k 1))) :while (< k n)
       (arr:set! out (arr:aref perm k) (arr:aref w k)))
     SolveSuccess)
+
+  (declare solve-skipping! (NumericFactor * arr:LispArray F64 * arr:LispArray F64 -> SolveStatus))
+  (define (solve-skipping! factor b out)
+    "Solve the kept principal system with the standing pivot-skipping factor: entries of b at skipped indices are not used, and the solution is zero there. Solve into out on success; return a named outcome and preserve out on refusal. See docs/skipping.md."
+    (unless (skipping-ready? factor) (return SolveInvalidFactor))
+    (let f = (numeric-storage factor))
+    (let n = (.size f))
+    (unless (and (== (arr:length b) n) (== (arr:length out) n)) (return SolveBadSize))
+    (let perm = (.permutation f))
+    (let lp = (.columns f))
+    (let lr = (.rows f))
+    (let lv = (.entries f))
+    (let d = (.diagonal f))
+    (let w = (.scratch f))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (let v = (arr:aref b (arr:aref perm k)))
+      (unless (inline (finite? v)) (return SolveNonFiniteRhs))
+      (arr:set! w k v))
+    ;; Earlier columns hold entries in a skipped row and have written to it; it is cleared when
+    ;; reached, before anything reads it.
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (cond
+        ((== (arr:aref d k) 0.0d0) (arr:set! w k 0.0d0))
+        (True
+         (let v = (arr:aref w k))
+         (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+           (let i = (arr:aref lr q))
+           (arr:set! w i (- (arr:aref w i) (* (arr:aref lv q) v)))))))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (unless (== (arr:aref d k) 0.0d0)
+        (let v = (/ (arr:aref w k) (arr:aref d k)))
+        (unless (inline (finite? v)) (return SolveNonFiniteResult))
+        (arr:set! w k v)))
+    ;; A skipped index has an empty column and a zero, so it stays zero.
+    (for ((remaining n (- remaining 1))) :while (> remaining 0)
+      (let k = (- remaining 1))
+      (let acc = (cell:new (arr:aref w k)))
+      (for ((q (arr:aref lp k) (+ q 1))) :while (< q (arr:aref lp (+ k 1)))
+        (cell:write! acc (- (cell:read acc) (* (arr:aref lv q) (arr:aref w (arr:aref lr q))))))
+      (unless (inline (finite? (cell:read acc))) (return SolveNonFiniteResult))
+      (arr:set! w k (cell:read acc)))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (arr:set! out (arr:aref perm k) (arr:aref w k)))
+    SolveSuccess)
+
+  (declare skipped-null-vector! (Symbolic * UFix * arr:LispArray F64 -> NullVectorStatus))
+  (define (skipped-null-vector! symbolic index out)
+    "For a skipped index, in original numbering, write the vector v with v[index] = 1, zeros at the other skipped indices and at the kept indices eliminated after it, and M v zero at the kept indices eliminated before it, M being the matrix factored. See docs/skipping.md."
+    (let s = (symbolic-storage symbolic))
+    (let factor = (.numeric s))
+    (unless (skipping-ready? factor) (return NullVectorNoFactor))
+    (let f = (numeric-storage factor))
+    (let n = (.size f))
+    (unless (== (arr:length out) n) (return NullVectorBadSize))
+    (let perm = (.permutation f))
+    (let lp = (.columns f))
+    (let lr = (.rows f))
+    (let lv = (.entries f))
+    (let d = (.diagonal f))
+    (let w = (.scratch f))
+    (let at = (cell:new n))
+    (for ((k 0 (+ k 1))) :while (< k n)
+      (when (and (== (arr:aref perm k) index) (== (arr:aref d k) 0.0d0))
+        (cell:write! at k)))
+    (let k = (cell:read at))
+    (when (== k n) (return NullVectorNotSkipped))
+    ;; Row k of L, which the columns before k hold, is the right-hand side: with S the kept
+    ;; indices before k, M[S,S] y = M[S,k] is L[S,S]^T y = L[k,S]^T, one substitution from the
+    ;; last kept index up. A skipped column is empty, so its entry of the row is already zero.
+    (for ((j 0 (+ j 1))) :while (< j k)
+      (arr:set! w j 0.0d0))
+    (for ((r (arr:aref (.row-columns s) k) (+ r 1)))
+        :while (< r (arr:aref (.row-columns s) (+ k 1)))
+      (arr:set! w (arr:aref (.row-owners s) r) (arr:aref lv (arr:aref (.row-positions s) r))))
+    (for ((remaining k (- remaining 1))) :while (> remaining 0)
+      (let j = (- remaining 1))
+      (let acc = (cell:new (arr:aref w j)))
+      (for ((q (arr:aref lp j) (+ q 1)))
+          :while (and (< q (arr:aref lp (+ j 1))) (< (arr:aref lr q) k))
+        (cell:write! acc (- (cell:read acc) (* (arr:aref lv q) (arr:aref w (arr:aref lr q))))))
+      (unless (inline (finite? (cell:read acc))) (return NullVectorNonFinite))
+      (arr:set! w j (cell:read acc)))
+    (for ((i 0 (+ i 1))) :while (< i n)
+      (arr:set! out i 0.0d0))
+    (for ((j 0 (+ j 1))) :while (< j k)
+      (arr:set! out (arr:aref perm j) (- 0.0d0 (arr:aref w j))))
+    (arr:set! out index 1.0d0)
+    NullVectorSuccess)
 
   (derive Eq)
   (repr :enum)

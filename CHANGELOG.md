@@ -2,6 +2,27 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.11.0 — 2026-11-20
+
+Added:
+
+- `coalton-linalg/sparse/dependent-rows`: `find-dependent-rows!` gives the rows of a
+  sparse matrix to keep and those that depend on them, `null-vector!` a left null vector
+  for each row left out, `residual-bound` a bound on what that row leaves that holds for
+  the exact product, and `gap-bound` a bound on the singular values beyond the kept
+  count. `kept-values!` supplies what the existing rank certificate needs to prove the
+  kept rows independent, and `transpose-product-bound` is the bound by itself.
+  [Contract](docs/dependent-rows.md) · [record](docs/batch11.md).
+- In `coalton-linalg/sparse/spd-ldlt`: `factor-skipping!` leaves out each index whose
+  pivot is at or below a floor and factors the rest; `solve-skipping!` solves with the
+  kept principal submatrix; `skipped-null-vector!` gives an index left out its
+  combination of the kept ones; `skipping-ready?` and `skipped-count` report the state.
+  [Contract](docs/skipping.md).
+
+No existing call changes meaning. `factor!` and `factor-signed!` are unchanged,
+operation for operation, and a factor from `factor-skipping!` is refused by `solve!`,
+`solve-cholesky!` and `estimate-inverse-norm1!`.
+
 ## 0.10.0 — 2026-11-20
 
 Added:

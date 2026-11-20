@@ -3,10 +3,11 @@
 Package: `coalton-linalg/sparse/spd-ldlt`. Source:
 [src/sparse/spd-ldlt.ct](../src/sparse/spd-ldlt.ct).
 
-This page is the positive definite contract. The same package has two further numeric
+This page is the positive definite contract. The same package has three further numeric
 entries over the same analysis, each with its own page:
-[a Cholesky-form entry for proofs](cholesky-form.md) and
-[a signed-pivot entry for quasi-definite matrices](quasidefinite.md).
+[a Cholesky-form entry for proofs](cholesky-form.md),
+[a signed-pivot entry for quasi-definite matrices](quasidefinite.md) and
+[an entry that leaves small pivots out](skipping.md), for semidefinite matrices.
 
 ## Interface
 
@@ -62,7 +63,7 @@ SolveStatus is a distinct type with these outcomes:
 
 [A Cholesky-form entry](cholesky-form.md), `factor-cholesky!`, computes G with G Gᵀ in
 place of L D Lᵀ over the same analysis, for proofs of positive definiteness; it overwrites
-the factor and no solve accepts it.
+the factor, `solve-cholesky!` solves with it and `solve!` does not accept it.
 
 After a successful factor, [the condition estimate](condition.md) gives a lower estimate of
 the 1-norm of the inverse of the shifted matrix by solves with the same factor.

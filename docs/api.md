@@ -94,7 +94,7 @@ plan's dimension, column pointers and row indices.
 
 ## coalton-linalg/sparse/spd-ldlt
 
-[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Cholesky form](cholesky-form.md) · [Signed pivots](quasidefinite.md) · [Source](../src/sparse/spd-ldlt.ct)
+[Contract and outcome meanings](spd-ldlt.md) · [Condition estimate](condition.md) · [Cholesky form](cholesky-form.md) · [Signed pivots](quasidefinite.md) · [Skipped pivots](skipping.md) · [Source](../src/sparse/spd-ldlt.ct)
 
 | Export | Type or role |
 | --- | --- |
@@ -128,6 +128,15 @@ plan's dimension, column pointers and row indices.
 | `factor-growth` | NumericFactor -> F64; measured by the latest successful factor-signed!, otherwise -1 |
 | `factor-backward-bound` | NumericFactor -> F64; upper bound on the Frobenius norm of P K Pᵀ − L D Lᵀ for that factor, otherwise -1 |
 | `positive-pivot-count`, `negative-pivot-count` | NumericFactor -> UFix; signs of D in the standing factor |
+| `SkipFactorStatus` | Pivot-skipping factorization outcome type |
+| `SkipSuccess`, `SkipNonFinite`, `SkipBadValues`, `SkipBadShift`, `SkipBadFloor` | SkipFactorStatus values |
+| `factor-skipping!` | Symbolic * V * F64 * F64 -> SkipFactorStatus; shift, then the pivot floor: an index whose pivot is at or below it is left out |
+| `skipping-ready?` | NumericFactor -> Boolean |
+| `skipped-count` | NumericFactor -> UFix; indices the standing pivot-skipping factor left out |
+| `solve-skipping!` | NumericFactor * V * V -> SolveStatus; solves with the kept principal submatrix, zero at the indices left out |
+| `NullVectorStatus` | Outcome type of skipped-null-vector! |
+| `NullVectorSuccess`, `NullVectorNoFactor`, `NullVectorNotSkipped`, `NullVectorBadSize`, `NullVectorNonFinite` | NullVectorStatus values |
+| `skipped-null-vector!` | Symbolic * UFix * V -> NullVectorStatus; for an index left out, its combination of the kept indices before it |
 | `solve!` | NumericFactor * V * V -> SolveStatus |
 | `ConditionStatus` | Condition-estimate outcome type |
 | `ConditionSuccess`, `ConditionInvalidFactor`, `ConditionNonFiniteResult` | ConditionStatus values |
@@ -147,6 +156,35 @@ fields from ordinary external Coalton callers. The public inspection arrays
 remain mutable at runtime and read-only by contract. An earlier FactorSuccess
 describes its original call; the separately borrowed factor can later become invalid.
 See the [design review](design.md#coalton-interface-review-2026-11-19).
+
+## coalton-linalg/sparse/dependent-rows
+
+[Contract](dependent-rows.md) · [Source](../src/sparse/dependent-rows.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `RowAnalysis` | Analysis, factor and workspace for the rows of one pattern; obtain from analyze |
+| `analyze` | coalton-linalg/sparse/csc:Matrix -> RowAnalysis |
+| `analyze-with-limit` | coalton-linalg/sparse/csc:Matrix * UFix -> RowAnalysis; one entry budget for A Aᵀ and for its factor |
+| `default-analysis-entry-limit` | UFix; 1,048,576 |
+| `row-count`, `column-count` | RowAnalysis -> UFix |
+| `RowStatus` | Outcome type of find-dependent-rows! |
+| `RowsFound`, `RowsNonFinite`, `RowsBadThreshold` | RowStatus values |
+| `find-dependent-rows!` | RowAnalysis * coalton-linalg/sparse/csc:Matrix * F64 -> RowStatus; the threshold is a distance |
+| `rows-found?` | RowAnalysis -> Boolean |
+| `kept-count`, `left-out-count` | RowAnalysis -> UFix |
+| `left-out-rows` | RowAnalysis -> I; borrowed, its first left-out-count entries are the rows left out |
+| `kept-values!` | RowAnalysis * V -> Boolean; the matrix's values with zeros for the rows left out |
+| `NullStatus` | Outcome type of null-vector! |
+| `NullFound`, `NullNoRows`, `NullBadPosition`, `NullBadSize`, `NullNonFinite` | NullStatus values |
+| `null-vector!` | RowAnalysis * UFix * V -> NullStatus; the left null vector of the row at a position of left-out-rows |
+| `refinement-step-limit` | UFix; 4, the most corrections null-vector! applies |
+| `residual-bound` | RowAnalysis * UFix -> F64; proved bound on the 2-norm of Aᵀ v for that vector, otherwise -1 |
+| `gap-bound` | RowAnalysis -> F64; upper bound on the singular value after the kept count, otherwise -1 |
+| `transpose-product-bound` | coalton-linalg/sparse/csc:Matrix * V -> F64; proved bound on the 2-norm of Aᵀ v |
+
+A search withdraws the earlier set and its bounds. After the analysis only
+`transpose-product-bound` allocates. One analysis serves one call at a time.
 
 ## coalton-linalg/sparse/scaling
 

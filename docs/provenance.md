@@ -83,6 +83,28 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 11: dependent rows and skipped pivots
+
+Leaving out an index whose pivot is negligible, in a factorization of a positive
+semidefinite matrix, is long-standing practice and follows from what the pivot is: the
+Schur complement of the index on those kept before it. The null vector of an index left
+out is one triangular solve with the row of the factor that index leaves behind; that
+and its error bound are derived on [the contract page](skipping.md#the-null-vector).
+Refining the multipliers by a residual formed with the matrix itself and a correction
+from the factor of the normal equations is the method of corrected seminormal equations,
+known here from its description in the literature on least squares (Björck, 1987); it is
+expressed through this library's own `refine!`. The bound on a transposed product is the
+standard rounding analysis of an inner product, with the underflow and summation terms
+worked out here. That a matrix within a Frobenius distance of one of rank r has its
+singular values beyond r below that distance, and that adding rows does not lower
+singular values, are textbook facts. Running the rank certificate on the whole matrix's
+plan with zeros for the rows left out, and the count it then requires, were worked out
+here. No numerical-library implementation and no algorithm listing was opened. The
+second method of [the design](design-dependent-rows.md), by rotations, is not built; the
+comparison with the literature that the design asks for remains to be made before it is.
+The tests' references are exact rational eliminations, inversions and inertias written
+for the tests.
+
 ## Batch 10: iterative refinement and the Cholesky-form solve
 
 Iterative refinement is classical, from Wilkinson's work on rounding errors in the 1960s,

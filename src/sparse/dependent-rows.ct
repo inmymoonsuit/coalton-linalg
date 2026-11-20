@@ -1,0 +1,355 @@
+(cl:defpackage #:coalton-linalg/sparse/dependent-rows
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:gram #:coalton-linalg/sparse/gram)
+                    (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:rf #:coalton-linalg/refinement)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:RowAnalysis #:analyze #:analyze-with-limit #:default-analysis-entry-limit
+           #:RowStatus #:RowsFound #:RowsNonFinite #:RowsBadThreshold
+           #:find-dependent-rows! #:rows-found? #:row-count #:column-count
+           #:kept-count #:left-out-count #:left-out-rows #:kept-values!
+           #:NullStatus #:NullFound #:NullNoRows #:NullBadPosition #:NullBadSize #:NullNonFinite
+           #:null-vector! #:refinement-step-limit #:residual-bound #:gap-bound
+           #:transpose-product-bound))
+(cl:in-package #:coalton-linalg/sparse/dependent-rows)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+(coalton-toplevel
+  (define-struct RowAnalysisStorage
+    "Owns a copy of the source, the plan and factor for A A^T, and the workspace of every call."
+    (rows UFix)
+    (columns UFix)
+    (pointers (arr:LispArray UFix))
+    (indices (arr:LispArray UFix))
+    (entries (arr:LispArray F64))
+    (plan gram:GramPlan)
+    (product (arr:LispArray F64))
+    (symbolic ldlt:Symbolic)
+    (left-out (arr:LispArray UFix))
+    (kept (arr:LispArray UFix))
+    (bounds (arr:LispArray F64))
+    (state (arr:LispArray UFix))
+    (combination (arr:LispArray F64))
+    (unknown (arr:LispArray F64))
+    (zeros (arr:LispArray F64))
+    (target (arr:LispArray UFix))
+    (refiner rf:Refiner)
+    (operator (arr:LispArray F64 * arr:LispArray F64 -> Void))
+    (corrector (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
+
+  (repr :transparent)
+  (define-type RowAnalysis
+    "Analysis handle for the rows of one sparse pattern; it owns its factor and workspace, and one call at a time uses them."
+    (MkRowAnalysis RowAnalysisStorage))
+
+  (inline)
+  (declare analysis-storage (RowAnalysis -> RowAnalysisStorage))
+  (define (analysis-storage analysis) (match analysis ((MkRowAnalysis storage) storage)))
+
+  (derive Eq)
+  (repr :enum)
+  (define-type RowStatus
+    "Outcome of a search for dependent rows."
+    RowsFound
+    "A kept set stands; read the counts and the rows left out."
+    RowsNonFinite
+    "An intermediate result was not finite; no set stands."
+    RowsBadThreshold
+    "The threshold was negative or not a number, or its square was not finite; no set stands.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type NullStatus
+    "Outcome of a request for the left null vector of a row left out."
+    NullFound
+    "The output holds the vector, and its residual bound is recorded."
+    NullNoRows
+    "No kept set stands."
+    NullBadPosition
+    "The position is not below left-out-count."
+    NullBadSize
+    "The output's length differs from the row count."
+    NullNonFinite
+    "The vector or its bound was not finite; the output is unchanged.")
+
+  (inline)
+  (declare %count->float (UFix -> F64))
+  (define (%count->float count)
+    "A count as a floating-point number; exact below 2^53."
+    (lisp (-> F64) (count) (cl:coerce count 'cl:double-float)))
+
+  (declare unit-roundoff F64)
+  (define unit-roundoff (lisp (-> F64) () (cl:scale-float 1d0 -53)))
+  (declare smallest-positive F64)
+  (define smallest-positive (lisp (-> F64) () cl:least-positive-double-float))
+  (declare positive-infinity F64)
+  (define positive-infinity (lisp (-> F64) () sb-ext:double-float-positive-infinity))
+
+  (declare default-analysis-entry-limit UFix)
+  (define default-analysis-entry-limit
+    "Default budget of entries, 2^20, for the product A A^T and for its factor alike."
+    gram:default-analysis-entry-limit)
+
+  (declare refinement-step-limit UFix)
+  (define refinement-step-limit
+    "Most corrections null-vector! applies to the vector the factor gave."
+    4)
+
+  (declare transpose-product! (UFix * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray F64
+                               * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (transpose-product! n pointers indices entries v out)
+    "out = A^T v, each entry one sum down its column."
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let sum = (cell:new 0.0d0))
+      (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+        (cell:write! sum (+ (cell:read sum) (* (arr:aref entries q) (arr:aref v (arr:aref indices q))))))
+      (arr:set! out j (cell:read sum))))
+
+  (declare product-bound! (UFix * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray F64
+                           * arr:LispArray F64 * arr:LispArray F64 * UFix -> Void))
+  (define (product-bound! n pointers indices entries v target slot)
+    "Write into target[slot] an upper bound on the 2-norm of A^T v that holds for the exact product, or infinity. See docs/dependent-rows.md."
+    (let total = (cell:new 0.0d0))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let start = (arr:aref pointers j))
+      (let end = (arr:aref pointers (+ j 1)))
+      (let sum = (cell:new 0.0d0))
+      (let magnitude = (cell:new 0.0d0))
+      (for ((q start (+ q 1))) :while (< q end)
+        (let p = (* (arr:aref entries q) (arr:aref v (arr:aref indices q))))
+        (cell:write! sum (+ (cell:read sum) p))
+        (cell:write! magnitude (+ (cell:read magnitude) (abs p))))
+      ;; The exact entry is within gamma(c) of the sum of the rounded products' magnitudes, c the
+      ;; column's length, and that sum is within gamma(c - 1) of the one computed: together under
+      ;; gamma(2c + 2).
+      (let reach = (%count->float (+ (* 2 (- end start)) 2)))
+      (let relative = (/ (* reach unit-roundoff) (- 1.0d0 (* reach unit-roundoff))))
+      (let entry = (+ (abs (cell:read sum)) (* relative (cell:read magnitude))))
+      (cell:write! total (+ (cell:read total) (* entry entry))))
+    ;; Underflow: a product can be off by half the smallest positive number and a square can
+    ;; lose all of it. One smallest positive number for each column, under the root, is more
+    ;; than both together. The margin covers the rounding of the entries, the squares, the sum
+    ;; and the root.
+    (let order = (%count->float n))
+    (let padded = (+ (cell:read total) (* order smallest-positive)))
+    (arr:set! target slot
+              (if (inline (math:finite? padded))
+                  (* (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
+                  positive-infinity)))
+
+  (declare transpose-product-bound (csc:Matrix * arr:LispArray F64 -> F64))
+  (define (transpose-product-bound matrix v)
+    "An upper bound on the 2-norm of A^T v that holds for the exact product of the stored values, the rounding of its own computation included; infinity when no finite bound was reached. See docs/dependent-rows.md."
+    (unless (== (arr:length v) (csc:row-count matrix))
+      (throw (err:InvalidDimensions "The vector's length differs from the matrix's row count.")))
+    (let target = (arr:make 1 0.0d0))
+    (product-bound! (csc:column-count matrix) (csc:column-pointers matrix) (csc:row-indices matrix)
+                    (csc:entries matrix) v target 0)
+    (arr:aref target 0))
+
+  (declare analyze (csc:Matrix -> RowAnalysis))
+  (define (analyze matrix)
+    "Analyze the rows of a stored matrix under the default entry budget. Once for a pattern."
+    (analyze-with-limit matrix default-analysis-entry-limit))
+
+  (declare analyze-with-limit (csc:Matrix * UFix -> RowAnalysis))
+  (define (analyze-with-limit matrix maximum-entries)
+    "analyze with one entry budget for A A^T and for its factor; the errors are those of the Gram and factor analyses."
+    (let m = (csc:row-count matrix))
+    (let n = (csc:column-count matrix))
+    (let plan = (gram:analyze-aat-with-limit matrix maximum-entries))
+    (let symbolic = (ldlt:analyze-with-limit
+                     (ldlt:Pattern m (gram:column-pointers plan) (gram:row-indices plan))
+                     maximum-entries))
+    (let factor = (ldlt:symbolic-factor symbolic))
+    (let pointers = (arr:copy (csc:column-pointers matrix)))
+    (let indices = (arr:copy (csc:row-indices matrix)))
+    (let entries = (arr:make (arr:length indices) 0.0d0))
+    (let kept = (arr:make m (the UFix 0)))
+    (let combination = (arr:make m 0.0d0))
+    (let across = (arr:make n 0.0d0))
+    (let gradient = (arr:make m 0.0d0))
+    (let target = (arr:make 1 (the UFix 0)))
+    ;; For the row k in target, and y the unknown on the kept rows: the residual of the least
+    ;; squares problem is r = a_k - A_S^T y, formed in the column space where it is small, and
+    ;; the correction to y is the solution d of (A_S A_S^T) d = A_S r, from the standing factor,
+    ;; which reads nothing at the rows left out. The refinement is run on d itself: it
+    ;; subtracts the operator's result from a right-hand side of zeros, so the operator returns
+    ;; -d, the solve below hands d back unchanged, and the norms it judges by are the sizes of
+    ;; the corrections. A correction that could not be computed is returned as infinity, which
+    ;; ends the refinement with the best iterate.
+    (let operator =
+      (fn (x out)
+        (for ((i 0 (+ i 1))) :while (< i m)
+          (arr:set! combination i (- 0.0d0 (arr:aref x i))))
+        (arr:set! combination (arr:aref target 0) 1.0d0)
+        (transpose-product! n pointers indices entries combination across)
+        (for ((i 0 (+ i 1))) :while (< i m)
+          (arr:set! gradient i 0.0d0))
+        (for ((j 0 (+ j 1))) :while (< j n)
+          (let v = (arr:aref across j))
+          (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+            (let i = (arr:aref indices q))
+            (arr:set! gradient i (+ (arr:aref gradient i) (* (arr:aref entries q) v)))))
+        (cond
+          ((== (ldlt:solve-skipping! factor gradient out) ldlt:SolveSuccess)
+           (for ((i 0 (+ i 1))) :while (< i m)
+             (arr:set! out i (- 0.0d0 (arr:aref out i)))))
+          (True
+           (for ((i 0 (+ i 1))) :while (< i m)
+             (arr:set! out i positive-infinity))))))
+    (let corrector =
+      (fn (r out)
+        (for ((i 0 (+ i 1))) :while (< i m)
+          (arr:set! out i (arr:aref r i)))
+        True))
+    (MkRowAnalysis
+     (RowAnalysisStorage m n pointers indices entries plan
+                         (arr:make (gram:entry-count plan) 0.0d0) symbolic
+                         (arr:make m (the UFix 0)) kept (arr:make m -1.0d0)
+                         (arr:make 2 (the UFix 0))
+                         combination (arr:make m 0.0d0) (arr:make m 0.0d0) target
+                         (rf:make-refiner m refinement-step-limit) operator corrector)))
+
+  (declare row-count (RowAnalysis -> UFix))
+  (define (row-count analysis)
+    "Rows of the analyzed matrix."
+    (.rows (analysis-storage analysis)))
+
+  (declare column-count (RowAnalysis -> UFix))
+  (define (column-count analysis)
+    "Columns of the analyzed matrix."
+    (.columns (analysis-storage analysis)))
+
+  (declare rows-found? (RowAnalysis -> Boolean))
+  (define (rows-found? analysis)
+    "Whether a kept set stands: the latest find-dependent-rows! returned RowsFound."
+    (== (arr:aref (.state (analysis-storage analysis)) 0) 1))
+
+  (declare left-out-count (RowAnalysis -> UFix))
+  (define (left-out-count analysis)
+    "Rows the standing set leaves out; 0 when none stands."
+    (arr:aref (.state (analysis-storage analysis)) 1))
+
+  (declare kept-count (RowAnalysis -> UFix))
+  (define (kept-count analysis)
+    "Rows in the standing kept set; 0 when none stands."
+    (let s = (analysis-storage analysis))
+    (if (== (arr:aref (.state s) 0) 1) (- (.rows s) (arr:aref (.state s) 1)) 0))
+
+  (declare left-out-rows (RowAnalysis -> arr:LispArray UFix))
+  (define (left-out-rows analysis)
+    "Borrowed view as long as the row count: its first left-out-count entries are the rows left out, in the order they were met. A position in it is what null-vector! and residual-bound take."
+    (.left-out (analysis-storage analysis)))
+
+  (declare find-dependent-rows! (RowAnalysis * csc:Matrix * F64 -> RowStatus))
+  (define (find-dependent-rows! analysis matrix threshold)
+    "Take the rows in the analyzed order and leave out each one whose squared distance from the span of the rows kept before it, as computed, is at most the threshold squared. The matrix must have the analyzed pattern. See docs/dependent-rows.md."
+    (let s = (analysis-storage analysis))
+    (let st = (.state s))
+    (arr:set! st 0 0)
+    (arr:set! st 1 0)
+    (let floor = (* threshold threshold))
+    (unless (and (>= threshold 0.0d0) (inline (math:finite? floor))) (return RowsBadThreshold))
+    (gram:refill-csc! (.plan s) matrix (.product s))
+    (let source = (csc:entries matrix))
+    (let entries = (.entries s))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length entries))
+      (arr:set! entries q (arr:aref source q)))
+    ;; The value count, the shift and the floor are this module's own and were checked above,
+    ;; so the one refusal left is a result that was not finite.
+    (unless (== (ldlt:factor-skipping! (.symbolic s) (.product s) 0.0d0 floor) ldlt:SkipSuccess)
+      (return RowsNonFinite))
+    (let factor = (ldlt:symbolic-factor (.symbolic s)))
+    (let perm = (ldlt:factor-permutation factor))
+    (let d = (ldlt:factor-diagonal factor))
+    (let left-out = (.left-out s))
+    (let kept = (.kept s))
+    (let bounds = (.bounds s))
+    (let count = (cell:new (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k (.rows s))
+      (arr:set! bounds k -1.0d0)
+      (cond
+        ((== (arr:aref d k) 0.0d0)
+         (arr:set! left-out (cell:read count) (arr:aref perm k))
+         (cell:write! count (+ (cell:read count) 1))
+         (arr:set! kept (arr:aref perm k) 0))
+        (True (arr:set! kept (arr:aref perm k) 1))))
+    (arr:set! st 1 (cell:read count))
+    (arr:set! st 0 1)
+    RowsFound)
+
+  (declare kept-values! (RowAnalysis * arr:LispArray F64 -> Boolean))
+  (define (kept-values! analysis out)
+    "Write the matrix's values as the latest search read them, in its stored order, with zeros for the entries of the rows left out, and return True; return False with out untouched when no kept set stands."
+    (let s = (analysis-storage analysis))
+    (let entries = (.entries s))
+    (unless (== (arr:length out) (arr:length entries))
+      (throw (err:InvalidDimensions "The output's length differs from the matrix's entry count.")))
+    (unless (== (arr:aref (.state s) 0) 1) (return False))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length entries))
+      (arr:set! out q (if (== (arr:aref (.kept s) (arr:aref (.indices s) q)) 1)
+                          (arr:aref entries q)
+                          0.0d0)))
+    True)
+
+  (declare null-vector! (RowAnalysis * UFix * arr:LispArray F64 -> NullStatus))
+  (define (null-vector! analysis position out)
+    "For the row at a position of left-out-rows, write the vector v with v at that row 1, zeros at the other rows left out, and A^T v small: the row less its combination of the kept rows. Records the bound residual-bound returns. See docs/dependent-rows.md."
+    (let s = (analysis-storage analysis))
+    (let st = (.state s))
+    (unless (== (arr:aref st 0) 1) (return NullNoRows))
+    (let m = (.rows s))
+    (unless (== (arr:length out) m) (return NullBadSize))
+    (unless (< position (arr:aref st 1)) (return NullBadPosition))
+    (let k = (arr:aref (.left-out s) position))
+    (let x = (.unknown s))
+    (let v = (.combination s))
+    (unless (== (ldlt:skipped-null-vector! (.symbolic s) k x) ldlt:NullVectorSuccess)
+      (return NullNonFinite))
+    ;; The factor's vector is e_k - y; the unknown of the refinement is y, zero off the kept rows.
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! x i (- 0.0d0 (arr:aref x i))))
+    (arr:set! x k 0.0d0)
+    (arr:set! (.target s) 0 k)
+    ;; Whatever the outcome, x holds the best iterate seen, the factor's own at the least. A
+    ;; tolerance of zero and a stall factor of one half: carry on while each correction is at
+    ;; most half the one before.
+    (rf:refine! (.refiner s) (.operator s) (.corrector s) (.zeros s) x 0.0d0 0.5d0)
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! v i (- 0.0d0 (arr:aref x i))))
+    (arr:set! v k 1.0d0)
+    (let bounds = (.bounds s))
+    (product-bound! (.columns s) (.pointers s) (.indices s) (.entries s) v bounds position)
+    (unless (inline (math:finite? (arr:aref bounds position)))
+      (arr:set! bounds position -1.0d0)
+      (return NullNonFinite))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! out i (arr:aref v i)))
+    NullFound)
+
+  (declare residual-bound (RowAnalysis * UFix -> F64))
+  (define (residual-bound analysis position)
+    "The bound the latest successful null-vector! at this position recorded on the 2-norm of A^T v for the vector it wrote, exact product; -1 when there is none since the latest search."
+    (let s = (analysis-storage analysis))
+    (if (and (== (arr:aref (.state s) 0) 1) (< position (arr:aref (.state s) 1)))
+        (arr:aref (.bounds s) position)
+        -1.0d0))
+
+  (declare gap-bound (RowAnalysis -> F64))
+  (define (gap-bound analysis)
+    "With r rows kept: an upper bound on singular value r + 1 of the matrix, the root of the sum of the squared residual bounds, rounded upward. Zero when no row is left out; -1 unless a kept set stands and every position has a bound; it may be infinite. See docs/dependent-rows.md."
+    (let s = (analysis-storage analysis))
+    (unless (== (arr:aref (.state s) 0) 1) (return -1.0d0))
+    (let count = (arr:aref (.state s) 1))
+    (let total = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i count)
+      (let bound = (arr:aref (.bounds s) i))
+      (when (< bound 0.0d0) (return -1.0d0))
+      (cell:write! total (+ (cell:read total) (* bound bound))))
+    (let order = (%count->float count))
+    (* (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order 4.0d0)))
+       (math:sqrt (+ (cell:read total) (* order smallest-positive))))))
