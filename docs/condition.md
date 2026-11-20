@@ -93,6 +93,10 @@ O(n + nnz(A)).
 
 ## Method
 
+The method is Hager's 1-norm estimator with Higham's refinements, a published algorithm,
+written here from its description; [provenance](provenance.md#batch-3d-condition-estimate)
+says what was and was not consulted. Its derivation:
+
 Write f(x) = |M⁻¹x|₁. It is convex, so over the set |x|₁ ≤ 1 it takes its maximum
 at a vertex ±eⱼ, and that maximum is the norm sought. At a point x let y = M⁻¹x
 and let ξ hold the signs of y. Then f(x) = ξᵀy, and z = M⁻¹ξ (one more solve,

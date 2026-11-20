@@ -88,14 +88,20 @@ points without relying only on the allocating versions as a reference.
 The estimate was derived from convexity: |inverse(M) x|_1 is convex in x, its maximum over
 the unit 1-norm ball is the norm sought and is attained at a vertex, and one further solve
 with the sign vector gives a subgradient that says whether any vertex is promised an
-increase. [The contract](condition.md) carries the derivation. The method is the one the
-literature attributes to Hager, and the planned-batch page links a prose description of
-factor-based condition estimation; both were known as descriptions. The final probe vector,
-alternating in sign with magnitudes growing evenly from 1 to 2, is a published safeguard for
-that estimator, used here from recall of its description; its bound 2|y|_1/(3n) was derived
-here from the vector's own 1-norm. No numerical-library implementation and no algorithm
-listing was opened or copied. The reference values in the tests are exact rational inverses
-computed by a separate dense elimination written for the tests.
+increase. [The contract](condition.md) carries the derivation.
+
+**This routine follows a published algorithm.** It is Hager's 1-norm estimator (1984) with
+Higham's refinements (1988), the method widely used for factor-based condition estimates.
+Every step has the published shape: the uniform start, the move to the unit vector the
+subgradient favours, the stop when no vertex promises an increase, the stop on a repeated
+vertex, the cap of five rounds, and the final alternating-sign vector with magnitudes from 1
+to 2 and its bound 2|y|_1/(3n). It was written from recall of the method's description and
+from the derivation on the contract page. No numerical-library implementation and no
+algorithm listing or pseudocode box was opened while writing it. Whether following a
+published method this closely from its description meets this repository's clean-room rule
+is the maintainer's decision and is open; the alternative is an estimator of a different
+construction under the same tests. The reference values in the tests are exact rational
+inverses computed by a separate dense elimination written for the tests.
 
 ## Batch 3c: fixed-pattern Gram products
 
