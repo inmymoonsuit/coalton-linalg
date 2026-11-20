@@ -206,6 +206,12 @@ or prove the crash's underlying cause. The explicit root mappings remove the
 observed repetition of absolute source prefixes; unusually long cache roots
 or source-relative names can still produce long paths.
 
+The mappings shorten cache paths, not source paths. A consumer on this host and SBCL
+version reported, on 2026-11-20, the same access violation with no message when the
+Quicklisp root itself was 122 characters deep and none at 79, and that ASDF's recursive
+scan of Quicklisp's software folder then reaches files beyond 260 characters. That was not
+reproduced for this record. Keep the dependency roots short as well as the cache root.
+
 After loading the named Quicklisp setup, the script restores ASDF's previous
 search functions and clears Quicklisp local-project directories. It does not
 call `ql:quickload`, register a neighboring checkout, or fetch missing systems.
