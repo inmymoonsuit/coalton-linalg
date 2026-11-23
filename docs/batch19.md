@@ -148,8 +148,17 @@ free direction stands alone, 198 sets of columns; on the loose lattices the 28 a
 
 ## Limits
 
-- **A multiplier within δ of the cut is a refusal**, and so is a δ above the cut. Nothing
-  is classed on a guess.
+- **Corrected 2026-11-23: the sets are those of the kept rows at hand.** This record and
+  the contract said they did not depend on the rows kept. That holds for the exact test
+  above, which joins rows wherever a multiplier is not zero, and not for a cut: the
+  "at the cut" case above is one circuit of three rows labelled as a set of two and a row
+  in no dependency. An independent review found it;
+  [the contract](rank-deficient.md#dependent-sets) now says what is true and the tests
+  hold the same rows in two orders. The same review found that a vector holding every
+  kept row was refused where its bound was above the cut, for a kept row that does not
+  exist; that is fixed, and the "bound too large for the cut" case above now classes.
+- **A multiplier within δ of the cut is a refusal**, and so is a δ above the cut where a
+  kept row is not held. Nothing is classed on a guess.
 - **δ carries one over the bound proved on the kept rows**, which the ladder leaves up to
   four times below their smallest singular value.
 - **The orthonormal basis of the right null space is not built.** The sparse one is not

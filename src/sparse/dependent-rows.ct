@@ -316,7 +316,10 @@
     (let floor = (if (inline (math:finite? squared)) squared fp:greatest))
     ;; A positive threshold whose square is below the least normal number has become zero or
     ;; lost its digits, and would be compared as another threshold.
-    (unless (or (== threshold 0.0d0) (>= floor fp:least-normal)) (return RowsBadThreshold))
+    ;; A matrix whose values are all zero has no largest entry for it to be small beside: every
+    ;; pivot is zero and at or below any floor, and every row is left out.
+    (unless (or (== threshold 0.0d0) (or (== (cell:read largest) 0.0d0) (>= floor fp:least-normal)))
+      (return RowsBadThreshold))
     ;; Under a positive threshold a row whose square underflowed is shorter than the threshold
     ;; and is rightly left out. Under a threshold of zero nothing says so: the row would be
     ;; left out as dependent because its square could not be held.

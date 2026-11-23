@@ -85,7 +85,9 @@ Both complete serial checks pass on the final tree, `scripts/check.ps1 -Safety 1
   without a refresh between runs the code of 18b; a second step on one certificate is the
   first bit for bit, as there.
 - **The stop target and the terms.** Four fractions that cannot be used change nothing;
-  0, a sixteenth and 1 are taken. The whole bound is at most the sum of its three terms
+  0, a sixteenth and 1 are taken. The whole bound is the sum of its three terms to
+  rounding (corrected 2026-11-23: it can exceed that sum by a few units of rounding, the
+  first term being returned without the margin the whole carries; the test allows 10⁻¹²)
   and at least 0.99 of it; the terms read −1 when no step stands.
 - **The rosters.** [The scale sweep](rosters.md#what-is-declared) answers for `refresh-to!`
   and the two terms, at the ranges already declared.

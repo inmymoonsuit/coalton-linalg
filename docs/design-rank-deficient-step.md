@@ -188,7 +188,7 @@ not a residual computed in floating point and taken at its word.
 For a row t left out, its exact multipliers are `w_t = a_t J_S⁺`, unique because the kept
 rows are independent. The computed ones `ŵ_t` differ by
 
-    ŵ_t − w_t = g (J_S J_Sᵀ)⁻¹ ,      g = (a_t − ŵ_t J_S) J_Sᵀ ,
+    w_t − ŵ_t = g (J_S J_Sᵀ)⁻¹ ,      g = (a_t − ŵ_t J_S) J_Sᵀ ,
 
 so `‖ŵ_t − w_t‖₂ ≤ ‖g‖₂ / τ²`, with `‖g‖` bounded from the computed product as a product
 bound is. Call that δ. **As built, δ is tighter and needs no g**: the kept rows being
@@ -218,6 +218,15 @@ small matrices, a hundred and twenty of them with two or more components, before
 written here. What a floating-point computation adds is only the classing of entries
 above: a multiplier wrongly classed joins or parts two groups, which is why an entry
 that cannot be classed is a refusal.
+
+**Corrected 2026-11-23.** The last sentence is too little. The theorem is of multipliers
+classed as zero or not zero. A cut classes them as below or above it, and a multiplier
+that is not zero and is below the cut is classed out; its size belongs to the kept set.
+So the sets as built are those of the kept rows at hand, and are the matroid's components
+only where every multiplier that is not zero clears the cut for those rows.
+[The contract](rank-deficient.md#dependent-sets) has the example and the tests hold it.
+The exact check above joined rows wherever a multiplier was not zero, on small integers,
+where none is near a cut.
 
 ## A basis of the right null space
 
@@ -344,7 +353,9 @@ radius: on the 284 steps that were above rounding, measured over bound was at mo
 [measured backward bound](quasidefinite.md#accuracy-growth-and-the-elimination-order).
 The iteration matrix is then `(M + E)⁻¹ (M − K + E)`, and with `η = β ‖M⁻¹‖₂`,
 `‖M⁻¹‖₂ ≤ 2/τ` for these shifts, a rate of at most `(ρ₀ + η) / (1 − η)` follows where
-`ρ₀ = 2⁻¹⁰`. **That sum is a diagnostic and decides nothing.** β is a bound through the
+`ρ₀ = √2 · 2⁻¹⁰`. (Corrected 2026-11-23: this page had 2⁻¹⁰, which bounds each of the
+iteration matrix's two blocks and not its norm; one kept row `[1]` with τ = 0.99 leaves
+1.39 × 2⁻¹⁰ after an exact correction.) **That sum is a diagnostic and decides nothing.** β is a bound through the
 trace of `|L| |D| |Lᵀ|` and grows with the order; on the largest pattern measured it
 makes the sum 0.9 where the contraction measured is 2 × 10⁻⁴. A refusal on it would
 refuse solves that reach rounding level in two corrections.
@@ -580,7 +591,8 @@ In the seventh, on the supports and the bases:
 
 - **One relative cut, not two thresholds.** The consumer's own reader cuts at a fraction
   of each vector's largest entry, its own 1 included, so the cut is that fraction and
-  the band about it is δ on either side; the units of rows cancel within a vector.
+  the band about it is δ on either side; a factor common to every row cancels within a
+  vector (the unit of one row does not: corrected 2026-11-23).
 - **δ is the residual bound over τ**, as said above, and not the form with τ squared.
 - **Labels, not lists and not multipliers**, are what is returned: the reader merges
   supports into sets and reads nothing else.

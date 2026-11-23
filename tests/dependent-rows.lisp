@@ -743,6 +743,19 @@ rows left out, asking for as many negative pivots as rows kept. NIL when it does
     (assert (= 0 (dr-caller:observe-rows analysis matrix 1d200)) () "A threshold beyond every row was refused.")
     (assert (= 4 (rows:left-out-count analysis)) () "A threshold beyond every row left out ~D of 4."
             (rows:left-out-count analysis))
+    ;; A matrix whose stored values are all zero has no largest entry for a threshold to be small
+    ;; beside: every threshold is beyond every row, and every row is left out, as for [1e-300].
+    (dolist (case (list (list 1 1 '((0 0 0d0))) (list 2 3 '((0 0 0d0) (1 2 0d0))) (list 2 2 '())))
+      (destructuring-bind (m n zero-entries) case
+        (let* ((zero-matrix (csc-from-entries m n zero-entries)) (zero-analysis (rows:analyze zero-matrix)))
+          (dolist (threshold (list 0d0 1d-300 1d-160 1d-6 1d200))
+            (let ((code (dr-caller:observe-rows zero-analysis zero-matrix threshold)))
+              (assert (and (= 0 code) (rows:rows-found? zero-analysis) (= m (rows:left-out-count zero-analysis))
+                           (= 0 (rows:kept-count zero-analysis)))
+                      () "A ~D by ~D matrix of zeros under a threshold of ~S: outcome ~D, ~D rows left out." m n threshold
+                      code (rows:left-out-count zero-analysis)))))))
+    (let* ((tiny (csc-from-entries 1 1 (list (list 0 0 1d-300)))) (tiny-analysis (rows:analyze tiny)))
+      (assert (and (= 0 (dr-caller:observe-rows tiny-analysis tiny 1d-160)) (= 1 (rows:left-out-count tiny-analysis)))))
     ;; The same rows at other scales are searched as the rows themselves: under a threshold of
     ;; zero and under one scaled with them, the rows left out, the vector of the first and the
     ;; values handed back are those of the matrix as given, the values scaled.

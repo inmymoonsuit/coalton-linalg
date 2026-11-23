@@ -29,8 +29,8 @@ from it.
   a pattern. No value is read.
 - `find-kept-rows!(kept, matrix, threshold, drop) -> FindStatus`: the search of
   [dependent rows](dependent-rows.md#interface) at a distance threshold, and then the
-  vector of every row left out. In each vector an entry below `drop` times the vector's
-  largest is set to zero, and the bound is proved for the vector as kept. **This is the
+  vector of every row left out. In each vector an entry below `drop` times the largest
+  entry at a kept row is set to zero, and the bound is proved for the vector as kept. **This is the
   expensive call**, a millisecond or so a row left out, and it allocates. It is made
   once for a kept set that will serve many matrices.
 - `reprove!(kept, matrix) -> ReproveStatus`: for a matrix of the same pattern with other
@@ -108,9 +108,10 @@ kept rows. **Most of what is computed there is rounding.** On the patterns this 
 measured on, a row depends on three or four others and its computed vector has an entry
 at nearly every kept row the factor reaches, all but those three or four below 10⁻¹³
 (the [design](design-rank-deficient-step.md#what-was-measured) has the counts). So an
-entry below `drop` times the vector's largest is set to zero. The tolerance is relative
-to each vector by itself, because the multipliers of one row can combine rows of
-different units; 10⁻¹² is the value the measurements suggest.
+entry below `drop` times the vector's largest entry at a kept row is set to zero, the
+vector's own 1 not being counted, where [the cut of the dependent sets](#dependent-sets)
+does count it. The tolerance is relative to each vector by itself, because the multipliers
+of one row can combine rows of different units; 10⁻¹² is the value the measurements suggest.
 
 **Dropping costs no proof anything.** The bound returned is proved for the vector as
 kept, whatever was dropped from it, so every statement below is about the vectors a
@@ -166,7 +167,12 @@ to rounding are never certified at it.
 accurate, its backward bound under an eighth of the floor, and did not give the counts:
 the rows are at or below the floor, or within the proof's small error of it.
 `CertificateUnresolved` is returned when the proof's own error is not small beside the
-floor, and says nothing about the rows. Two rows 4 × 10⁻⁸ apart have a smallest singular
+floor, and says nothing about the rows. **A floor that is a singular value of the kept
+rows exactly is the first of these, never a certificate**: the statement asked is that
+every singular value exceeds the floor, and it is false there. The first trial then meets
+a pivot of exactly zero and is made again with a margin written. A floor so far above
+the rows that its product with the matrix's power of two is not a number the format
+holds is the first of these as well. Two rows 4 × 10⁻⁸ apart have a smallest singular
 value near 2 × 10⁻⁸: asked for a floor of 10⁻⁶ the answer is the first, and for a floor of
 10⁻¹⁰, which is true of them, the second. The proof resolves about a ten-millionth of
 the matrix's size.
@@ -179,13 +185,16 @@ threshold is safe: a row left out whose distance lies between the two makes the 
 bound at least the floor.
 
 **Everything is on the matrix divided by a power of two**, the one at its largest entry.
-The rows left out, the vectors and the statuses at any scale the format holds are those
-at ordinary scale, and the bounds are those times the scale;
+That division rounds nothing for an entry within 2^1022 of the largest; one further below
+is held as rounded, and what is proved is then of the values held. The rows left out, the
+vectors and the statuses at any scale the format holds are those at ordinary scale, and the bounds are those times the scale;
 [the scale-sweep roster](rosters.md#what-is-declared) holds that from 2^-800 to 2^1020.
-**Below the normal range a bound is rounded up**: where the product with the scale is
-under 2^-1022 it could have been rounded down, so the smallest positive number, 2^-1074,
-is added to it. A bound whose exact value is far below what the format holds comes back
-as 2^-1074, which is still a bound.
+**Below the normal range a bound is rounded the way that keeps it a bound.** Where an
+upper bound's product with the scale is under 2^-1022 it could have been rounded down, so
+the smallest positive number, 2^-1074, is added to it, and one whose exact value is far
+below what the format holds comes back as 2^-1074. A lower bound, `proved-lower-bound`
+and the first number of `largest-singular-bounds!`, has 2^-1074 taken from it there, not
+below zero.
 
 ## Refreshing the kept vectors
 
@@ -234,6 +243,13 @@ the step, for more corrections. **A row that is not, at these values, a combinat
 a few kept rows to within its share takes whatever rows the second route gives it,
 which can be most of them**: such vectors are long, and the system of the rows left out
 is then dense.
+
+**An error raised after the vectors were replaced leaves nothing proved.** Where rows have
+left the span their new vectors are long, the system of the rows left out is then dense,
+and its analysis can exceed the handle's entry budget and raise `AnalysisStorageExceeded`.
+The vectors held are then the new ones; `gap-bound` and `residual-bound` are −1, no
+certificate stands, and `reprove!` on the same matrix proves the bounds for the vectors
+held. No bound proved for the old vectors is left beside the new.
 
 The kept set does not change. A row that has left the span of the kept rows gets the
 best combination there is, its bound is then its distance from the span, and the
@@ -290,7 +306,9 @@ and differs from the matrix by at most the gap bound. Two bounds stand after a s
   count**, `−J_r⁺ r` with `J_r` the nearest matrix of rank r, which is what a singular
   value decomposition cut at the certified floor gives. It includes the first.
 - `step-norm-term` and `step-outside-term`: what the second adds to the first, in its two
-  terms, so that a caller can see which one a wide bound comes from.
+  terms, so that a caller can see which one a wide bound comes from. The second is the sum
+  of the first and these two to rounding: at least 0.99 of it, and above it by at most a
+  few units of rounding.
 
 With γ the gap bound, τ the bound the certificate proved, x the exact step for B and
 `x*` the truncated one, the second adds to the first
@@ -359,7 +377,7 @@ after each correction, and the iterate with the smallest is kept.
   with its own gate.
 - At most `correction-limit` corrections are made, 8. If the last still at least halved
   the bound the refinement had not finished and the call is `StepBoundNotReached`. A
-  correction contracts by 2⁻¹⁰ or better while it is above rounding, so six exhaust the
+  correction contracts by `√2 · 2⁻¹⁰` or better while it is above rounding, so six exhaust the
   precision; two are left for corrections that halve the bound by chance at the bottom.
 
 `step-corrections` is how many the standing step made. The factorization for the solve is
@@ -368,15 +386,21 @@ certificate, reproof or search.
 
 **Three diagnostics, on which nothing is refused**: `solve-growth` and
 `solve-backward-bound` of that factor, and `predicted-rate`, the contraction that
-backward bound predicts, `(2⁻¹⁰ + η) / (1 − η)` with `η = 2β/τ`. The prediction
+backward bound predicts, `(√2 · 2⁻¹⁰ + η) / (1 − η)` with `η = 2β/τ`. The prediction
 overstates by decades, since the backward bound is a bound through a trace; the bounds
 of a step do not use it.
 
 **The residual is divided by the power of two at its largest entry**, as the matrix is by
 its own, and the step is multiplied back by the two. A step at any scale the format holds
-is the step at ordinary scale, bit for bit, and the bounds are those times the scale, with
-2^-1074 added where that product is below the normal range: `step-solve-bound` and
-`step-bound` are never rounded down, and one too small for the format is 2^-1074.
+is the step at ordinary scale, bit for bit, and the bounds are those times the scale
+wherever both are in the normal range: the step is multiplied back by powers of two, which
+rounds nothing there, so the step written is the iterate the bounds were proved for.
+**Below the normal range the bounds include the rounding of the step itself.** An entry
+written below 2^-1022 was rounded by up to half of 2^-1074; with k such entries the step
+is up to `√k / 2` of that number from the iterate, and `(k + 1) / 2` of it is added to
+both `step-solve-bound` and `step-bound`, beside the 2^-1074 for the bound's own product.
+The tests hold five and nine entries at ties, where the distance is 1.118 and 1.5 of that
+number.
 
 ## Dependent sets
 
@@ -394,19 +418,36 @@ vector of each row left out:
   the pseudo-inverse of the kept rows, so **δ is the vector's proved residual bound over
   the bound the certificate proved on the kept rows**. `multiplier-error-bound` returns it.
 - The cut is relative to the vector's own largest entry, its own 1 included, which lies
-  between `top_lo = max(1, top − δ)` and `top_hi = top + δ` for the exact vector. So the
-  units of the rows cancel within a vector.
+  between `top_lo = max(1, top − δ)` and `top_hi = top + δ` for the exact vector. A factor
+  common to every row cancels within a vector. **The unit of a single row does not**: a
+  multiplier is the row left out over a kept row, and each entry of one vector has a
+  kept row of its own.
 - A stored multiplier is **in** when `|ŵ| − δ > cut · top_hi` and **out** when
   `|ŵ| + δ < cut · top_lo`. A kept row the vector does not hold, having never been reached
-  or having been dropped by the search, is out when `δ < cut · top_lo`.
+  or having been dropped by the search, is out when `δ < cut · top_lo`. A vector that
+  holds every kept row has no such row, and where no row is kept there is none: only the
+  stored multipliers are then classed.
 - **Anything else is a refusal**, `SupportsUndecided`, with the vector and the entry
   readable: a multiplier wrongly classed would join two sets or part one.
 
 Then every row is given a label. Rows are joined through every multiplier classed in;
 **each set that holds a row left out is a dependent set**, a row left out with nothing
 classed in being a set of one, as a row of zeros is; and a kept row that no vector holds
-is in no dependency. The sets do not depend on which rows the search happened to keep:
-they are the connected components of the rows as a matroid.
+is in no dependency.
+
+**The sets are those of the kept rows at hand.** With exact multipliers classed as zero or
+not zero, joining rows this way gives the connected components of the rows as a matroid,
+whatever rows were kept. With a cut it does not: a multiplier that is not zero and is
+below the cut is classed out, and the size of a multiplier belongs to the kept rows it is
+taken against. The rows (1, 0), (0, 1) and (1, 2⁻⁸) are one circuit. Kept as the first
+two, the third row's multiplier at the second is 2⁻⁸, below a cut of 2⁻⁴: the first and
+third are a set and the second is in no dependency. Kept as (1, 0) and (1, 2⁻⁸), the
+multipliers of (0, 1) are both 2⁸, and the three are one set. Another order of the rows,
+or one row in another unit, can so part a set or join two. Each classing is still proved
+as stated above, for the kept rows at hand; the sets are the matroid's components only
+where, for those kept rows, every multiplier that is not zero clears the cut. The tests
+hold both orders of that example. An earlier version of this page said the sets did not
+depend on the rows kept; that was true of exact supports and not of these.
 
 - `dependent-sets(kept)`: a borrowed array as long as the row count. Rows with one label
   depend on one another; the labels run from 0 to `dependent-set-count` less one, and
@@ -424,7 +465,8 @@ they are the connected components of the rows as a matroid.
 | SupportsBadCut | The cut was not above 0 and below 1; nothing was classed |
 | SupportsUndecided | A multiplier could not be put on either side of the cut; nothing stands |
 
-Classed supports stand until the next search, reproof, refresh or certificate. The call
+Classed supports stand until the next search, reproof, refresh or certificate, and
+until the next `class-supports!`, which withdraws them whatever it answers. The call
 allocates only when the kept vectors have grown since it last ran.
 
 "Out" means below the cut for the matrix as stored. A multiplier that is exactly zero in
@@ -441,8 +483,10 @@ nothing added. Let `K = analyze(Jᵀ)` and search it. Its rows are J's columns, 
 - the kept vector of each is a vector z over J's columns with 1 at that column, its
   stored values at kept columns and zero elsewhere, and its `residual-bound` is a proved
   bound on `‖J z‖₂`;
-- the vectors are independent, each having 1 where every other has 0, so they are a
-  basis of what J sends to within those bounds of zero;
+- the vectors are independent, each having 1 where every other has 0. With Z the matrix
+  of them as columns, `‖J Z c‖₂ ≤ gap-bound · ‖c‖₂ ≤ gap-bound · ‖Z c‖₂` for any
+  coefficients c: the first by the residual bounds and the gap bound being the root of the
+  sum of their squares, the second because no singular value of Z is below 1;
 - `certify!(K, lower-floor, upper-floor)` is the same certificate for the singular
   values, which J and its transpose share: with it, exactly as many singular values as
   kept columns are above the upper floor, and the basis has the dimension of the null

@@ -302,12 +302,12 @@
 
   (declare multiplier-rows (KeptRows -> arr:LispArray UFix))
   (define (multiplier-rows kept)
-    "Borrowed view, replaced by a search: the kept row of each entry of every kept vector, the vectors one after another as multiplier-start says."
+    "Borrowed view, replaced by a search and exchanged for another array by a refresh that replaces a vector: the kept row of each entry of every kept vector, the vectors one after another as multiplier-start says."
     (cell:read (.vector-rows (storage kept))))
 
   (declare multiplier-values (KeptRows -> arr:LispArray F64))
   (define (multiplier-values kept)
-    "Borrowed view, replaced by a search: the vector's value at each row of multiplier-rows. The vector of a row left out has 1 at that row, these values at kept rows, and zero elsewhere; its multipliers are these values with the sign changed."
+    "Borrowed view, replaced by a search and exchanged for another array by a refresh that replaces a vector: the vector's value at each row of multiplier-rows. The vector of a row left out has 1 at that row, these values at kept rows, and zero elsewhere; its multipliers are these values with the sign changed."
     (cell:read (.vector-values (storage kept))))
 
   (inline)
@@ -316,6 +316,16 @@
     "A bound on a quantity of the divided matrix as one on the matrix itself: multiplied back by the power of two, and raised by the smallest positive number where the product is below the normal range and could have been rounded down. It may be infinite."
     (let product = (* bound up))
     (if (< product fp:least-normal) (+ product fp:least-positive) product))
+
+  (inline)
+  (declare lowered (F64 * F64 -> F64))
+  (define (lowered bound up)
+    "A lower bound on a quantity of the divided matrix as one on the matrix itself: multiplied back by the power of two, and lowered by the smallest positive number, not below zero, where the product is below the normal range and could have been rounded up."
+    (let product = (* bound up))
+    (cond
+      ((>= product fp:least-normal) product)
+      ((> product fp:least-positive) (- product fp:least-positive))
+      (True 0.0d0)))
 
   (declare vector-bound! (KeptStorage * UFix -> Void))
   (define (vector-bound! s position)
@@ -467,7 +477,7 @@
     (let flags = (.flags s))
     (let column-starts = (.column-starts s))
     (let row-indices = (.row-indices s))
-    ;; The kept rows renumbered in their own order, in the buffer of counts by row.
+    ;; The kept rows renumbered in their own order.
     (let number = (arr:make m (the UFix 0)))
     (let next = (cell:new (the UFix 0)))
     (for ((i 0 (+ i 1))) :while (< i m)
@@ -616,11 +626,12 @@
     (let s = (storage kept))
     (let st = (.state s))
     (unless (== (arr:aref st 0) 1) (return ReproveNothingKept))
+    ;; Another pattern is a typed error, raised while everything proved still stands.
+    (rows:check-pattern! (.analysis s) matrix)
     (arr:set! st 2 0)
     (arr:set! st 3 0)
     (withdraw-step! st)
     (arr:set! (.scale s) 3 -1.0d0)
-    (rows:check-pattern! (.analysis s) matrix)
     (take-values! s matrix)
     (unless (prove-bounds! s) (return ReproveNonFinite))
     (arr:set! st 2 1)
@@ -748,7 +759,7 @@
     (let lower = (if (and (> numerator 0.0d0) (and (> denominator 0.0d0) (inline (math:finite? denominator))))
                      (/ numerator denominator)
                      0.0d0))
-    (arr:set! out 0 (* (* lower (- 1.0d0 margin)) up))
+    (arr:set! out 0 (inline (lowered (* lower (- 1.0d0 margin)) up)))
     (arr:set! out 1 (inline (restored upper up))))
 
   (declare try-floor! (KeptStorage * aug:AugmentedPlan * ldlt:Symbolic * F64 -> UFix))
@@ -766,8 +777,17 @@
       (cell:write! rounds (+ (cell:read rounds) 1))
       (let written = (+ bound (cell:read margin)))
       (aug:refill! plan values written (- 0.0d0 written) augmented)
+      (let status = (ldlt:factor-signed! symbolic augmented 0.0d0))
       (cond
-        ((/= (ldlt:factor-signed! symbolic augmented 0.0d0) ldlt:SignedSuccess)
+        ;; A pivot of exactly zero is what a floor that is a singular value gives when nothing is
+        ;; added to it. A margin removes it, and the trial is made again with one written.
+        ((== status ldlt:SignedZeroPivot)
+         (cell:write! outcome 2)
+         (cell:write! margin (if (> (cell:read margin) 0.0d0)
+                                 (* 2.0d0 (cell:read margin))
+                                 (* bound (* 64.0d0 fp:unit-roundoff))))
+         Unit)
+        ((/= status ldlt:SignedSuccess)
          (cell:write! outcome 2)
          (cell:write! rounds 4)
          Unit)
@@ -808,7 +828,9 @@
       (return CertificateBadFloor))
     (let up = (arr:aref (.scale s) 0))
     (let down = (arr:aref (.scale s) 1))
-    (unless (< (inline (restored (arr:aref (.scale s) 2) up)) lower-floor) (return CertificateGapAboveFloor))
+    ;; With no row left out the gap bound is zero, as gap-bound says, and below every floor.
+    (unless (or (== (arr:aref st 1) 0) (< (inline (restored (arr:aref (.scale s) 2) up)) lower-floor))
+      (return CertificateGapAboveFloor))
     (let plan = (match (cell:read (.plan s)) ((Some held) held) ((None) (return CertificateNothingKept))))
     (let symbolic = (match (cell:read (.symbolic s)) ((Some held) held) ((None) (return CertificateNothingKept))))
     ;; The kept rows' values, divided, in their own stored order.
@@ -819,7 +841,9 @@
     ;; The floor in the divided units. A ladder of bounds from the one that served last time, or
     ;; from an eighth, down by fours to the floor; the first proved is the bound.
     (let target = (* upper-floor down))
-    (unless (and (> target 0.0d0) (inline (math:finite? target))) (return CertificateUnresolved))
+    ;; A floor whose product with the power of two is above every number is above every row.
+    (unless (inline (math:finite? target)) (return CertificateKeptNotAboveFloor))
+    (unless (> target 0.0d0) (return CertificateUnresolved))
     (let remembered = (arr:aref (.scale s) 4))
     (let trial = (cell:new (if (> remembered target) remembered 0.125d0)))
     (let verdict = (cell:new (the UFix 2)))
@@ -836,7 +860,7 @@
       ((> (cell:read proved) 0.0d0)
        (arr:set! (.scale s) 4 (cell:read proved))
        ;; Back in the caller's units, downward: the statement is that every singular value exceeds it.
-       (let bound = (* (cell:read proved) up))
+       (let bound = (inline (lowered (cell:read proved) up)))
        (arr:set! (.scale s) 3 (if (inline (math:finite? bound)) bound fp:greatest))
        (arr:set! st 3 1)
        Certified)
@@ -845,7 +869,7 @@
 
   (declare certified? (KeptRows -> Boolean))
   (define (certified? kept)
-    "Whether a certificate stands: the latest certify! returned Certified and neither a search nor a reproof came since."
+    "Whether a certificate stands: the latest certify! returned Certified and no search, reproof or refresh came since."
     (== (arr:aref (.state (storage kept)) 3) 1))
 
   (declare proved-lower-bound (KeptRows -> F64))
@@ -1229,6 +1253,11 @@
     ;; are the ones the standing certificate was issued on, in the divided matrix's units.
     (let tau = (arr:aref (.scale s) 4))
     (let gap = (arr:aref (.scale s) 2))
+    ;; Four times the gap bound not below the bound proved leaves no bound to reach. That is
+    ;; known from the certificate alone, and is said before anything is factored or solved.
+    (let margin = (+ 1.0d0 (* 64.0d0 fp:unit-roundoff)))
+    (let ratio = (/ (* 4.0d0 gap) tau))
+    (unless (< (* margin ratio) 1.0d0) (return StepBoundNotReached))
     (let factor = (ldlt:symbolic-factor symbolic))
     (when (/= (arr:aref st 4) 1)
       (let augmented = (cell:read (.augmented s)))
@@ -1241,7 +1270,11 @@
       (let eta = (/ (* 2.0d0 beta) tau))
       (arr:set! figures 2 (ldlt:factor-growth factor))
       (arr:set! figures 3 beta)
-      (arr:set! figures 4 (if (< eta 1.0d0) (/ (+ solve-shift eta) (- 1.0d0 eta)) fp:infinity))
+      ;; The exact iteration matrix has two blocks, each at most the shift's ratio; its norm is at
+      ;; most the root of two times that, the constant here being that root rounded upward.
+      (arr:set! figures 4 (if (< eta 1.0d0)
+                              (/ (+ (* 1.4142135623730951d0 solve-shift) eta) (- 1.0d0 eta))
+                              fp:infinity))
       (arr:set! st 4 1))
     ;; The residual divided by the power of two at its largest entry.
     (fp:binade! (cell:read largest) figures 5)
@@ -1331,7 +1364,6 @@
         (cell:write! going False)))
     (when (cell:read unfinished) (return StepBoundNotReached))
     ;; The solve's bound: the kept rows' solve, and the error of y carried through J_S^+.
-    (let margin = (+ 1.0d0 (* 64.0d0 fp:unit-roundoff)))
     (let solve-bound = (* margin (+ (cell:read smallest) (/ (cell:read system-bound) tau))))
     ;; The distance to the step of the matrix truncated at the kept count. With X bounding the
     ;; exact step's norm and rho the residual outside the range,
@@ -1344,8 +1376,6 @@
     (whole-residual! s ws)
     (let reach = (* margin (+ step-norm solve-bound)))
     (let outside = (* margin (+ (+ (arr:aref figures 10) (* (arr:aref figures 11) solve-bound)) (* gap reach))))
-    (let ratio = (/ (* 4.0d0 gap) tau))
-    (unless (< (* margin ratio) 1.0d0) (return StepBoundNotReached))
     (let truncation = (/ (* margin (* (* 2.0d0 gap) (+ (/ (* 2.0d0 reach) tau) (/ (/ outside tau) tau))))
                          (- 1.0d0 (* margin ratio))))
     ;; The same in its two terms, each rounded upward by itself: they add to a little more.
@@ -1356,14 +1386,24 @@
     ;; Back to the caller's units, and against the residual: nothing is written unless all of it can be.
     (let by-residual = (arr:aref figures 5))
     (let by-matrix = (arr:aref (.scale s) 1))
+    ;; An entry that comes back below the normal range was rounded by up to half the smallest
+    ;; positive number. With `below` such entries the step written is at most sqrt(below) / 2 of
+    ;; that number from the iterate the bounds were proved for, and (below + 1) / 2 of it, as
+    ;; rounded, is not less: that goes into both bounds.
+    (let below = (cell:new (the UFix 0)))
     (for ((j 0 (+ j 1))) :while (< j n)
       (let v = (inline (unscaled (- 0.0d0 (arr:aref best j)) by-residual by-matrix)))
       (unless (inline (math:finite? v)) (return StepNonFiniteResult))
+      (when (and (< (abs v) fp:least-normal) (/= (arr:aref best j) 0.0d0))
+        (cell:write! below (+ (cell:read below) 1)))
       (arr:set! change j v))
     (for ((j 0 (+ j 1))) :while (< j n)
       (arr:set! out j (arr:aref change j)))
-    (arr:set! figures 0 (inline (restored (inline (unscaled solve-bound by-residual by-matrix)) 1.0d0)))
-    (arr:set! figures 1 (inline (restored (inline (unscaled whole by-residual by-matrix)) 1.0d0)))
+    (let written = (if (== (cell:read below) 0)
+                       0.0d0
+                       (* (* 0.5d0 (fp:count->float (+ (cell:read below) 1))) fp:least-positive)))
+    (arr:set! figures 0 (+ (inline (restored (inline (unscaled solve-bound by-residual by-matrix)) 1.0d0)) written))
+    (arr:set! figures 1 (+ (inline (restored (inline (unscaled whole by-residual by-matrix)) 1.0d0)) written))
     (arr:set! figures 12 (inline (restored (inline (unscaled (* margin norm-term) by-residual by-matrix)) 1.0d0)))
     (arr:set! figures 13 (inline (restored (inline (unscaled (* margin outside-term) by-residual by-matrix)) 1.0d0)))
     (arr:set! marks 1 (cell:read corrections))
@@ -1395,7 +1435,7 @@
 
   (declare step-norm-term (KeptRows -> F64))
   (define (step-norm-term kept)
-    "Of the standing step's distance to the truncated matrix's step, the term in the step's own norm, 4 g X / t over (1 - 4 g / t) with g the gap bound, t the bound proved and X a bound on the norm of the exact step for B. step-bound is at most step-solve-bound plus this plus step-outside-term. -1 when no step stands."
+    "Of the standing step's distance to the truncated matrix's step, the term in the step's own norm, 4 g X / t over (1 - 4 g / t) with g the gap bound, t the bound proved and X a bound on the norm of the exact step for B. step-bound is step-solve-bound plus this plus step-outside-term to rounding: at least 0.99 of that sum, and above it by at most a few units of rounding. -1 when no step stands."
     (step-figure kept 12 5))
 
   (declare step-outside-term (KeptRows -> F64))
@@ -1439,7 +1479,7 @@
 
   (declare predicted-rate (KeptRows -> F64))
   (define (predicted-rate kept)
-    "What that backward bound predicts a correction's contraction to be at most, (2^-10 + e) / (1 - e) with e twice the bound over the proved lower bound, or infinity where e is 1 or more; -1 when there is none. A diagnostic: it overstates by decades, and the bounds a step returns do not use it."
+    "What that backward bound predicts a correction's contraction to be at most, (sqrt(2) 2^-10 + e) / (1 - e) with e twice the bound over the proved lower bound, or infinity where e is 1 or more; -1 when there is none. A diagnostic: it overstates by decades, and the bounds a step returns do not use it."
     (step-figure kept 4 4))
 
   ;;; The refresh of kept vectors. See docs/rank-deficient.md, Refreshing the kept vectors.
@@ -1453,7 +1493,7 @@
     RefreshNothingKept
     "No kept set stands."
     RefreshBadTarget
-    "The gap bound aimed at was not positive and finite; nothing changed."
+    "The gap bound aimed at was not positive and finite, or the fraction was not from 0 to 1; nothing changed."
     RefreshNoShift
     "A vector needed the kept rows' solve, and no certificate has been issued for this kept set to take its shift from; the bounds stand for the values given, and the vectors that could be replaced without it were."
     RefreshFactorRefused
@@ -1676,7 +1716,7 @@
 
   (declare refresh-to! (KeptRows * csc:Matrix * F64 * F64 -> RefreshStatus))
   (define (refresh-to! kept matrix gap-target fraction)
-    "For a matrix of the analyzed pattern with other values: prove every kept vector's bound against them, as reprove! does, and replace each vector whose bound is above the share of gap-target a vector may have, gap-target over twice the root of the number left out, by the row's multipliers against the kept rows for these values, corrected until their residual is under fraction of the share; a fraction of zero corrects until a correction no longer halves it. The kept set does not change, and no certificate stands afterwards. Nothing is proved by the solves that find the multipliers: each new vector's bound is proved for the vector as stored. Another pattern or shape raises the typed error of the Gram refill. See docs/rank-deficient.md."
+    "For a matrix of the analyzed pattern with other values: prove every kept vector's bound against them, as reprove! does, and replace each vector whose bound is above the share of gap-target a vector may have, gap-target over twice the root of one more than the number left out, by the row's multipliers against the kept rows for these values, corrected until their residual is under fraction of the share; a fraction of zero corrects until a correction no longer halves it. The kept set does not change, and no certificate stands afterwards. Nothing is proved by the solves that find the multipliers: each new vector's bound is proved for the vector as stored. Another pattern or shape raises the typed error of the Gram refill. See docs/rank-deficient.md."
     (let s = (storage kept))
     (let st = (.state s))
     (unless (== (arr:aref st 0) 1) (return RefreshNothingKept))
@@ -1686,12 +1726,13 @@
     (let plan = (match (cell:read (.plan s)) ((Some held) held) ((None) (return RefreshNothingKept))))
     (let symbolic = (match (cell:read (.symbolic s)) ((Some held) held) ((None) (return RefreshNothingKept))))
     (let marks = (.marks ws))
+    ;; Another pattern is a typed error, raised while everything proved still stands.
+    (rows:check-pattern! (.analysis s) matrix)
     (arr:set! st 2 0)
     (arr:set! st 3 0)
     (withdraw-step! st)
     (arr:set! (.scale s) 3 -1.0d0)
     (arr:set! marks 2 0)
-    (rows:check-pattern! (.analysis s) matrix)
     (take-values! s matrix)
     (unless (prove-bounds! s) (return RefreshNonFinite))
     (arr:set! st 2 1)
@@ -1812,6 +1853,10 @@
                          ((== (cell:read blocked) 2) RefreshFactorRefused)
                          (True Refreshed)))
     (when (== (cell:read replaced) 0) (return verdict))
+    ;; From here the vectors held are not the ones the bounds were proved for. Nothing proved
+    ;; stands until the bounds are proved again below: an error raised on the way leaves a
+    ;; handle that says so.
+    (arr:set! st 2 0)
     (let spare-rows = (cell:read (.spare-rows s)))
     (let spare-values = (cell:read (.spare-values s)))
     (cell:write! (.spare-rows s) (cell:read (.vector-rows s)))
@@ -1840,9 +1885,10 @@
       (let uses = (.uses ws))
       (for ((k 0 (+ k 1))) :while (< k r)
         (arr:set! uses k 0))
+      ;; The system held is of other vectors, and is let go before another is asked for.
+      (cell:write! (.system ws) None)
       (cell:write! (.system ws) (left-out-system! s (.numbers ws) r uses marks))
       (when (== (arr:aref marks 0) 1) (arr:set! marks 4 (+ (arr:aref marks 4) 1))))
-    (arr:set! st 2 0)
     (unless (prove-bounds! s) (return RefreshNonFinite))
     (arr:set! st 2 1)
     verdict)
@@ -1928,8 +1974,9 @@
       (let highest = (+ (cell:read top) delta))
       (let in-cut = (* margin (* cut highest)))
       (let out-cut = (/ (* cut lowest) margin))
-      ;; A kept row the vector does not hold has a stored multiplier of zero.
-      (unless (and (inline (math:finite? delta)) (< delta out-cut))
+      ;; A kept row the vector does not hold has a stored multiplier of zero, and is out only if
+      ;; the bound is below the cut. A vector that holds every kept row has none.
+      (unless (or (== (- to from) (- m d)) (and (inline (math:finite? delta)) (< delta out-cut)))
         (arr:set! notes 0 p)
         (arr:set! notes 1 (- to from))
         (return SupportsUndecided))

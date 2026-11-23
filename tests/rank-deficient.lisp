@@ -302,8 +302,14 @@ eigenvalue, and J^T J less the square of the lower has one that is not negative.
     (assert (and (not (rd:certified? kept)) (= -1d0 (rd:proved-lower-bound kept))))
     (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
     ;; A matrix of another pattern or shape is a typed error from a reproof and from a search.
-    (assert (= 91 (rd-caller:reprove-code kept (csc-from-entries 5 3 (cons '(0 2 1) entries)))))
-    (assert (= 92 (rd-caller:reprove-code kept (csc-from-entries 6 3 entries))))
+    (let ((gap (rd:gap-bound kept)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 91 (rd-caller:reprove-code kept (csc-from-entries 5 3 (cons '(0 2 1) entries)))))
+      (assert (= 92 (rd-caller:reprove-code kept (csc-from-entries 6 3 entries))))
+      ;; The values held were not touched, and what was proved of them stands.
+      (assert (and (<= 0d0 gap) (= gap (rd:gap-bound kept)) (rd:certified? kept)) ()
+              "After a reproof's typed error the gap bound is ~S, it was ~S, and a certificate stands: ~S."
+              (rd:gap-bound kept) gap (rd:certified? kept)))
     (assert (= 91 (rd-caller:find-code kept (csc-from-entries 5 3 (cons '(0 2 1) entries)) 1d-6 1d-12)))
     ;; Two kept rows 4e-8 apart: their smallest singular value is about 2e-8. A floor of 1e-6 is
     ;; above it, and the certificate says the rows were not proved above the floor. A floor of
@@ -616,6 +622,40 @@ matrix's, bit for bit, and bounds that are the first ones times the same."
                       (second powers) (second scaled) (third scaled) (second reference) (third reference)))))))
     (format t "STEP-SCALE-PASS cases=~D~%" cases)))
 
+(defun run-step-subnormal-tests ()
+  "A step below the normal range is rounded entry by entry when it is written, by up to half the smallest
+positive number each, and the two bounds are of the step as written: the rounding of the step's own entries
+is in them. With five entries at ties the distance is 1.118 of that number, above a bound that held only the
+rounding of its own product."
+  (let ((cases 0) (worst 0))
+    (dolist (order '(1 2 5 9))
+      (dolist (extra '(-15 -14 -3))
+        (let* ((big (scale-float 1d0 1000))
+               (matrix (csc-from-entries order order (loop :for i :below order :collect (list i i big))))
+               (kept (rd:analyze matrix)) (floor (* big 1d-6))
+               ;; (1 + 2^extra) 2^-60 over 2^1000: 2^-1060 and a part below the subnormal grid.
+               (value (* (+ 1d0 (scale-float 1d0 extra)) (scale-float 1d0 -60)))
+               (r (make-array order :element-type 'double-float :initial-element value)) (out (zeros order)))
+          (assert (= 0 (rd-caller:find-code kept matrix floor 1d-15)))
+          (assert (and (= order (rd:kept-count kept)) (= 0 (rd-caller:certify-code kept floor floor))) ()
+                  "The premise: every row of 2^1000 I is kept and certified; ~D kept." (rd:kept-count kept))
+          (assert (= 0 (rd-caller:step-code kept r out)))
+          (assert (every (lambda (x) (< 0 (abs x) least-positive-normalized-double-float)) out) ()
+                  "The premise: the step is below the normal range and not zero; it is ~S." out)
+          (let* ((exact (- (/ (rational value) (rational big))))
+                 (distance-squared (loop :for i :below order :sum (expt (- (rational (aref out i)) exact) 2)))
+                 (eta (rational least-positive-double-float)))
+            (incf cases)
+            (setf worst (max worst (/ distance-squared (expt eta 2))))
+            (dolist (bound (list (rd:step-solve-bound kept) (rd:step-bound kept)))
+              (assert (<= distance-squared (expt (rational bound) 2)) ()
+                      "Order ~D, 2^~D: the step is ~,4F of the smallest positive number from the exact one, and a bound is ~D of it."
+                      order extra (sqrt (float (/ distance-squared (expt eta 2)) 1d0)) (/ (rational bound) eta))
+              ;; And not more than the rounding of the bound's own product and of the step's entries.
+              (assert (<= (rational bound) (* (+ 1 (ceiling (1+ order) 2)) eta)) ()
+                      "Order ~D: a bound of ~D of the smallest positive number." order (/ (rational bound) eta)))))))
+    (format t "STEP-SUBNORMAL-PASS cases=~D worst-distance=~,4F~%" cases (sqrt (float worst 1d0)))))
+
 (defun run-step-outcome-tests ()
   (let* ((entries '((0 0 1) (0 1 2) (1 1 1) (1 2 3) (2 0 2) (2 2 1) (3 0 1) (3 1 3) (3 2 3) (4 0 3) (4 1 2) (4 2 4)))
          (matrix (csc-from-entries 5 3 entries)) (a (dr-dense 5 3 entries)) (kept (rd:analyze matrix))
@@ -747,6 +787,9 @@ matrix's, bit for bit, and bounds that are the first ones times the same."
       (assert (= 0 (rd-caller:certify-code kept 0.35d0 0.35d0)))
       (assert (= 5 (rd-caller:step-code kept (doubles 1d0 1d0) out)))
       (assert (and (equalp out (doubles 7d0 7d0)) (not (rd:step-taken? kept)) (= -1d0 (rd:step-bound kept))))
+      ;; It is known from the gap bound and the bound proved alone, and nothing was factored for it.
+      (assert (= -1d0 (rd:solve-growth kept)) () "A step refused on the certificate's two numbers made a factor, of growth ~S."
+              (rd:solve-growth kept))
       ;; The same rows 1.01 apart: the step is taken, and its bound covers the exact step.
       (let ((near '((0 0 1) (1 0 1.01d0))))
         (assert (= 0 (rd-caller:reprove-code kept (csc-from-entries 2 2 near))))
@@ -815,6 +858,7 @@ matrix's, bit for bit, and bounds that are the first ones times the same."
 (defun run-step-tests ()
   (run-step-exact-tests)
   (run-step-scale-tests)
+  (run-step-subnormal-tests)
   (run-step-outcome-tests)
   (format t "STEP-TESTS-PASS~%"))
 
@@ -835,8 +879,7 @@ matrix's, bit for bit, and bounds that are the first ones times the same."
 wrong by that much. A refresh brings every bound back under its share of the target, proved against the new values
 exactly; the certificate that was refused is issued; and the step is the exact step again, to a bound of rounding
 size."
-  (let ((state (sb-ext:seed-random-state 20261125)) (cases 0) (replaced 0) (partial 0) (everywhere 0) (iterations 0)
-        (restarts 0))
+  (let ((state (sb-ext:seed-random-state 20261125)) (cases 0) (replaced 0) (partial 0) (everywhere 0) (iterations 0))
     (loop :for (bases columns extras) :in '((2 4 1) (3 5 2) (4 6 3) (5 5 4) (6 9 5) (4 4 2) (7 10 6))
           :do (dotimes (repeat 4)
                 (multiple-value-bind (entries m) (rd-redundant-entries state bases columns extras)
@@ -892,13 +935,12 @@ size."
                         (assert (= 0 (rd-caller:step-code kept residual out)))
                         (rd-check-step label kept b m residual out)
                         ;; The factor of the rows left out's system is the search's, of the vectors as
-                        ;; they were: it preconditioned this step's solves, or was made again.
-                        ;; A change of a part in four thousand: it preconditions well, and is not made again.
+                        ;; they were. A change of a part in four thousand: it preconditions this step's
+                        ;; solves well, and is not made again.
                         (assert (and (= 1 (rd:system-factor-count kept)) (plusp (rd:system-iterations kept)))
                                 () "~A: ~D iterations and ~D factorizations after a refresh." label (rd:system-iterations kept)
                                 (rd:system-factor-count kept))
                         (incf iterations (rd:system-iterations kept))
-                        (when (= 2 (rd:system-factor-count kept)) (incf restarts))
                         (let ((size (+ (sqrt (loop :for x :across out :sum (* x x))) (sqrt (loop :for x :across residual :sum (* x x))))))
                           (assert (<= (rd:step-bound kept) (* 1d-9 size)) () "~A: after the refresh the step's bound is ~E beside ~E."
                                   label (rd:step-bound kept) size)))
@@ -941,8 +983,8 @@ size."
             "The premise: ~D vectors replaced, ~D matrices with one row moved, ~D replaced with every row moved." replaced partial
             everywhere)
     (assert (plusp iterations) () "The premise: some step after a refresh was preconditioned; ~D iterations in all." iterations)
-    (format t "REFRESH-EXACT-PASS cases=~D replaced=~D one-row-moved=~D replaced-with-every-row-moved=~D preconditioned-iterations=~D factor-made-again=~D~%"
-            cases replaced partial everywhere iterations restarts)))
+    (format t "REFRESH-EXACT-PASS cases=~D replaced=~D one-row-moved=~D replaced-with-every-row-moved=~D preconditioned-iterations=~D~%"
+            cases replaced partial everywhere iterations)))
 
 (defun rd-growing-entries (state bases columns extras wide)
   "A matrix with no zero entry: BASES seeded rows, then EXTRAS rows each a multiple of one of them, or with WIDE each
@@ -1103,8 +1145,11 @@ again. The step is the exact step either way."
       (assert (= 0 (rd:system-iterations kept)))
       (assert (= 2 (rd-caller:step-code kept (zeros 4) out)))
       (assert (and (= -1d0 (rd:step-norm-term kept)) (= -1d0 (rd:step-outside-term kept)) (= 0 (rd:system-iterations kept)))))
-    (assert (= 91 (rd-caller:refresh-code kept (csc-from-entries 5 3 (cons '(0 2 1) entries)) 1d-9)))
-    (assert (= 92 (rd-caller:refresh-code kept (csc-from-entries 6 3 entries) 1d-9)))
+    (let ((gap (rd:gap-bound kept)) (certified (rd:certified? kept)))
+      (assert (= 91 (rd-caller:refresh-code kept (csc-from-entries 5 3 (cons '(0 2 1) entries)) 1d-9)))
+      (assert (= 92 (rd-caller:refresh-code kept (csc-from-entries 6 3 entries) 1d-9)))
+      (assert (and (<= 0d0 gap) (= gap (rd:gap-bound kept)) (eq certified (rd:certified? kept))) ()
+              "After a refresh's typed error the gap bound is ~S and it was ~S." (rd:gap-bound kept) gap))
     ;; After a refused search nothing is kept, there is nothing to refresh, and the count of an
     ;; earlier refresh is not read.
     (let ((left (coerce (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) 'list)))
@@ -1212,11 +1257,42 @@ again. The step is the exact step either way."
                         (lambda () (assert (= 0 (rd-caller:refresh-loop kept matrix other 1d-9 residual out 1))))))
     (format t "REFRESH-OUTCOMES-PASS~%")))
 
+(defun run-refresh-error-tests ()
+  "A refresh that has exchanged its vectors and then cannot analyze the system of the rows left out, for
+want of entries: nothing proved of the old vectors may stand beside the new ones. Sixteen rows in a chain
+are kept and sixteen copies left out, each with a vector of one entry; changed to (1, 1.25) every copy has
+left the span and its refreshed vector holds all sixteen kept rows, so the system is full."
+  (flet ((chain (second)
+           (csc-from-entries 32 17 (append (loop :for i :below 16 :append (list (list i i 1d0) (list i (1+ i) 1d0)))
+                                           (loop :for j :below 16
+                                                 :append (list (list (+ 16 j) j 1d0) (list (+ 16 j) (1+ j) second)))))))
+    (let* ((first (chain 1d0)) (second (chain 1.25d0)) (kept (rd:analyze-with-limit first 120)))
+      (assert (= 0 (rd-caller:find-code kept first 1d-6 1d-12)))
+      (assert (and (= 16 (rd:left-out-count kept)) (= 1 (rd:multiplier-count kept 0))))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-3)))
+      (let ((code (rd-caller:refresh-code kept second 1d-9)))
+        (assert (= 98 code) () "The premise: the refresh ends in the storage error; its outcome is ~D." code))
+      (assert (= 16 (rd:multiplier-count kept 0)) ()
+              "The premise: the vectors were exchanged before the error; the first holds ~D rows."
+              (rd:multiplier-count kept 0))
+      (assert (and (= -1d0 (rd:gap-bound kept)) (= -1d0 (rd:residual-bound kept 0)) (not (rd:certified? kept))) ()
+              "After the error a gap bound of ~S and a residual bound of ~S stand beside the new vectors."
+              (rd:gap-bound kept) (rd:residual-bound kept 0))
+      (assert (= 5 (rd-caller:certify-code kept 1d-9 1d-3)))
+      (assert (= 1 (rd-caller:support-code kept 1d-6)))
+      (let ((out (zeros 17)))
+        (assert (= 1 (rd-caller:step-code kept (make-array 32 :element-type 'double-float :initial-element 1d0) out))))
+      ;; The handle is not lost: proving the bounds again, for the vectors now held, restores it.
+      (assert (= 0 (rd-caller:reprove-code kept second)))
+      (assert (< 0d0 (rd:gap-bound kept) 0.3d0) () "Proved again, the gap bound is ~S." (rd:gap-bound kept))))
+  (format t "REFRESH-ERROR-PASS~%"))
+
 (defun run-refresh-tests ()
   (run-refresh-exact-tests)
   (run-refresh-wider-tests)
   (run-refresh-restart-tests)
   (run-refresh-outcome-tests)
+  (run-refresh-error-tests)
   (format t "REFRESH-TESTS-PASS~%"))
 
 ;;; ---- Supports, dependent sets, and the right null-space basis ------------------------------
@@ -1351,9 +1427,10 @@ states of the exact ones, and a row in no dependency is labelled so."
                    (= 0 (aref (rd:support-flags kept) 1)))
               () "Small multipliers: labels ~S, flags ~S." (rd:dependent-sets kept) (subseq (rd:support-flags kept) 0 2)))
     ;; Kept rows a part in a million apart: the bound on the multipliers is the vector's residual
-    ;; over the bound proved on the kept rows, here near 1e-8. A cut above it classes everything;
-    ;; a cut below it cannot class out a kept row the vector does not hold, and the entry named
-    ;; is the vector's count.
+    ;; over the bound proved on the kept rows, here near 1e-8. The vector holds both kept rows and
+    ;; both multipliers are near 1, so a cut below that bound classes them as one above it does:
+    ;; there is no kept row left to class out. (This test once held a refusal here, for a kept row
+    ;; the vector does not hold; there is none. run-support-held-tests has one that exists.)
     (let* ((close (list (list 0 0 1) (list 0 1 1) (list 1 0 1) (list 1 1 1.000001d0) (list 2 0 2) (list 2 1 2.000001d0)))
            (matrix (csc-from-entries 3 2 close)) (kept (rd:analyze matrix)))
       (assert (= 0 (rd-caller:find-code kept matrix 1d-7 1d-12)))
@@ -1362,12 +1439,12 @@ states of the exact ones, and a row in no dependency is labelled so."
       (assert (= 0 (rd-caller:support-code kept 1d-6)))
       (assert (and (equalp #(0 0 0) (rd:dependent-sets kept)) (<= 1d-12 (rd:multiplier-error-bound kept 0) 1d-6)) ()
               "Rows a part in a million apart: labels ~S, a bound of ~S." (rd:dependent-sets kept) (rd:multiplier-error-bound kept 0))
+      (assert (= 2 (rd:multiplier-count kept 0)) () "The premise: the vector holds both kept rows; it holds ~D."
+              (rd:multiplier-count kept 0))
       (dolist (cut '(1d-12 1d-15))
-        (assert (= 3 (rd-caller:support-code kept cut)) () "A cut of ~S gave ~D." cut (rd-caller:support-code kept cut))
-        (assert (and (= 0 (rd:undecided-vector kept)) (= (rd:multiplier-count kept 0) (rd:undecided-entry kept))
-                     (not (rd:supports-classed? kept)))
-                () "Undecided at vector ~D, entry ~D of ~D." (rd:undecided-vector kept) (rd:undecided-entry kept)
-                (rd:multiplier-count kept 0))))
+        (let ((code (rd-caller:support-code kept cut)))
+          (assert (and (= 0 code) (equalp #(0 0 0) (rd:dependent-sets kept)) (rd:supports-classed? kept)) ()
+                  "A cut of ~S gave ~D and labels ~S." cut code (rd:dependent-sets kept)))))
     ;; A row of zeros and a row with no entry are each a dependent set of one; a row no vector
     ;; holds is in none.
     (let* ((entries '((0 0 1) (0 1 2) (2 0 0) (2 1 0) (3 0 2) (3 1 4) (4 1 5)))
@@ -1435,6 +1512,246 @@ and the bound of each holds for the exact product of the matrix with it."
   (run-null-basis-tests)
   (format t "SUPPORT-TESTS-PASS~%"))
 
+;;; ---- Cases from the independent review of 2026-11-23 -----------------------------------------
+
+(defun run-certify-floor-tests ()
+  "A floor that is a singular value of the kept rows exactly, where the first trial meets a pivot of zero,
+and a floor so far above the rows that its product with the scale is not a number: both are rows not above
+the floor, and neither is a floor below what the method resolves."
+  (let* ((matrix (csc-from-entries 1 1 (list (list 0 0 5d0)))) (kept (rd:analyze matrix)))
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-15)))
+    (assert (= 0 (rd-caller:certify-code kept 1d-9 3d0)))
+    (let ((code (rd-caller:certify-code kept 1d-9 5d0)))
+      (assert (= 2 code) () "The one row [5] asked at a floor of 5: outcome ~D." code))
+    (assert (= 2 (rd-caller:certify-code kept 1d-9 6d0))))
+  (let* ((matrix (csc-from-entries 2 2 (list (list 0 0 5d0)))) (fresh (rd:analyze matrix)))
+    ;; The same on a handle with no bound remembered, and with a row of zeros left out beside it.
+    (assert (= 0 (rd-caller:find-code fresh matrix 1d-6 1d-15)))
+    (let ((code (rd-caller:certify-code fresh 1d-9 5d0)))
+      (assert (= 2 code) () "[5] beside an empty row at a floor of 5: outcome ~D." code)))
+  (dolist (order '(1 2 4))
+    (let* ((matrix (csc-from-entries order order (loop :for i :below order :collect (list i i 1d0))))
+           (kept (rd:analyze matrix)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-15)))
+      (let ((code (rd-caller:certify-code kept 1d-9 1d0)))
+        (assert (= 2 code) () "The identity of order ~D asked at a floor of 1: outcome ~D." order code))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 0.5d0)))
+      ;; No row is left out, the gap bound is zero, and zero is below every lower floor there is.
+      (let ((code (rd-caller:certify-code kept least-positive-double-float 0.5d0)))
+        (assert (and (= 0d0 (rd:gap-bound kept)) (= 0 code)) ()
+                "No row left out and a lower floor of the smallest positive number: outcome ~D, gap bound ~S." code
+                (rd:gap-bound kept)))))
+  (let* ((matrix (csc-from-entries 1 1 (list (list 0 0 (scale-float 1d0 -600))))) (kept (rd:analyze matrix)))
+    (assert (= 0 (rd-caller:find-code kept matrix (scale-float 1d0 -620) 1d-15)))
+    (let ((code (rd-caller:certify-code kept 1d0 (scale-float 1d0 500))))
+      (assert (= 2 code) () "A row of 2^-600 asked at a floor of 2^500: outcome ~D." code))
+    ;; A floor below the row is certified as before.
+    (assert (= 0 (rd-caller:certify-code kept (scale-float 1d0 -700) (scale-float 1d0 -650)))))
+  ;; A bound proved below the normal range is not rounded up: 0.3 proved of [[1.5]], and then of the same
+  ;; row at 2^-1021, where 0.3 times that power lies halfway between two numbers.
+  (let* ((matrix (csc-from-entries 1 1 (list (list 0 0 1.5d0))))
+         (tiny (csc-from-entries 1 1 (list (list 0 0 (scale-float 1.5d0 -1021))))) (kept (rd:analyze matrix)))
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-15)))
+    (assert (and (= 0 (rd-caller:certify-code kept 1d-9 0.3d0)) (= 0.3d0 (rd:proved-lower-bound kept))) ()
+            "The premise: 0.3 is proved of [[1.5]]; the bound is ~S." (rd:proved-lower-bound kept))
+    (assert (= 0 (rd-caller:reprove-code kept tiny)))
+    (assert (= 0 (rd-caller:certify-code kept (scale-float 1d0 -1060) (scale-float 0.25d0 -1021))))
+    (let ((proved (rational (rd:proved-lower-bound kept))) (exact (* (rational 0.3d0) (expt 2 -1021))))
+      (assert (/= exact (rational (float exact 1d0))) () "The premise: the exact bound is not a double.")
+      (assert (<= (* (rational 0.25d0) (expt 2 -1021)) proved exact) ()
+              "A bound of ~D of the smallest positive number, where the bound proved is ~D of it."
+              (/ proved (rational least-positive-double-float)) (/ exact (rational least-positive-double-float)))))
+  (format t "CERTIFY-FLOOR-PASS~%"))
+
+(defun run-subnormal-singular-bounds-tests ()
+  "The lower bound on the largest singular value stays a lower bound where it is below the normal range."
+  (let ((eta least-positive-double-float) (cases 0))
+    (dolist (case (list (list 3 1 '((0 0) (1 0) (2 0)) 3)
+                        (list 3 2 '((0 0) (1 1) (2 0) (2 1)) 3)
+                        (list 2 1 '((0 0) (1 0)) 2)
+                        (list 5 1 '((0 0) (1 0) (2 0) (3 0) (4 0)) 5)))
+      (destructuring-bind (m n places squared) case
+        (dolist (multiple '(1 3 7))
+          (dolist (steps '(0 30))
+            (let* ((value (* multiple eta))
+                   (matrix (csc-from-entries m n (mapcar (lambda (place) (list (first place) (second place) value)) places)))
+                   (out (zeros 2)))
+              (assert (= 0 (rd-caller:bounds-code matrix steps (zeros n) (zeros m) out)))
+              (incf cases)
+              ;; For one column the largest singular value is the column's length exactly; for the
+              ;; other matrix it is at least the longest column's.
+              (when squared
+                (assert (<= (expt (rational (aref out 0)) 2) (* squared (expt (rational value) 2))) ()
+                        "~D by ~D of ~D eta, ~D steps: a lower bound of ~D eta above the length, whose square is ~D eta squared."
+                        m n multiple steps (/ (rational (aref out 0)) (rational eta)) (* squared multiple multiple)))
+              (assert (>= (expt (rational (aref out 1)) 2) (* (or squared 2) (expt (rational value) 2))) ()
+                      "~D by ~D of ~D eta: an upper bound of ~D eta." m n multiple (/ (rational (aref out 1)) (rational eta)))
+              (assert (<= (aref out 0) (aref out 1))))))))
+    (format t "SUBNORMAL-SINGULAR-BOUNDS-PASS cases=~D~%" cases)))
+
+(defun run-support-held-tests ()
+  "What cannot be classed out is a kept row the vector does not hold. A vector that holds every kept row,
+and a matrix with no kept row, have none."
+  ;; Every kept row held: [1; 1] searched, then proved again for [1; 1.01], so that the vector's bound,
+  ;; 0.01 over the 0.125 proved of the kept row, is above the cut. Its one multiplier is 1, and in.
+  (let* ((first (csc-from-entries 2 1 (list (list 0 0 1d0) (list 1 0 1d0))))
+         (second (csc-from-entries 2 1 (list (list 0 0 1d0) (list 1 0 1.01d0))))
+         (kept (rd:analyze first)))
+    (assert (= 0 (rd-caller:find-code kept first 1d-6 1d-15)))
+    (assert (and (= 1 (rd:kept-count kept)) (= 1 (rd:multiplier-count kept 0))))
+    (assert (= 0 (rd-caller:reprove-code kept second)))
+    (assert (= 0 (rd-caller:certify-code kept 0.05d0 0.05d0)))
+    (let ((code (rd-caller:support-code kept 0.05d0)))
+      (assert (and (= 0 code) (equalp #(0 0) (rd:dependent-sets kept)) (= 1 (rd:dependent-set-count kept))) ()
+              "A vector that holds its one kept row: outcome ~D, labels ~S, undecided at ~D, ~D." code
+              (rd:dependent-sets kept) (rd:undecided-vector kept) (rd:undecided-entry kept))
+      (assert (>= (rd:multiplier-error-bound kept 0) 0.05d0) ()
+              "The premise: the multipliers' bound, ~S, is not below the cut." (rd:multiplier-error-bound kept 0))))
+  ;; No kept row at all: two rows of stored zeros, proved again for diag(3, 4) and certified at a
+  ;; floor above them. Each row left out is a set of one.
+  (let* ((zeros-matrix (csc-from-entries 2 2 (list (list 0 0 0d0) (list 1 1 0d0))))
+         (diagonal (csc-from-entries 2 2 (list (list 0 0 3d0) (list 1 1 4d0))))
+         (kept (rd:analyze zeros-matrix)))
+    (assert (= 0 (rd-caller:find-code kept zeros-matrix 1d-6 1d-15)))
+    (assert (and (= 0 (rd:kept-count kept)) (= 0 (rd-caller:reprove-code kept diagonal))))
+    (assert (= 0 (rd-caller:certify-code kept 10d0 10d0)))
+    (let ((code (rd-caller:support-code kept 1d-6)))
+      (assert (and (= 0 code) (= 2 (rd:dependent-set-count kept)) (equalp #(0 1) (rd:dependent-sets kept))) ()
+              "No kept row: outcome ~D, ~D sets, labels ~S." code (rd:dependent-set-count kept) (rd:dependent-sets kept))))
+  ;; A kept row the vector does not hold, and a bound above the cut: that is the refusal, and the
+  ;; entry named is the vector's count. Row 2 is row 0 at the search and holds row 0 alone; proved
+  ;; again with 0.01 of row 1 in it, its exact multiplier there is 0.01 and its bound 0.08.
+  (let* ((first (csc-from-entries 3 2 (list (list 0 0 1d0) (list 1 1 1d0) (list 2 0 1d0) (list 2 1 0d0))))
+         (second (csc-from-entries 3 2 (list (list 0 0 1d0) (list 1 1 1d0) (list 2 0 1d0) (list 2 1 0.01d0))))
+         (kept (rd:analyze first)))
+    (assert (= 0 (rd-caller:find-code kept first 1d-6 1d-15)))
+    (assert (and (= 2 (rd:kept-count kept)) (= 1 (rd:multiplier-count kept 0))) ()
+            "The premise: two rows kept and a vector that holds one; ~D kept, ~D held." (rd:kept-count kept)
+            (rd:multiplier-count kept 0))
+    (assert (= 0 (rd-caller:reprove-code kept second)))
+    (assert (= 0 (rd-caller:certify-code kept 0.05d0 0.05d0)))
+    (assert (= 3 (rd-caller:support-code kept 0.05d0)))
+    (assert (and (= 0 (rd:undecided-vector kept)) (= 1 (rd:undecided-entry kept)) (not (rd:supports-classed? kept))) ()
+            "Undecided at vector ~D, entry ~D." (rd:undecided-vector kept) (rd:undecided-entry kept))
+    ;; A cut above the bound classes it out, and row 1 is in no dependency for these kept rows.
+    (assert (= 0 (rd-caller:support-code kept 0.5d0)))
+    (assert (equalp #(0 3 0) (rd:dependent-sets kept)) () "Labels ~S." (rd:dependent-sets kept)))
+  (format t "SUPPORT-HELD-PASS~%"))
+
+(defun run-support-order-tests ()
+  "The sets are those of the kept rows at hand. The same three rows, one circuit, in two orders: kept as
+(1,0) and (0,1) the third row's multiplier at the second is 2^-8, below a cut of 2^-4, and that row is in no
+dependency; kept as (1,0) and (1,2^-8) both multipliers are 2^8, and the three are one set. Each classing is
+proved; they are not the same sets."
+  (let ((c (scale-float 1d0 -8)))
+    (flet ((labels-of (entries m n upper)
+             (let* ((matrix (csc-from-entries m n entries)) (kept (rd:analyze matrix)))
+               (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-15)))
+               (assert (= 0 (rd-caller:certify-code kept 1d-9 upper)))
+               (assert (= 0 (rd-caller:support-code kept 0.0625d0)))
+               (copy-seq (rd:dependent-sets kept)))))
+      (let ((one (labels-of (list (list 0 0 1d0) (list 1 1 1d0) (list 2 0 1d0) (list 2 1 c)) 3 2 1d-3))
+            (other (labels-of (list (list 0 0 1d0) (list 1 0 1d0) (list 1 1 c) (list 2 1 1d0)) 3 2 1d-4)))
+        (assert (and (equalp #(0 3 0) one) (equalp #(0 0 0) other)) ()
+                "The same rows in two orders: labels ~S and ~S." one other))
+      (let ((one (labels-of (list (list 0 0 1d0) (list 1 0 c)) 2 1 1d-3))
+            (other (labels-of (list (list 0 0 c) (list 1 0 1d0)) 2 1 1d-4)))
+        (assert (and (equalp #(2 0) one) (equalp #(0 0) other)) ()
+                "A row and 2^-8 of it, in two orders: labels ~S and ~S." one other))))
+  (format t "SUPPORT-ORDER-PASS~%"))
+
+(defun run-support-distance-tests ()
+  "The bound on a vector's multipliers where it decides something: vectors found for one matrix and proved
+again for another, so that the stored multipliers are hundredths from the exact ones, the least squares
+multipliers of the row against the kept rows. The exact distance is under the bound on every one."
+  (let ((cases 0) (largest 0))
+    (dolist (case (list (list 2 1 '((0 0 1) (1 0 1)) '((0 0 1) (1 0 1.01d0)) 0.05d0)
+                        (list 3 2 '((0 0 1) (1 1 1) (2 0 1) (2 1 1)) '((0 0 1) (1 1 1) (2 0 1.02d0) (2 1 0.97d0)) 0.2d0)
+                        (list 3 2 '((0 0 2) (1 1 3) (2 0 2) (2 1 -3)) '((0 0 2) (1 1 3) (2 0 2.05d0) (2 1 -3.1d0)) 0.5d0)
+                        (list 4 2 '((0 0 1) (1 1 1) (2 0 1) (2 1 1) (3 0 1) (3 1 -1))
+                              '((0 0 1) (1 1 1) (2 0 1.03d0) (2 1 0.98d0) (3 0 0.96d0) (3 1 -1.01d0)) 0.2d0)))
+      (destructuring-bind (m n first second floor) case
+        (let* ((matrix (csc-from-entries m n first)) (other (csc-from-entries m n second)) (kept (rd:analyze matrix))
+               (a (dr-dense m n second)))
+          (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+          (assert (= 0 (rd-caller:reprove-code kept other)))
+          (assert (= 0 (rd-caller:certify-code kept floor floor)) () "~D by ~D: not certified at ~S; the gap bound is ~S." m n
+                  floor (rd:gap-bound kept))
+          (assert (= 0 (rd-caller:support-code kept 0.25d0)))
+          (let ((kept-rows (rd-kept-rows kept m)))
+            (loop :for p :from 0 :for w :in (rd-exact-multipliers a kept m)
+                  :do (let* ((v (rd-vector kept p m)) (bound (rd:multiplier-error-bound kept p))
+                             (distance (loop :for k :in kept-rows :for x :in w :sum (expt (+ (rational (aref v k)) x) 2))))
+                        (incf cases)
+                        (setf largest (max largest (/ distance (expt (rational bound) 2))))
+                        (assert (>= distance (expt 1/1000 2)) ()
+                                "The premise: the stored multipliers are not the exact ones; they are ~E apart."
+                                (sqrt (float distance 1d0)))
+                        (assert (<= distance (expt (rational bound) 2)) ()
+                                "~D by ~D, vector ~D: its multipliers are ~E from the exact ones, and the bound is ~E." m n p
+                                (sqrt (float distance 1d0)) bound)))))))
+    (format t "SUPPORT-DISTANCE-PASS vectors=~D largest-distance-over-bound=~,3F~%" cases (sqrt (float largest 1d0)))))
+
+(defun rd-rational-root (x digits)
+  "The square root of a non-negative rational, from below, to within 10^-DIGITS over its denominator."
+  (/ (isqrt (* (numerator x) (denominator x) (expt 10 (* 2 digits)))) (* (denominator x) (expt 10 digits))))
+
+(defun rd-truncated-solution (a m r)
+  "For a matrix of two columns whose two singular values differ: J_1^+ r, J_1 the matrix truncated to its larger
+singular value, as (G - l2 I) J^T r / (l1 (l1 - l2)) with G = J^T J and l1 > l2 its eigenvalues. The root in
+them is taken to eighty digits, so this is the exact vector to far below a rounding of a double. Second value: l2."
+  (let* ((g11 (loop :for i :below m :sum (expt (aref a i 0) 2))) (g22 (loop :for i :below m :sum (expt (aref a i 1) 2)))
+         (g12 (loop :for i :below m :sum (* (aref a i 0) (aref a i 1))))
+         (trace (+ g11 g22)) (root (rd-rational-root (- (expt trace 2) (* 4 (- (* g11 g22) (expt g12 2)))) 80))
+         (l1 (/ (+ trace root) 2)) (l2 (/ (- trace root) 2))
+         (t1 (loop :for i :below m :for x :in r :sum (* (aref a i 0) x)))
+         (t2 (loop :for i :below m :for x :in r :sum (* (aref a i 1) x)))
+         (scale (* l1 (- l1 l2))))
+    (values (list (/ (+ (* (- g11 l2) t1) (* g12 t2)) scale) (/ (+ (* g12 t1) (* (- g22 l2) t2)) scale)) l2)))
+
+(defun run-step-truncation-tests ()
+  "The whole bound where something is truncated. One row is kept and the others were equal to it when the
+vectors were found; proved again they are a hundredth from it and a thousandth out of its line, so the stored
+matrix has rank two and the step is that of its truncation to rank one, which is not its own step and not the
+step for B. The step written is within step-bound of the truncated matrix's step."
+  (let ((cases 0) (largest 0))
+    (dolist (case (list (list 2 '((0 0 1) (1 0 1) (1 1 0)) '((0 0 1) (1 0 1.01d0) (1 1 0.001d0)))
+                        (list 2 '((0 0 1) (1 0 1) (1 1 0)) '((0 0 1) (1 0 0.98d0) (1 1 0.004d0)))
+                        (list 3 '((0 0 1) (1 0 1) (1 1 0) (2 0 1) (2 1 0))
+                              '((0 0 1) (1 0 1.01d0) (1 1 0.001d0) (2 0 0.99d0) (2 1 -0.002d0)))
+                        (list 3 '((0 0 2) (1 0 2) (1 1 0) (2 0 2) (2 1 0))
+                              '((0 0 2) (1 0 2.03d0) (1 1 0.01d0) (2 0 1.96d0) (2 1 0.005d0)))))
+      (destructuring-bind (m first second) case
+        (let* ((matrix (csc-from-entries m 2 first)) (other (csc-from-entries m 2 second)) (kept (rd:analyze matrix))
+               (a (dr-dense m 2 second)))
+          (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+          (assert (= 1 (rd:kept-count kept)))
+          (assert (= 0 (rd-caller:reprove-code kept other)))
+          (assert (= 0 (rd-caller:certify-code kept 0.5d0 0.5d0)) () "Not certified; the gap bound is ~S." (rd:gap-bound kept))
+          (dolist (residual (list (make-array m :element-type 'double-float :initial-element 1d0)
+                                  (coerce (loop :for i :below m :collect (- (* 0.75d0 (1+ i)) 1.25d0))
+                                          '(simple-array double-float (*)))))
+            (let ((out (zeros 2)) (rhs (map 'list #'rational residual)))
+              (assert (= 0 (rd-caller:step-code kept residual out)))
+              ;; The rate predicted is of the iteration matrix's norm, the root of two times 2^-10 where
+              ;; the factorization's own error adds nothing, and not of its two blocks, 2^-10 each.
+              (assert (>= (rd:predicted-rate kept) (* 1.41421356d0 (expt 2d0 -10))) ()
+                      "A predicted rate of ~S, under the root of two times 2^-10." (rd:predicted-rate kept))
+              (multiple-value-bind (truncated l2) (rd-truncated-solution a m rhs)
+                (let* ((distance (rd-distance-squared out truncated)) (bound (rational (rd:step-bound kept)))
+                       (own (rd-distance-squared out (exact-minimum-norm a rhs))))
+                  (incf cases)
+                  (setf largest (max largest (/ distance (expt bound 2))))
+                  (assert (and (= 2 (dr-rank a)) (plusp l2)) () "The premise: the stored matrix has rank two.")
+                  ;; The matrix's own step is another vector: what is bounded is the truncation's.
+                  (assert (> own 1/100) ()
+                          "The premise: the step is not the stored matrix's own; it is ~E from that."
+                          (sqrt (float own 1d0)))
+                  (assert (<= distance (+ (expt bound 2) (expt 10 -60))) ()
+                          "~D rows: the step is ~E from the truncated matrix's step, and step-bound is ~E." m
+                          (sqrt (float distance 1d0)) (float bound 1d0)))))))))
+    (format t "STEP-TRUNCATION-PASS cases=~D largest-distance-over-bound=~,3F~%" cases (sqrt (float largest 1d0)))))
+
 (defun run-rank-deficient-tests ()
   (run-rank-deficient-exact-tests)
   (run-rank-deficient-reprove-tests)
@@ -1444,5 +1761,11 @@ and the bound of each holds for the exact product of the matrix with it."
   (run-step-tests)
   (run-refresh-tests)
   (run-support-tests)
+  (run-certify-floor-tests)
+  (run-subnormal-singular-bounds-tests)
+  (run-support-held-tests)
+  (run-support-order-tests)
+  (run-support-distance-tests)
+  (run-step-truncation-tests)
   (run-rank-deficient-encapsulation-tests)
   (format t "RANK-DEFICIENT-TESTS-PASS~%"))

@@ -103,9 +103,10 @@ and the certificate would refuse as it does in kept-bounds. A row that had left 
 of the others, as the corner of 1.001 there makes it, could not be refreshed back: its
 bound would stay at its distance, and that is the signal to search again.
 
-A refresh needs a certificate to have been issued once for the kept set, which is where it
-takes the shift of its solve from; it is given a target of half the floor, so that a vector
-is replaced before the certificate would refuse."
+A vector that keeps its rows is refreshed on those rows alone, as here. One that does not
+is solved for on all the kept rows, and that solve takes its shift from a certificate
+issued once for the kept set. The refresh is given a target of half the floor, so that a
+vector is replaced before the certificate would refuse."
     (let matrix = (constraints 1.0d0))
     (let kept = (rd:analyze matrix))
     (let out = (arr:make 3 0.0d0))

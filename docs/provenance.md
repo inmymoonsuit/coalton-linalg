@@ -115,7 +115,9 @@ arithmetic, and the iteration is recomputed independently and compared bit for b
 
 No source was opened. That the vectors of the rows left out are the fundamental circuits
 of those rows, and that merging rows whose circuits overlap gives the components of the
-rows as a matroid whatever independent set was kept, is textbook matroid theory, stated
+rows as a matroid whatever independent set was kept, is textbook matroid theory for
+supports that are exact, zero against not zero (with a cut the sets are those of the kept
+rows at hand, as the contract now says), stated
 in the design and checked there in exact arithmetic on four hundred matrices before any
 code. Joining sets through a forest of parents with the paths shortened is the classical
 union-find structure, written from its description. The bound on a stored multiplier's

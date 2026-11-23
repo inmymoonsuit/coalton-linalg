@@ -321,8 +321,9 @@ The handle's constructor and storage are private. A search replaces the kept set
 vectors and the two borrowed vector arrays; a search or a reproof withdraws the
 certificate, and each of them and a certificate withdraws the step; a refresh does both
 and replaces the two borrowed vector arrays. `analyze` and `find-kept-rows!` allocate;
-`refresh!` does while its arrays grow or where a vector changes the rows it holds, and
-nothing else does. One handle serves one call at a time.
+`refresh!` does while its arrays grow or where a vector changes the rows it holds,
+`class-supports!` does at its first call and when the vectors have grown, and nothing
+else does. One handle serves one call at a time.
 
 ## coalton-linalg/sparse/lu
 

@@ -2,6 +2,36 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.21.1 — 2026-11-23
+
+Fixes in `coalton-linalg/sparse/rank-deficient` and `sparse/dependent-rows` from an
+independent review. [Record](docs/batch21.md), which also lists **defects found in other
+packages and not yet fixed in this release**: conjugate gradients, least squares on an
+operator and damped least squares each report a false status on inputs named there.
+
+- `step-solve-bound` and `step-bound` include the rounding of a step written below the
+  normal range; they were false there for five or more unknowns, by a fraction of
+  2^-1074.
+- The first number of `largest-singular-bounds!` and `proved-lower-bound` are rounded
+  down below the normal range, where they could exceed what they bound.
+- `certify!` answers `CertificateKeptNotAboveFloor`, where it answered
+  `CertificateUnresolved`, for an upper floor that is a singular value of the kept rows
+  exactly and for one whose product with the matrix's scale overflows; and certifies with
+  no row left out at any lower floor.
+- `class-supports!` classes a vector that holds every kept row, and a matrix with no kept
+  row, where it answered `SupportsUndecided` whenever the multipliers' bound was above
+  the cut.
+- After an error raised by `refresh!` once its vectors were exchanged, `gap-bound` and
+  `residual-bound` are −1; they stood, proved for the vectors replaced.
+- `reprove!` and `refresh!` raise the typed error for another pattern before they
+  withdraw anything. `step!` answers `StepBoundNotReached` before it factors.
+- `predicted-rate` is larger by the root of two in its first term.
+- `find-dependent-rows!`, and `find-kept-rows!` through it, answer `RowsFound` with every
+  row left out for a matrix whose stored values are all zero, at any valid threshold;
+  a small positive threshold was `RowsBadThreshold` there.
+- **The contract no longer says the dependent sets are independent of the rows kept.**
+  They are not, once a cut is in play; the code is unchanged.
+
 ## 0.21.0 — 2026-11-23
 
 Added `coalton-linalg/lsqr`: `lsqr!(workspace, apply, apply-transpose, b, x, damping,

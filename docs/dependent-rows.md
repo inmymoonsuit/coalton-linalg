@@ -240,7 +240,9 @@ out, which are few, and a flag for each row.
 rows in `A Aᵀ` with that of the threshold, and a square leaves the range at half the
 exponent of what is squared. So the search is made on the matrix divided by the power of
 two at its largest entry, with the threshold divided by the same power. The division is
-exact. The multipliers of the factorization are those of the undivided matrix, so the rows
+exact for an entry within 2^1022 of the largest. One further below is held as rounded, by
+at most half of 2^-1074 in the divided units, and **what is proved is of the matrix as
+held**: the stored matrix with such entries so rounded. The multipliers of the factorization are those of the undivided matrix, so the rows
 left out, the vectors and the values handed back are the same at every scale, bit for
 bit; a bound is formed on the divided matrix and multiplied back when it is read, raised
 by the smallest positive number where the product falls below the normal range and could
@@ -253,7 +255,8 @@ name:
 - A positive threshold more than about 2^511 times smaller than the matrix's largest
   entry is `RowsBadThreshold`: squared, it is zero or has lost its digits, and would be
   compared as another threshold. A threshold beyond every row, whose own square may not be
-  finite, is taken, and leaves every row out.
+  finite, is taken, and leaves every row out. So is any threshold on a matrix whose stored
+  values are all zero, which has no largest entry for a threshold to be small beside.
 - Under a threshold that can be held, a row too small to square beside the largest entry
   is shorter than the threshold and is left out, as the contract says.
 - Under a threshold of zero there is no such statement to fall back on, and such a row,

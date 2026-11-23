@@ -340,6 +340,12 @@ the library, agreed with it in advance, plan before code:
 4. Supernodal or multifrontal factorization, only after measurements say where real
    problems spend their time.
 
+**An independent review of Batches 15 to 20 is being acted on as Batch 21.** Its first
+two parts, the kept rows of a rank-deficient matrix and dependent rows, are fixed;
+[the record](docs/batch21.md) lists what is still open, with the inputs: false statuses in
+conjugate gradients, least squares on an operator and damped least squares. Those come before
+anything new.
+
 Kept on the roadmap for the library's own users, though that consumer has no use for it:
 
 5. Iterative least squares and minimum norm on an operator, with damping: **Batch 20.**
