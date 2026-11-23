@@ -253,12 +253,13 @@ divided by a power of two, so the step at any scale is the step at ordinary scal
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
 the library, agreed with it in advance, plan before code:
 
-1. A design note for a step on a rank-deficient matrix: the minimum-norm least squares
-   step that a truncated singular value decomposition gives at a relative floor, with a
-   certificate that no singular value lies in a band about the floor, or a refusal by
-   name. Built on [dependent rows](docs/dependent-rows.md). The same note covers certified
-   bases: the supports of left null vectors, and a right null-space basis with a proved
-   residual.
+1. A step on a rank-deficient matrix: the minimum-norm least squares step that a
+   truncated singular value decomposition gives at a relative floor, with a certificate
+   that no singular value lies in a band about the floor, or a refusal by name. Built on
+   [dependent rows](docs/dependent-rows.md). **[The design](docs/design-rank-deficient-step.md)
+   is written and is under review; nothing of it is built.** The same note covers
+   certified bases: the supports of left null vectors, and a right null-space basis with
+   a proved residual.
 2. That step, then those bases, each as its own batch.
 3. Least squares with bounds on linear functionals of the unknown, by an active set whose
    rows' rank is proved or refused.
