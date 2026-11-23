@@ -1,10 +1,10 @@
 # Batch 21: an independent review, and what it found
 
-State: **in progress.** Parts 1 to 5, the kept rows of a rank-deficient matrix, dependent
-rows, damped least squares, conjugate gradients and least squares on an operator, are
-fixed and verified at safety 1 and safety 0 on 2026-11-23,
+State: **in progress.** Parts 1 to 6, the kept rows of a rank-deficient matrix, dependent
+rows, damped least squares, conjugate gradients, least squares on an operator and the two
+rosters, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
 Windows/x86-64, SBCL 2.6.10 and the pinned Coalton compiler. No defect the review found in the numerical packages is known to remain
-open; what is left is in [the two rosters and the style rules](#what-is-still-open).
+open; what is left is [the style rules](#what-is-still-open).
 
 ## What this is
 
@@ -253,10 +253,44 @@ Both complete serial checks pass on the tree of this part.
 - **A tolerance of infinity meets a norm of infinity.**
 - Three of eight ways to `LsqrNonFinite` have a test; the others are reached by reading.
 
+## Part 6: the two rosters
+
+The rosters are guards: each claims that every exported call of a family is answered
+for. A reviewer attacked the guards themselves.
+
+- **Any condition counted as a refusal.** A pair declared refused passed if the aliased
+  call died of anything at all, and a run declared refused at the top of the range passed
+  for any error there. A refusal is now a status that is not the one needed, or the
+  library's typed error; any other condition is not caught and ends the roster's run.
+  Every pair and every run that was a refusal still is one: 18 pairs, and the same
+  ranges on all 37 entries of the sweep.
+- **An output that could not fail.** Six norms were held only to a bound that the status
+  before them had already checked. Five are now held to their scaled values, bit for bit:
+  the residual of conjugate gradients in two entries, and the residual and the gradient
+  of least squares on an operator in three. They hold at every scale their entries
+  range. The sixth, in the preconditioned entry, has no scaled value at 2^1020, where the
+  iterates are declared only close, and keeps its bound.
+- **`:lost` took any finite number**, at the top of the range as well as the bottom. It is
+  now zero or a number below the normal range, where the right value is below it; above
+  the range a finite number is `:wrong`.
+- **The sources were read two directories deep**, where the page said every depth. Every
+  depth is read.
+
+Controls, in the rosters' own files as theirs are: the typed error is a refusal in each
+roster; a plain error in a run or in an aliased call is not caught; five numbers on
+either side of the range are classed lost or wrong. Both rosters pass with their counts
+unchanged, which is itself the finding that no entry had rested on the looser rules.
+
+**Left as it is, and now written on [the rosters' page](rosters.md#membership-is-read-from-the-sources):**
+a call that takes its numbers inside a stored matrix or a handle and returns no status
+is not a member of the sweep (`set-matrix!` of damped least squares, `transpose` and
+`permute`); an array parameter is recognized by how its type is written; a pair is of
+the entry's own fixture; the one exemption rests on today's caller.
+
 ## What is still open
 
-No finding in a numerical package is open. Not yet acted on:
-
-- **The two rosters** miss a call that returns nothing and holds its numbers in a handle,
-  count any condition as a refusal, and hold three outputs to expectations that cannot
-  fail.
+The style guide's rule that a private single constructor is named with a leading `%`
+(every handle here is `Mk...`), `if` forms whose branches act or bind, three central
+abbreviations, a parameter order, and constants defined in two places: a reviewer listed
+them against the style rules. They are the same in every package and are to be decided
+once, with the style guide's author, and not package by package in a batch of fixes.

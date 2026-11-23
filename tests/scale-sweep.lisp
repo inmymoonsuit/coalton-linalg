@@ -35,6 +35,12 @@
   ((text :initarg :text :reader sweep-premise-text))
   (:report (lambda (condition stream) (write-string (sweep-premise-text condition) stream))))
 
+(define-condition sweep-refusal (error)
+  ((text :initarg :text :reader sweep-refusal-text))
+  (:report (lambda (condition stream) (write-string (sweep-refusal-text condition) stream)))
+  (:documentation "A run refused by a status that is not the one its entry needs. With the library's typed error it
+is one of the two things a refusal can be: any other condition is a defect, and is not caught."))
+
 (defun sweep-finite-p (value)
   (or (not (floatp value)) (and (= value value) (not (sb-ext:float-infinity-p value)))))
 
@@ -79,7 +85,7 @@
   (let ((status (gensym "STATUS")))
     `(let ((,status ,form))
        (unless (eq ,status (coalton:coalton ,constructor))
-         (error "~(~A~) returned ~A" ',(first form) ,status)))))
+         (error 'sweep-refusal :text (format nil "~(~A~) returned ~A" ',(first form) ,status))))))
 
 (defun sweep-out (label value power &key (kind :law) bound)
   "One output of a run: its right value at scale 2^k is its value at scale 1 times 2^(POWER k). KIND :law for a
@@ -106,7 +112,12 @@ that must lie in [0, BOUND 2^(POWER k)]."
        (cond ((= value expected) :exact)
              ;; A bound whose scaled value the format cannot hold is still a bound if it is above it.
              ((and (eq kind :bound) (not (sweep-in-range-p expected))) (if (> value expected) :looser :wrong))
-             ((not (sweep-in-range-p expected)) :lost)
+             ;; Below the normal range a value is zero or has lost digits. Above it there is nothing to
+             ;; lose to: a finite number there is a wrong one.
+             ((not (sweep-in-range-p expected))
+              (if (and (< (abs expected) 1) (<= (abs value) (rational least-positive-normalized-double-float)))
+                  :lost
+                  :wrong))
              ((<= (abs (- value expected)) (* tolerance largest (expt 2 shift))) :close)
              ((and (eq kind :bound) (> value expected)) :looser)
              (t :wrong))))))
@@ -127,7 +138,7 @@ it: the output and the number, or the refusal's own words."
   (let ((outputs (handler-case (funcall run k)
                    (sweep-premise (condition)
                      (return-from sweep-class (values :no-input (princ-to-string condition))))
-                   (error (condition)
+                   ((or sweep-refusal coalton-linalg/errors:linalgerror) (condition)
                      (return-from sweep-class
                        (values (if (sweep-holdable-p reference k) :limit :refused)
                                (substitute #\Space #\Newline (princ-to-string condition)))))))
@@ -461,7 +472,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
            (sweep-need (cg:cg! workspace apply (sweep-array b4 k) x (sweep-number small k))
                        coalton-linalg/conjugate-gradient:CgConverged)
            (list (sweep-out "x" x 0) (sweep-out "the steps" (cg:step-count workspace) 0)
-                 (sweep-out "the residual" (cg:residual-norm workspace) 1 :kind :within :bound small)
+                 (sweep-out "the residual" (cg:residual-norm workspace) 1)
                  (sweep-out "the first running norm" (aref (cg:recurrence-norms workspace) 0) 1)))))
 
      (sweep-entry "conjugate gradients, the right-hand side scaled"
@@ -473,7 +484,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
            (sweep-need (cg:cg! workspace apply (sweep-array b4 k) x (sweep-number small k))
                        coalton-linalg/conjugate-gradient:CgConverged)
            (list (sweep-out "x" x 1) (sweep-out "the steps" (cg:step-count workspace) 0)
-                 (sweep-out "the residual" (cg:residual-norm workspace) 1 :kind :within :bound small)
+                 (sweep-out "the residual" (cg:residual-norm workspace) 1)
                  (sweep-out "the first running norm" (aref (cg:recurrence-norms workspace) 0) 1)))))
 
      (sweep-entry "preconditioned conjugate gradients, the matrix, its preconditioner and the right-hand side scaled"
@@ -502,7 +513,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                                    (sweep-number (scale-float 1d0 -30) k) 0d0)
                        coalton-linalg/lsqr:LsqrResidualMet)
            (list (sweep-out "x" x 0) (sweep-out "the steps" (lsqr:step-count workspace) 0)
-                 (sweep-out "the residual" (lsqr:residual-norm workspace) 1 :kind :within :bound (scale-float 1d0 -30))
+                 (sweep-out "the residual" (lsqr:residual-norm workspace) 1)
                  (sweep-out "the first running residual" (aref (lsqr:recurrence-residual-norms workspace) 0) 1)
                  (sweep-out "the operator norm estimate" (lsqr:operator-norm-estimate workspace) 1)))))
 
@@ -518,7 +529,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                        coalton-linalg/lsqr:LsqrGradientMet)
            (list (sweep-out "x" x 1) (sweep-out "the steps" (lsqr:step-count workspace) 0)
                  (sweep-out "the residual" (lsqr:residual-norm workspace) 1)
-                 (sweep-out "the gradient" (lsqr:gradient-norm workspace) 1 :kind :within :bound (scale-float 1d0 -30))
+                 (sweep-out "the gradient" (lsqr:gradient-norm workspace) 1)
                  (sweep-out "the first running residual" (aref (lsqr:recurrence-residual-norms workspace) 0) 1)
                  (sweep-out "the last running gradient"
                             (aref (lsqr:recurrence-gradient-norms workspace) (lsqr:step-count workspace)) 1)
@@ -536,7 +547,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                        coalton-linalg/lsqr:LsqrGradientMet)
            (list (sweep-out "x" x -1) (sweep-out "the steps" (lsqr:step-count workspace) 0)
                  (sweep-out "the residual" (lsqr:residual-norm workspace) 0)
-                 (sweep-out "the gradient" (lsqr:gradient-norm workspace) 1 :kind :within :bound (scale-float 1d0 -30))
+                 (sweep-out "the gradient" (lsqr:gradient-norm workspace) 1)
                  (sweep-out "the first running residual" (aref (lsqr:recurrence-residual-norms workspace) 0) 0)
                  (sweep-out "the last running gradient"
                             (aref (lsqr:recurrence-gradient-norms workspace) (lsqr:step-count workspace)) 1)
@@ -707,7 +718,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                        coalton-linalg/sparse/dependent-rows:RowsFound)
            (when (and (zerop k) (/= 1 (rows:left-out-count analysis)))
              (error 'sweep-premise :text (format nil "~D rows were left out, not 1." (rows:left-out-count analysis))))
-           (unless (rows:kept-values! analysis kept) (error "No kept set stands."))
+           (unless (rows:kept-values! analysis kept) (error 'sweep-refusal :text "No kept set stands."))
            (when (plusp (rows:left-out-count analysis))
              (sweep-need (rows:null-vector! analysis 0 v) coalton-linalg/sparse/dependent-rows:NullFound))
            (list (sweep-out "how many rows are left out" (rows:left-out-count analysis) 0)
@@ -727,7 +738,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
            (sweep-need (rows:find-dependent-rows! analysis matrix 0d0) coalton-linalg/sparse/dependent-rows:RowsFound)
            (when (and (zerop k) (/= 1 (rows:left-out-count analysis)))
              (error 'sweep-premise :text (format nil "~D rows were left out, not 1." (rows:left-out-count analysis))))
-           (unless (rows:kept-values! analysis kept) (error "No kept set stands."))
+           (unless (rows:kept-values! analysis kept) (error 'sweep-refusal :text "No kept set stands."))
            (when (plusp (rows:left-out-count analysis))
              (sweep-need (rows:null-vector! analysis 0 v) coalton-linalg/sparse/dependent-rows:NullFound))
            (list (sweep-out "how many rows are left out" (rows:left-out-count analysis) 0)
@@ -808,13 +819,37 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                      (classes (lambda (k) (list (sweep-out "v" (if (zerop k) 3d0 (* 1.5d0 (sweep-number 3d0 k))) 1))))))
       (assert (equal '(:exact :close :close)
                      (classes (lambda (k) (list (sweep-out "v" (if (zerop k) 3d0 (* (+ 1d0 1d-14) (sweep-number 3d0 k))) 1))))))
-      (assert (equal '(:exact :exact :lost) (classes (lambda (k) (list (sweep-out "v" (if (= k 1000) 0d0 (sweep-number 3d0 (* 2 k))) 2))))))
+      (assert (equal '(:exact :exact :wrong) (classes (lambda (k) (list (sweep-out "v" (if (= k 1000) 0d0 (sweep-number 3d0 (* 2 k))) 2))))))
+      ;; Lost is of the bottom of the range only: a zero or a number below the normal range where the
+      ;; scaled value is below it. Where the scaled value is above the range a finite number is wrong.
+      (assert (equal '(:lost :lost :wrong :wrong :wrong)
+                     (list (sweep-element 0d0 3d0 3d0 -2000 :law nil 1d-12)
+                           (sweep-element (scale-float 1d0 -1070) 3d0 3d0 -2000 :law nil 1d-12)
+                           (sweep-element 1d-300 3d0 3d0 -2000 :law nil 1d-12)
+                           (sweep-element 0d0 3d0 3d0 2000 :law nil 1d-12)
+                           (sweep-element 1d300 3d0 3d0 2000 :law nil 1d-12))))
       (assert (equal '(:exact :exact :wrong)
                      (classes (lambda (k) (list (sweep-out "v" (if (= k 1000) sb-ext:double-float-positive-infinity
                                                                  (sweep-number 3d0 k))
                                                            1))))))
-      (assert (equal '(:exact :limit :limit) (classes (lambda (k) (if (zerop k) (list (sweep-out "v" 3d0 1)) (error "no"))))))
-      (assert (equal '(:exact :limit :refused) (classes (lambda (k) (if (zerop k) (list (sweep-out "v" 3d0 2)) (error "no"))))))
+      (assert (equal '(:exact :limit :limit)
+                     (classes (lambda (k) (if (zerop k) (list (sweep-out "v" 3d0 1)) (error 'sweep-refusal :text "no"))))))
+      (assert (equal '(:exact :limit :refused)
+                     (classes (lambda (k) (if (zerop k) (list (sweep-out "v" 3d0 2)) (error 'sweep-refusal :text "no"))))))
+      ;; The library's typed error is a refusal too.
+      (assert (equal '(:exact :limit :limit)
+                     (classes (lambda (k)
+                                (if (zerop k)
+                                    (list (sweep-out "v" 3d0 1))
+                                    (rows:analyze-with-limit (csc-from-entries 2 2 '((0 0 1) (1 0 1) (1 1 1))) 1))))))
+      ;; A condition that is neither is no refusal. It is not classed: it ends the roster's run.
+      (assert (handler-case
+                  (progn (classes (lambda (k) (if (zerop k) (list (sweep-out "v" 3d0 1)) (error "an index out of range"))))
+                         nil)
+                (sweep-refusal () nil)
+                (coalton-linalg/errors:linalgerror () nil)
+                (error () t))
+              () "A condition that is no refusal was classed as one.")
       (assert (equal '(:exact :looser :looser)
                      (classes (lambda (k) (list (sweep-out "v" (if (zerop k) 3d0 sb-ext:double-float-positive-infinity) 2
                                                            :kind :bound))))))

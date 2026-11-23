@@ -23,6 +23,24 @@ names no member. So a call added to the library joins by being declared, and
 the suite is red until someone has answered for it. Arrays passed inside a
 handle, and functions taken as arguments, are not counted as array parameters.
 
+**What the rules do not see**, found by an independent review and left as it is:
+
+- **A call that takes its numbers inside a stored matrix or a handle and returns no
+  status is not a member of the scale sweep.** `set-matrix!` of
+  [damped least squares](damped.md), which divides the matrix and squares it, and
+  `transpose` and `permute` of a stored matrix, are three. The damped entries of the
+  sweep call the first on the way to the calls they answer for; nothing makes them.
+- **An array parameter is recognized by how its type is written**: the array package's
+  usual nickname, not parenthesized. Every source writes it so today.
+- **A pair is two positions of one element type and one length in the entry's own
+  arrays.** A pair that exists only for other shapes is in no declaration, and the roster
+  does not ask that each be reached by some fixture. Three positions as one array are
+  never tried.
+- **The one exemption, `minimum-degree`, rests on its caller**: the package is private and
+  its one caller passes the two arrays of a validated pattern, which cannot be one
+  array. That is a statement about today's caller, and nothing fails when another is
+  added.
+
 ## The aliasing roster
 
 [`tests/aliasing.lisp`](../tests/aliasing.lisp). The contract every member is
@@ -36,7 +54,10 @@ For each member and each pair of its array arguments that could be one array —
 the same element type and the same length — the roster makes the call twice:
 once with two arrays of equal contents, once with one array in both positions.
 
-- If the second call refuses, every argument must be bit for bit what it was.
+- If the second call refuses, every argument must be bit for bit what it was. **A
+  refusal is the library's typed error, or a status that is not success.** Any other
+  condition, an index out of range at a checked safety level for one, is a defect: it is
+  not caught, and it ends the roster's run.
 - If it succeeds, the first must have succeeded too, every argument and every
   returned array must agree with the first call's bit for bit, and the shared
   array must hold what the first call wrote to whichever of the two it wrote.
@@ -97,8 +118,8 @@ one class:
 | `:exact` | succeeded, and every output is its scaled value bit for bit |
 | `:close` | succeeded, and every output is within the entry's tolerance of it, against the largest magnitude in its array |
 | `:looser` | succeeded, and an upper bound came out above its scaled value, which a bound may |
-| `:lost` | succeeded, and an output's right value is too small to be a normal number: what came back is zero or has lost digits |
-| `:refused` | refused, and some output's right value cannot be held at that scale |
+| `:lost` | succeeded, and an output's right value is too small to be a normal number: what came back is zero or below the normal range. Only at the bottom of the range: where the right value is too large to hold, a finite number is `:wrong` |
+| `:refused` | refused, by a status that is not the one the entry needs or by the library's typed error, and some output's right value cannot be held at that scale. A condition of any other kind is not a refusal and ends the run |
 | `:limit` | refused although every output's right value can be held: the scale is outside what the routine's own arithmetic reaches |
 | `:no-input` | was not made: an input of the problem, a tolerance usually, is not a normal number at that scale |
 | `:wrong` | succeeded with an output that is neither its right value nor lost |
@@ -167,6 +188,11 @@ exponent range. Both now work on their data divided by a power of two.
 - The law is relative to scale 1. A defect that is the same at every scale is
   the other tests' to find.
 - The problems are of order three and four. Growth with size is not swept.
+- **A norm that a status already bounds is held to its scaled value where it has one.**
+  The residual of conjugate gradients and the residual and gradient of least squares on
+  an operator are outputs of the law in five entries: a value wrong by any factor fails
+  there. In the preconditioned entry the iterates at 2^1020 are only close, the residual
+  is then another number, and it is held to its bound alone, which the status restates.
 
 ### Adding a call
 

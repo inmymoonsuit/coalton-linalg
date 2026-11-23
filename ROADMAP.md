@@ -343,8 +343,9 @@ the library, agreed with it in advance, plan before code:
 **An independent review of Batches 15 to 20 is being acted on as Batch 21.** Its first
 five parts are fixed: the kept rows of a rank-deficient matrix, dependent rows, damped
 least squares, conjugate gradients and least squares on an operator.
-[The record](docs/batch21.md) has each finding with its input. Left: what the review
-found in the two rosters and against the style rules. Those come before
+So are the two rosters. [The record](docs/batch21.md) has each finding with its input.
+Left: what the review listed against the style rules, to be decided once for every
+package. Those come before
 anything new.
 
 Kept on the roadmap for the library's own users, though that consumer has no use for it:

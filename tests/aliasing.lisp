@@ -59,7 +59,7 @@ type that is not a function's."
 sources. MEMBER-P is given the type as written, on one line."
   (let ((found '())
         (root (asdf:system-source-directory "coalton-linalg")))
-    (dolist (path (append (directory (merge-pathnames "src/*.ct" root)) (directory (merge-pathnames "src/*/*.ct" root))))
+    (dolist (path (directory (merge-pathnames "src/**/*.ct" root)))
       (let* ((text (substitute #\Space #\Return (uiop:read-file-string path :external-format :utf-8)))
              (package-start (+ (search "(cl:defpackage #:" text) (length "(cl:defpackage #:")))
              (package (subseq text package-start (position-if #'alias-whitespace-p text :start package-start)))
@@ -92,10 +92,11 @@ sources. MEMBER-P is given the type as written, on one line."
        (if (typep a '(simple-array double-float (*))) (same-bits-p a b) (equalp a b))))
 
 (defun alias-run (call arrays)
-  "The call's outcome as a code, 0 for success, and whatever further arrays it returned. A condition is a refusal."
+  "The call's outcome as a code, 0 for success, and whatever further arrays it returned. The library's typed
+error is a refusal. Any other condition is a defect and is not caught."
   (handler-case (multiple-value-bind (code extras) (funcall call arrays)
                   (values (if (integerp code) code 0) extras))
-    (error () (values 99 nil))))
+    (coalton-linalg/errors:linalgerror () (values 99 nil))))
 
 (defun alias-pairs (arrays)
   "Every pair of positions holding arrays of one element type and one length: the pairs that can be one array."
@@ -397,6 +398,16 @@ expected of each pair that can be one array. An entry of (key :exempt reason) ha
            (when (null outcomes) (incf without-pair))
            (incf same (count :same outcomes :key #'second))
            (incf refused (count :refused outcomes :key #'second))))))
+    ;; Controls for what a refusal is: the library's typed error, and nothing else that can be signalled.
+    (assert (= 99 (alias-run (lambda (arrays)
+                               (declare (ignore arrays))
+                               (rows:analyze-with-limit (csc-from-entries 2 2 '((0 0 1) (1 0 1) (1 1 1))) 1))
+                             '())))
+    (assert (handler-case (progn (alias-run (lambda (arrays) (declare (ignore arrays)) (error "an index out of range")) '())
+                                 nil)
+              (coalton-linalg/errors:linalgerror () nil)
+              (error () t))
+            () "A condition that is no refusal was taken for one.")
     ;; Controls for the verdict itself: a call that reads what it has already overwritten, and
     ;; a refusal that comes after a write, are both reported.
     (flet ((reported-p (call)
