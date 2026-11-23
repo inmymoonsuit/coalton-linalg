@@ -1,7 +1,8 @@
 # coalton-linalg
 
-An independent numerical linear algebra library written in Coalton, for 64-bit SBCL, in
-double precision. It offers sparse factorizations, symmetric positive definite and
+An independent numerical linear algebra library written in
+[Coalton](https://github.com/coalton-lang/coalton), for 64-bit SBCL, in double precision.
+It offers sparse factorizations, symmetric positive definite and
 nonsymmetric, with the sparse operations around them; least squares that is damped,
 rank-deficient or on an operator the caller applies; conjugate gradients and iterative
 refinement; and dense factorizations for the problems those cannot take: indefinite
@@ -39,6 +40,9 @@ a positive definite matrix and, for the signed-pivot entry, is checked by a grow
 the caller reads after every factorization; the dense routines
 are unblocked and sequential, for small and moderate sizes. The [roadmap](ROADMAP.md) says
 what is and is not planned.
+
+It is the sister of [coalton-geometry](https://github.com/inmymoonsuit/coalton-geometry),
+geometry in Coalton, which is built to the same rules.
 
 Conventions the packages share:
 
@@ -197,6 +201,8 @@ recorded in the batch records, not rerun by this command.
 The original prototype and its CAD/held-out results remain separate and unchanged.
 This repository carries reusable code and generic tests, not those application
 fixtures or historical benchmark dumps.
+
+## License
 
 Licensed under [MIT](LICENSE). [Provenance](docs/provenance.md) records the
 independent origin of the implementation. Dependency licenses remain their own;
