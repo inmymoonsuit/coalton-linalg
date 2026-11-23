@@ -1,7 +1,7 @@
 # Batch 21: an independent review, and what it found
 
-State: **in progress.** Parts 1 to 3, the kept rows of a rank-deficient matrix, dependent
-rows and damped least squares, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
+State: **in progress.** Parts 1 to 4, the kept rows of a rank-deficient matrix, dependent
+rows, damped least squares and conjugate gradients, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
 Windows/x86-64, SBCL 2.6.10 and the pinned Coalton compiler. The other parts are listed under [what is still open](#what-is-still-open)
 with what was reproduced of each: **those defects are in this release.**
 
@@ -165,14 +165,41 @@ Both complete serial checks pass on the tree of this part.
 - The aliasing roster and the scale sweep pass with their counts unchanged, and the
   allocation check of the package's loop reads zero bytes a call.
 
+## Part 4: `coalton-linalg/conjugate-gradient`
+
+- **A false `CgConverged`.** The iteration is carried on the residual divided by a power
+  of two. That power was chosen once, from the first residual, and every residual formed
+  from the operator to confirm a tolerance was divided by it too. An entry more than
+  2^1022 below the first residual's largest was lost to that division both times: for the
+  identity and `b = (2^100, 2^-980)` at a tolerance of zero the call returned
+  `(2^100, 0)`, `CgConverged`, and a residual norm of 0, where the residual is 2^-980. So
+  for `(10³⁰⁸, 10⁻¹⁷)`. It was a regression of Batch 16, which brought the division in;
+  [that record](batch16.md) now says so. **The power is now chosen again at every
+  residual formed**, which is where the method starts again anyway. The residual formed
+  is then measured at its own size, the tolerance is tested on that, and the next steps
+  solve what the first power could not carry: five right-hand sides with entries up to
+  2^1900 apart are solved to a residual of exactly zero.
+- **A residual whose norm is above the largest number is not a refusal.** With every
+  entry finite the norm is infinity, meets no finite tolerance, and the method goes on, as
+  it already did for a running norm: `b = (1.5 × 10³⁰⁸, 1.5 × 10³⁰⁸)` under the identity
+  was `CgNonFinite` and is solved.
+- **Nothing else moved**: the ninety-six solves that the tests recompute are bit for bit
+  what they were, the choice of a power of two changing no significand, and the scale
+  sweep's three entries for the two calls pass as declared.
+- The contract's "the size of the system does not limit it" has its condition, and no
+  longer says the preconditioned iterates are identical at 2^1020, where the roster
+  declares them within the tolerance.
+
+Two planted defects, each putting one of the two behaviours back, both caught; the
+restored source passes. Both complete serial checks pass on the tree of this part.
+
 ## What is still open
 
 Reproduced through the public interface and **not fixed in this release**:
 
-- **Conjugate gradients** reports `CgConverged` with a residual norm of 0 for a right-hand
-  side whose entries are more than 2^1022 apart: `A = I`, `b = (2^100, 2^-980)`, tolerance
-  0, returns `x = (2^100, 0)`. The same for `(10³⁰⁸, 10⁻¹⁷)`.
-- **Least squares on an operator**: the same false `LsqrResidualMet` on that input;
+- **Least squares on an operator**: a false `LsqrResidualMet` for a right-hand side whose
+  entries are more than 2^1022 apart, `A = I` and `b = (2^100, 2^-980)` at tolerances of
+  zero returning `(2^100, 0)`;
   `LsqrNonFinite` for solvable problems whose iterates or vectors exceed 2^512 in the
   iteration's units, in one case with the answer written into x; a gradient the format
   holds reported as zero and called met, where one scale factor is small and the other

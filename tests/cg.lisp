@@ -350,6 +350,47 @@ norms and the number of steps."
      "(declare probe (coalton-linalg/conjugate-gradient:CgStatus -> ldlt:SolveStatus))
       (define (probe status) status)")))
 
+(defun run-cg-range-tests ()
+  "A right-hand side whose entries are further apart than one power of two can carry. The part of the residual
+that the first power loses is seen when the residual is formed again at its own size: the status is true of the
+vector returned, and the method goes on from there and solves it."
+  (flet ((solve (diagonal b tolerance)
+           (let* ((n (length diagonal)) (workspace (cg:make-cg n 20)) (x (zeros n))
+                  (rhs (coerce b '(simple-array double-float (*))))
+                  (code (cg-caller:cg-code workspace (cg-caller:diagonal-operator (coerce diagonal '(simple-array double-float (*))))
+                                           rhs x tolerance))
+                  (residual (loop :for a :in diagonal :for value :in b :for i :from 0
+                                  :collect (- (rational value) (* (rational a) (rational (aref x i)))))))
+             ;; The exact residual's largest entry: a root of its squares would lose a small one.
+             (values code x (float (loop :for r :in residual :maximize (abs r)) 1d0) (cg:residual-norm workspace)
+                     (cg:restart-count workspace)))))
+    (dolist (case (list (list "b = (2^100, 2^-980)" '(1d0 1d0) (list (scale-float 1d0 100) (scale-float 1d0 -980)))
+                        (list "b = (1e308, 1e-17)" '(1d0 1d0) (list 1d308 1d-17))
+                        (list "b = (2^100, 1.2345678901234567 2^-950)" '(1d0 1d0)
+                              (list (scale-float 1d0 100) (scale-float 1.2345678901234567d0 -950)))
+                        (list "diag(2, 4, 8), b = (2^600, 3, 2^-600)" '(2d0 4d0 8d0)
+                              (list (scale-float 1d0 600) 3d0 (scale-float 1d0 -600)))
+                        (list "diag(1, 2), b = (2^-1000, 2^900)" '(1d0 2d0) (list (scale-float 1d0 -1000) (scale-float 1d0 900)))))
+      (destructuring-bind (label diagonal b) case
+        (multiple-value-bind (code x true reported restarts) (solve diagonal b 0d0)
+          ;; Every entry of each solution is a power of two times a double, so the exact solution is
+          ;; a vector of doubles and a tolerance of zero can be met.
+          (assert (and (= 0 code) (= 0d0 true) (= 0d0 reported)) ()
+                  "~A, tolerance 0: outcome ~D, x = ~S, a residual of ~S reported as ~S after ~D residuals formed." label code x
+                  true reported restarts))
+        ;; With a tolerance between the two parts: the status is of the norm formed, whatever it is.
+        (multiple-value-bind (code x true reported) (solve diagonal b (scale-float 1d0 -1040))
+          (declare (ignore x))
+          (assert (and (= 0 code) (<= true (scale-float 1d0 -1040)) (<= true reported (* 2 true))) ()
+                  "~A, tolerance 2^-1040: outcome ~D, a residual of ~S reported as ~S." label code true reported))))
+    ;; A right-hand side whose norm is above the largest number, though every entry and the solution
+    ;; are not: the norm is infinity and meets no tolerance, and the method goes on, as for a running
+    ;; norm.
+    (multiple-value-bind (code x true reported) (solve '(1d0 1d0) (list 1.5d308 1.5d308) 1d295)
+      (assert (and (= 0 code) (= 1.5d308 (aref x 0)) (= 1.5d308 (aref x 1)) (= 0d0 true) (= 0d0 reported)) ()
+              "b = (1.5e308, 1.5e308): outcome ~D, x = ~S, a residual of ~S reported as ~S." code x true reported)))
+  (format t "CG-RANGE-PASS~%"))
+
 (defun run-cg-lifetime-tests ()
   (let ((state (sb-ext:seed-random-state 78)))
     (multiple-value-bind (dense matrix symbolic b) (test-system state 8 1/4)
@@ -434,5 +475,6 @@ norms and the number of steps."
   (check-pcg-last-preconditioner)
   (run-cg-convergence-tests)
   (run-cg-outcome-tests)
+  (run-cg-range-tests)
   (run-cg-lifetime-tests)
   (format t "CG-TESTS-PASS~%"))

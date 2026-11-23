@@ -6,8 +6,8 @@ Changes a caller can meet. Each release's evidence is in the batch record it lin
 
 `coalton-linalg/sparse/damped` divides each column by its own power of two, after an
 independent review. [Contract](docs/damped.md) · [record](docs/batch21.md#part-3-coalton-linalgsparsedamped),
-which still lists **defects found in conjugate gradients and in least squares on an
-operator and not yet fixed in this release.**
+which still lists **defects found in least squares on an operator and not yet fixed in
+this release.**
 
 - **New status `DampedZeroDamping`** of `factor!`: the columns' own damping with a floor of
   zero, a positive μ, and a column of zeros in the standing matrix. It was
@@ -21,6 +21,13 @@ operator and not yet fixed in this release.**
 - The pivot of a column of zeros is 1 where its damping term is positive, whatever the
   floor and μ: such a column's entry of the step is exactly zero, as before.
 - Every step that was right is the same bit for bit: 9,000 solves compared, one hash.
+
+Also in this release, `coalton-linalg/conjugate-gradient`:
+
+- `cg!` and `pcg!` no longer report `CgConverged` with a residual of 0 for a right-hand
+  side whose entries are more than 2^1022 apart; they solve it. A regression of 0.14.0.
+- A residual with finite entries and a norm above the largest number is no longer
+  `CgNonFinite`: the method goes on, and at the limit that norm is reported as infinity.
 
 ## 0.21.1 — 2026-11-23
 

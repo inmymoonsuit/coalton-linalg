@@ -58,6 +58,14 @@ Below -800 the conjugate gradient entries have no input: their tolerance, 2^-40 
 right-hand side, is not a normal number there. At 2^1020 the dependent-rows bound on a
 transposed product is infinite because its value, 19 times 2^1020, cannot be held.
 
+**Corrected 2026-11-23: one thing did move, and an independent review found it.** A
+right-hand side with entries more than 2^1022 apart, `(2^100, 2^-980)` under the identity,
+is solved exactly by the sources before this batch, on the reviewer's reading of them, and
+after it came back as `(2^100, 0)` with
+`CgConverged` and a residual of 0: the smaller entry was lost to the division, and the
+residual formed to confirm was divided by the same power. No test held such a right-hand
+side. [Batch 21](batch21.md) chooses the power again at every residual formed.
+
 **On data that worked before, nothing moved.** The ninety-six conjugate gradient solves
 that the tests recompute step by step agree bit for bit, as they did, and so do the 118
 exact dependent-rows cases, the 364 certificates and the allocation measurements, which

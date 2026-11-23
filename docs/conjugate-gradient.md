@@ -97,19 +97,34 @@ at which the value arose and may itself hold one.
   inner products likewise retain a separate binary exponent until their ratio is taken.
   This is not compensated summation.
 - **The size of the system does not limit it.** The iteration is carried on the residual
-  divided by the power of two at the first residual's largest entry, and the
-  preconditioned residual, the direction and its image are divided with it, each being
-  linear in the residual. Inner products are then of numbers near 1 whatever the size of
-  the right-hand side, and the operator is applied to a direction near 1 whatever its own
-  size. The division changes no significand, so wherever the undivided arithmetic stayed
-  in range the iterates are the same bit for bit; ninety-six solves recomputed in the
-  tests hold that. [The scale-sweep roster](rosters.md#what-is-declared) pins the range:
-  with the right-hand side multiplied by 2^k, or the operator with it, or a preconditioner
-  as well, the iterates are identical from 2^-800 to 2^1020.
-- **What still ends `CgNonFinite` is a quantity that cannot be held**: a residual formed
-  from the operator whose norm is above the largest number, since that norm is what the
-  call reports; an operator whose image of a direction near 1 overflows; a step that is
-  not finite in the iterate's own units, which is a solution that is not.
+  divided by the power of two at its largest entry, chosen again at every residual formed
+  from the operator, which is where the method starts again; and the preconditioned
+  residual, the direction and its image are divided with it, each being linear in the
+  residual. Inner products are then of numbers near 1 whatever the size of the right-hand
+  side, and the operator is applied to a direction near 1 whatever its own size. The
+  division changes no significand of an entry within 2^1022 of the largest, so wherever
+  the undivided arithmetic stayed in range the iterates are the same bit for bit;
+  ninety-six solves recomputed in the tests hold that.
+  [The scale-sweep roster](rosters.md#what-is-declared) pins the range: with the right-hand
+  side multiplied by 2^k, or the operator with it, the iterates are identical from 2^-800
+  to 2^1020; with a preconditioner as well, to 2^1000, and within the tolerance at 2^1020.
+- **Entries of a residual further apart than 2^1022 are solved in turn.** One power of two
+  cannot carry both, and the smaller is lost to the division while the larger is being
+  solved. It is not lost to the call: when the running residual meets the tolerance the
+  residual is formed from the operator and measured at its own size, the smaller part is
+  then all of it, the tolerance is tested on that, and the method goes on from there.
+  For the identity and `b = (2^100, 2^-980)` the first step gives `(2^100, 0)`, the
+  residual formed is `2^-980`, and the second step gives b. Before Batch 21 every residual
+  was divided by the first one's power, the residual formed came out as zero, and the call
+  reported `CgConverged` with a residual of 0 for `(2^100, 0)`.
+- **What still ends `CgNonFinite` is a quantity that cannot be held**: an entry of a
+  residual formed from the operator that is not finite; an operator whose image of a
+  direction near 1 overflows; a step that is not finite in the iterate's own units, which
+  is a solution that is not. **A residual whose entries are finite and whose norm is above
+  the largest number is not one of them**: its norm is infinity, which meets no finite
+  tolerance, and the method goes on, as it does for a running norm. `b = (1.5 × 10³⁰⁸,
+  1.5 × 10³⁰⁸)` under the identity is solved. At the limit such a norm is reported as
+  infinity.
 - **A running residual may be one the format cannot hold** on the way to a solution it
   can. Its norm is then recorded in `recurrence-norms` as infinity, meets no tolerance,
   and the call goes on: diag(1, 1000) under (1.5e308, 5e307) triples its residual in the
