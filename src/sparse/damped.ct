@@ -11,7 +11,8 @@
            #:row-count #:column-count #:set-matrix! #:matrix-set?
            #:DampingStatus #:DampingSet #:DampingBadSize #:DampingNotPositive #:DampingNoMatrix
            #:set-damping! #:set-column-damping! #:damping-set?
-           #:DampedStatus #:DampedSuccess #:DampedNotPositive #:DampedNonFinite #:DampedBadDamping #:DampedNotReady
+           #:DampedStatus #:DampedSuccess #:DampedNotPositive #:DampedZeroDamping #:DampedNonFinite #:DampedBadDamping
+           #:DampedNotReady
            #:factor! #:factor-ready? #:refused-column
            #:StepStatus #:StepSuccess #:StepNoFactor #:StepBadSize #:StepNonFiniteRhs #:StepNonFiniteResult
            #:step!))
@@ -39,7 +40,9 @@
     (state (arr:LispArray UFix))
     (residual (arr:LispArray F64))
     (gradient (arr:LispArray F64))
-    (unknown (arr:LispArray F64)))
+    (unknown (arr:LispArray F64))
+    (column-scale (arr:LispArray F64))
+    (refused (arr:LispArray IFix)))
 
   (repr :transparent)
   (define-type DampedPlan
@@ -70,7 +73,9 @@
     DampedSuccess
     "The factor of J^T J + mu D stands."
     DampedNotPositive
-    "A computed pivot was not positive; refused-column names it. With mu zero this is a matrix without full column rank. No factor stands."
+    "A computed pivot was not positive; refused-column names it. A finding about a computed pivot: with mu zero it is what a matrix without full column rank gives, and what one of full rank gives when the normal equations lose its smallest singular value to rounding. No factor stands."
+    DampedZeroDamping
+    "The damping is the columns' own with a floor of zero, mu is positive, and the standing matrix has a column of zeros: its damping entry is zero and no mu makes its pivot positive. refused-column names it. No factor stands."
     DampedNonFinite
     "A damped diagonal entry or an intermediate result was not finite; no factor stands."
     DampedBadDamping
@@ -114,7 +119,8 @@
                     (arr:make (gram:entry-count plan) 0.0d0) (arr:make (gram:entry-count plan) 0.0d0)
                     symbolic (arr:make n 0.0d0) (arr:make n 0.0d0)
                     (arr:make 6 1.0d0) (arr:make 3 (the UFix 0))
-                    (arr:make m 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0))))
+                    (arr:make m 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0)
+                    (arr:make (* 2 n) 1.0d0) (arr:make 1 (the IFix -1)))))
 
   (declare analyze (csc:Matrix -> DampedPlan))
   (define (analyze matrix)
@@ -148,45 +154,37 @@
 
   (declare refused-column (DampedPlan -> IFix))
   (define (refused-column plan)
-    "The column of the matrix whose pivot the latest factor! refused as not positive; -1 otherwise."
-    (ldlt:refused-column (.symbolic (plan-storage plan))))
+    "The column the latest factor! refused: the one whose pivot was not positive, or the column of zeros whose damping was zero. -1 after any other outcome of it, and before any."
+    (arr:aref (.refused (plan-storage plan)) 0))
 
-  ;; The scale array: [0] the power of two at the matrix's largest entry and [1] its
-  ;; reciprocal; [2] and [3] the same for the residual of the latest step; [4] the mu of the
-  ;; standing factor; [5] the floor of the column damping.
+  ;; The scale array: [2] the power of two at the largest entry of the latest step's residual
+  ;; and [3] its reciprocal; [4] the mu of the standing factor; [5] the floor of the column
+  ;; damping. [0] and [1] are not used.
+  ;;
+  ;; The column-scale array: for column j, [2 j] the power of two at its largest entry and
+  ;; [2 j + 1] its reciprocal; 1 and 1 for a column of zeros.
   ;;
   ;; The state array: [0] 1 when a matrix is set; [1] 0 for no damping, 1 for a given diagonal,
   ;; 2 for the columns' own; [2] 1 when a factor stands.
 
   (inline)
-  (declare divided-damping (F64 * F64 -> F64))
-  (define (divided-damping d down)
-    "A positive damping entry in the units of the divided matrix: d times down squared, the two powers multiplied first unless that product leaves the range, and raised to the least normal number when it falls below it."
-    (let together = (* down down))
-    (let scaled = (if (or (== together 0.0d0) (not (inline (math:finite? together))))
-                      (* (* d down) down)
-                      (* d together)))
-    (if (< scaled fp:least-normal) fp:least-normal scaled))
+  (declare held? (F64 -> Boolean))
+  (define (held? x)
+    "Whether a positive number is one the format holds to full precision: finite and not below the least normal number."
+    (and (>= x fp:least-normal) (inline (math:finite? x))))
 
-  (declare rescale-damping! (DampedStorage -> Void))
-  (define (rescale-damping! s)
-    "Form the damping in the divided matrix's units, from the diagonal given or from the product's own with the floor."
-    (let down = (arr:aref (.scale s) 1))
-    (let damping = (.damping s))
-    (let mode = (arr:aref (.state s) 1))
-    (let diagonals = (gram:column-pointers (.plan s)))
-    (let floor = (arr:aref (.scale s) 5))
-    (let lifted = (if (== floor 0.0d0) 0.0d0 (inline (divided-damping floor down))))
-    (when (== mode 1)
-      (for ((j 0 (+ j 1))) :while (< j (.columns s))
-        (arr:set! damping j (inline (divided-damping (arr:aref (.given s) j) down)))))
-    (when (== mode 2)
-      (for ((j 0 (+ j 1))) :while (< j (.columns s))
-        (arr:set! damping j (+ (arr:aref (.product s) (arr:aref diagonals j)) lifted)))))
+  (declare damping-term (F64 * F64 * F64 -> F64))
+  (define (damping-term mu d down)
+    "mu d down^2 for positive mu and d and a power of two down: a column's damping entry in that column's divided units, times mu. Rounded once, where mu meets d. The entry is divided first where that leaves a number the format holds to full precision, (d down) down; where it does not, because the entry is far below or above the column's square, mu takes one power before it meets d and the other after, ((mu down) d) down. A product that is itself out of range comes back as infinity or below the normal range."
+    (let once = (* d down))
+    (let twice = (* once down))
+    (if (and (inline (held? once)) (inline (held? twice)))
+        (* mu twice)
+        (* (* (* mu down) d) down)))
 
   (declare set-matrix! (DampedPlan * csc:Matrix -> Void))
   (define (set-matrix! plan matrix)
-    "Take the matrix's values for the analyzed pattern and form J^T J from them, divided by the power of two at the largest entry. Another pattern or shape raises the typed error of the Gram refill and leaves no matrix set. A standing factor does not survive, and a standing damping is formed again for these values."
+    "Take the matrix's values for the analyzed pattern and form J^T J from them, each column divided by the power of two at its own largest entry. Another pattern or shape raises the typed error of the Gram refill and leaves no matrix set. A standing factor does not survive, and a standing damping is formed again for these values."
     (let s = (plan-storage plan))
     (let st = (.state s))
     (arr:set! st 0 0)
@@ -194,17 +192,21 @@
     (gram:check-csc! (.plan s) matrix)
     (let values = (csc:entries matrix))
     (let entries = (.entries s))
-    (let largest = (cell:new 0.0d0))
-    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
-      (let a = (abs (arr:aref values q)))
-      (when (> a (cell:read largest)) (cell:write! largest a)))
-    (fp:binade! (cell:read largest) (.scale s) 0)
-    (let down = (arr:aref (.scale s) 1))
-    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
-      (arr:set! entries q (* (arr:aref values q) down)))
+    (let pointers = (.pointers s))
+    (let column-scale = (.column-scale s))
+    ;; A value that is not finite stays so when divided, and the refill below refuses it by its
+    ;; typed error.
+    (for ((j 0 (+ j 1))) :while (< j (.columns s))
+      (let largest = (cell:new 0.0d0))
+      (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+        (let a = (abs (arr:aref values q)))
+        (when (> a (cell:read largest)) (cell:write! largest a)))
+      (fp:binade! (cell:read largest) column-scale (* 2 j))
+      (let down = (arr:aref column-scale (+ (* 2 j) 1)))
+      (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+        (arr:set! entries q (* (arr:aref values q) down))))
     (gram:refill! (.plan s) entries (.product s))
-    (arr:set! st 0 1)
-    (rescale-damping! s))
+    (arr:set! st 0 1))
 
   (declare set-damping! (DampedPlan * arr:LispArray F64 -> DampingStatus))
   (define (set-damping! plan d)
@@ -218,7 +220,6 @@
       (arr:set! (.given s) j (arr:aref d j)))
     (arr:set! (.state s) 1 1)
     (arr:set! (.state s) 2 0)
-    (when (== (arr:aref (.state s) 0) 1) (rescale-damping! s))
     DampingSet)
 
   (declare set-column-damping! (DampedPlan * F64 -> DampingStatus))
@@ -234,7 +235,6 @@
     (arr:set! (.scale s) 5 floor)
     (arr:set! (.state s) 1 2)
     (arr:set! (.state s) 2 0)
-    (rescale-damping! s)
     DampingSet)
 
   (declare factor! (DampedPlan * F64 -> DampedStatus))
@@ -243,6 +243,7 @@
     (let s = (plan-storage plan))
     (let st = (.state s))
     (arr:set! st 2 0)
+    (arr:set! (.refused s) 0 -1)
     (unless (and (== (arr:aref st 0) 1) (/= (arr:aref st 1) 0)) (return DampedNotReady))
     (unless (and (>= mu 0.0d0) (inline (math:finite? mu))) (return DampedBadDamping))
     (let product = (.product s))
@@ -251,17 +252,41 @@
       (arr:set! damped q (arr:aref product q)))
     ;; Each column of the lower pattern begins with its diagonal.
     (let diagonals = (gram:column-pointers (.plan s)))
-    ;; With mu zero nothing is added: zero times a damping that is not finite is not a number.
+    (let column-scale = (.column-scale s))
+    (let given-mode = (== (arr:aref st 1) 1))
+    (let floor = (arr:aref (.scale s) 5))
+    ;; With mu zero nothing is added: a damping entry may be beyond the range, and zero times
+    ;; that is not a number.
     (unless (== mu 0.0d0)
+      (let column = (cell:new (the IFix 0)))
       (for ((j 0 (+ j 1))) :while (< j (.columns s))
-        (arr:set! damped (arr:aref diagonals j)
-                  (+ (arr:aref damped (arr:aref diagonals j)) (* mu (arr:aref (.damping s) j))))))
+        (let at = (arr:aref diagonals j))
+        (let own = (arr:aref product at))
+        (let down = (arr:aref column-scale (+ (* 2 j) 1)))
+        (cond
+          ;; A column of zeros has no unit for its damping to be in, and nothing but its pivot's
+          ;; sign reaches the step: any positive pivot gives a zero entry there. With a damping
+          ;; entry that is positive the pivot is taken to be 1. With the columns' own damping and
+          ;; a floor of zero the entry is zero, and no mu helps.
+          ((== own 0.0d0)
+           (when (and (not given-mode) (== floor 0.0d0))
+             (arr:set! (.refused s) 0 (cell:read column))
+             (return DampedZeroDamping))
+           (arr:set! damped at 1.0d0))
+          (given-mode
+           (arr:set! damped at (+ own (damping-term mu (arr:aref (.given s) j) down))))
+          ;; The column's own squared length plus the floor, both in its divided units.
+          (True
+           (arr:set! damped at (+ own (* mu (+ own (* (* floor down) down)))))))
+        (cell:write! column (+ (cell:read column) 1))))
     (match (ldlt:factor! (.symbolic s) damped 0.0d0)
       ((ldlt:FactorSuccess)
        (arr:set! (.scale s) 4 mu)
        (arr:set! st 2 1)
        DampedSuccess)
-      ((ldlt:FactorNonPositive) DampedNotPositive)
+      ((ldlt:FactorNonPositive)
+       (arr:set! (.refused s) 0 (ldlt:refused-column (.symbolic s)))
+       DampedNotPositive)
       (_ DampedNonFinite)))
 
   (declare step! (DampedPlan * arr:LispArray F64 * arr:LispArray F64 -> StepStatus))
@@ -277,7 +302,7 @@
       (let a = (abs (arr:aref r i)))
       (unless (inline (math:finite? a)) (return StepNonFiniteRhs))
       (when (> a (cell:read largest)) (cell:write! largest a)))
-    ;; The residual divided by the power of two at its own largest entry, as the matrix is by
+    ;; The residual divided by the power of two at its own largest entry, as each column is by
     ;; its: the gradient is then a sum of products of numbers near 1.
     (let scale = (.scale s))
     (fp:binade! (cell:read largest) scale 2)
@@ -296,14 +321,15 @@
     (let unknown = (.unknown s))
     (unless (== (ldlt:solve! (ldlt:symbolic-factor (.symbolic s)) gradient unknown) ldlt:SolveSuccess)
       (return StepNonFiniteResult))
-    ;; The step of the divided problem is the step times the residual's power over the
-    ;; matrix's. Multiplied back by the two together, which is exact, unless that product leaves
-    ;; the range while the step need not: then one after the other.
-    (let first = (arr:aref scale 1))
+    ;; An entry of the divided problem's step is the step's entry times the residual's power over
+    ;; its column's. Multiplied back by the two together, which is exact, unless that product
+    ;; leaves the range while the entry need not: then one after the other.
     (let second = (arr:aref scale 2))
-    (let together = (* first second))
-    (let apart = (or (== together 0.0d0) (not (inline (math:finite? together)))))
+    (let column-scale = (.column-scale s))
     (for ((j 0 (+ j 1))) :while (< j n)
+      (let first = (arr:aref column-scale (+ (* 2 j) 1)))
+      (let together = (* first second))
+      (let apart = (or (== together 0.0d0) (not (inline (math:finite? together)))))
       (let v = (if apart
                    (* (* (arr:aref unknown j) first) second)
                    (* (arr:aref unknown j) together)))

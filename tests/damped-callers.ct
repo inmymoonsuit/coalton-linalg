@@ -30,13 +30,14 @@
 
   (declare factor-code (dm:DampedPlan * F64 -> UFix))
   (define (factor-code plan mu)
-    "Exhaustively matched outcome: success 0, not positive 1, non-finite 2, bad damping 3, not ready 4."
+    "Exhaustively matched outcome: success 0, not positive 1, non-finite 2, bad damping 3, not ready 4, zero damping 5."
     (match (dm:factor! plan mu)
       ((dm:DampedSuccess) 0)
       ((dm:DampedNotPositive) 1)
       ((dm:DampedNonFinite) 2)
       ((dm:DampedBadDamping) 3)
-      ((dm:DampedNotReady) 4)))
+      ((dm:DampedNotReady) 4)
+      ((dm:DampedZeroDamping) 5)))
 
   (declare step-code (dm:DampedPlan * arr:LispArray F64 * arr:LispArray F64 -> UFix))
   (define (step-code plan r out)

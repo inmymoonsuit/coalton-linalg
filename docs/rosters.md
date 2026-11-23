@@ -135,7 +135,8 @@ Exponents are of two. "Everywhere" is the whole sweep, 2^-1020 to 2^1020.
 | `lsqr!`, matrix and right-hand side scaled together | -800 to 1000 | no input below, nor at 2^1020, where its right-hand side cannot be held |
 | Dependent rows, threshold 2^-20 of the entries | -1000 up; a bound `:looser` at -1000, and infinite at 2^1020 where it cannot be held | no input at -1020 |
 | Dependent rows, threshold zero | everywhere | |
-| Damped least squares: the step with a given damping, with the columns' own, and with the residual scaled alone | everywhere | |
+| Damped least squares: the step with the columns' own damping, and with the residual scaled alone | everywhere | |
+| Damped least squares: the step with a given damping, which is scaled as the matrix squared | -510 to 510 | no input beyond, where the damping cannot be held |
 | Kept rows, their vectors, the bounds proved again and the certificate, threshold and floors 2^-20 of the entries | -800 up; a bound `:looser` at -1000 | no input at -1020 |
 | The step on certified kept rows, the matrix and the residual scaled together | -1000 up | no input at -1020 |
 | The step on certified kept rows, the residual scaled | -800 up; a bound `:looser` at -1000 and below | |

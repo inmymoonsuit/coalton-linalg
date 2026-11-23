@@ -47,7 +47,8 @@ Both complete serial checks pass on the final tree, `scripts/check.ps1 -Safety 1
 - **Against exact arithmetic.** 337 steps on eight shapes from 2 by 5 to 7 by 7, seeded
   integer matrices, four values of μ and both kinds of damping, each compared with
   `−(Jᵀ J + μ D)⁻¹ Jᵀ r` in rational arithmetic from the stored doubles. The largest
-  difference, relative to the step, is 4.9e-13; the bound asserted is 2^-30.
+  difference, relative to the larger of 1 and the step's largest entry (corrected
+  2026-11-23: this said "relative to the step"), is 4.9e-13; the bound asserted is 2^-30.
 - **Across the range.** Eighteen cases with the matrix or the residual or both at powers
   from 2^-1020 to 2^1020 give the step at scale 1 times the residual's power over the
   matrix's, bit for bit. [The scale-sweep roster](rosters.md) has three entries for the
@@ -88,7 +89,10 @@ Both complete serial checks pass on the final tree, `scripts/check.ps1 -Safety 1
 - **A damping in the caller's units must be one the format holds.** The columns' own is
   formed in the divided units and has no such limit.
 - **A damping entry below the least normal number, once divided, is raised to it.** The
-  contract states what that changes and for which columns.
+  contract states what that changes and for which columns. (Corrected 2026-11-23: what
+  the contract stated was false under a large μ, where the raised entry changed the step,
+  and an independent review found it. [Batch 21](batch21.md#part-3-coalton-linalgsparsedamped)
+  removed the raise: each column is divided by its own power of two.)
 - **`J Jᵀ` and the augmented matrix have no damped form here.** No caller has asked.
 - **The problems of the tests are small**, up to 8 by 5 and 7 by 7. Nothing is timed.
 - **No predicted reduction, trust-region radius or step norm is computed.** A loop that

@@ -2,6 +2,26 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.22.0 — 2026-11-23
+
+`coalton-linalg/sparse/damped` divides each column by its own power of two, after an
+independent review. [Contract](docs/damped.md) · [record](docs/batch21.md#part-3-coalton-linalgsparsedamped),
+which still lists **defects found in conjugate gradients and in least squares on an
+operator and not yet fixed in this release.**
+
+- **New status `DampedZeroDamping`** of `factor!`: the columns' own damping with a floor of
+  zero, a positive μ, and a column of zeros in the standing matrix. It was
+  `DampedNotPositive` at every μ. A caller that matches `DampedStatus` exhaustively gains
+  a case.
+- A damping entry far below the matrix squared is no longer raised: under a large μ the
+  step was wrong, −1/3 for −0.99999 in the case the review gave.
+- A column far below the matrix's largest entry is no longer reported as a column of
+  zeros or as rank deficiency; columns of very different sizes are each held in full.
+- `refused-column` is −1 unless the latest `factor!` refused a pivot or a zero damping.
+- The pivot of a column of zeros is 1 where its damping term is positive, whatever the
+  floor and μ: such a column's entry of the step is exactly zero, as before.
+- Every step that was right is the same bit for bit: 9,000 solves compared, one hash.
+
 ## 0.21.1 — 2026-11-23
 
 Fixes in `coalton-linalg/sparse/rank-deficient` and `sparse/dependent-rows` from an

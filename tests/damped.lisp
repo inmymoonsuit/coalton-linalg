@@ -335,6 +335,130 @@ the matrix's, bit for bit: nothing is squared before it is divided."
      "(declare probe (coalton-linalg/sparse/damped:DampedStatus -> coalton-linalg/sparse/damped:StepStatus))
       (define (probe status) status)")))
 
+(defun damped-diagonal-case (label diagonal kind damping mu residual)
+  "A diagonal matrix, where the step is known exactly: entry j is -J_jj r_j / (J_jj^2 + mu D_j), D_j the entry
+given or the column's square plus the floor. Asserts each outcome and the step to a relative 2^-48, an entry
+whose exact value is zero being zero. Returns the plan."
+  (let* ((n (length diagonal))
+         (matrix (csc-from-entries n n (loop :for j :below n :for value :in diagonal :collect (list j j value))))
+         (plan (dm:analyze matrix)) (out (zeros n)))
+    (assert (= 0 (dm-caller:matrix-code plan matrix)) () "~A: the matrix was refused." label)
+    (let ((code (ecase kind
+                  (:given (dm-caller:damping-code plan (coerce damping '(simple-array double-float (*)))))
+                  (:columns (dm-caller:column-damping-code plan damping)))))
+      (assert (= 0 code) () "~A: the damping's outcome is ~D." label code))
+    (let ((code (dm-caller:factor-code plan mu)))
+      (assert (= 0 code) () "~A: the factor's outcome is ~D, refused column ~D." label code (dm:refused-column plan)))
+    (let ((code (dm-caller:step-code plan (coerce residual '(simple-array double-float (*))) out)))
+      (assert (= 0 code) () "~A: the step's outcome is ~D." label code))
+    (loop :for j :from 0 :for value :in diagonal :for r :in residual
+          :do (let* ((a (rational value))
+                     (d (ecase kind (:given (rational (elt damping j))) (:columns (+ (* a a) (rational damping)))))
+                     (denominator (+ (* a a) (* (rational mu) d)))
+                     (exact (if (zerop denominator) 0 (- (/ (* a (rational r)) denominator))))
+                     (found (rational (aref out j))))
+                (assert (if (zerop exact) (zerop found) (<= (abs (- found exact)) (* (abs exact) (expt 2 -48)))) ()
+                        "~A: entry ~D of the step is ~S, and exactly it is ~S." label j (aref out j) (float exact 1d0))))
+    plan))
+
+(defun run-damped-range-tests ()
+  "Sizes inside one problem that one power of two for the whole matrix could not hold: a mu that is large
+because the damping given is small beside the matrix squared, and columns far apart. Every step against its
+exact value."
+  (flet ((two (power) (scale-float 1d0 power)))
+    ;; A damping entry far below the matrix squared, under a mu that makes it count.
+    (damped-diagonal-case "J = 2^520, D = 1, mu = 2^1023" (list (two 520)) :given (list 1d0) (two 1023) (list (two 520)))
+    (damped-diagonal-case "J = 2^512, D = 1, mu = 2^1000" (list (two 512)) :given (list 1d0) (two 1000) (list (two 512)))
+    (damped-diagonal-case "J = diag(1, 2^-450), D = (1, 2^-1030), mu = 2^100" (list 1d0 (two -450)) :given
+                          (list 1d0 (two -1030)) (two 100) (list 1d0 (two -450)))
+    (damped-diagonal-case "J = 2^-520, D = 2^-1060, mu = 2^20" (list (two -520)) :given (list (two -1060)) (two 20)
+                          (list 3d0))
+    ;; The same with numbers that are not powers of two, so that a damping entry carried below the
+    ;; normal range on its way would lose digits and not only be moved.
+    (damped-diagonal-case "J = 1.5 2^520, D = 1.2345678901234567, mu = 0.75 2^1023" (list (* 1.5d0 (two 520))) :given
+                          (list 1.2345678901234567d0) (* 0.75d0 (two 1023)) (list (* 1.1d0 (two 520))))
+    (damped-diagonal-case "J = diag(1.3, 1.7 2^-450), D = (0.9, 1.2345678901234567 2^-1000), mu = 1.1 2^100"
+                          (list 1.3d0 (* 1.7d0 (two -450))) :given (list 0.9d0 (* 1.2345678901234567d0 (two -1000)))
+                          (* 1.1d0 (two 100)) (list 1d0 (* 1.9d0 (two -450))))
+    ;; A damping far above the column's square under a mu small enough to make the two comparable.
+    (damped-diagonal-case "J = 1.5 2^-700, D = 1.3, mu = 1.1 2^-1040" (list (* 1.5d0 (two -700))) :given (list 1.3d0)
+                          (* 1.1d0 (two -1040)) (list 1d0))
+    ;; The same of a floor under the columns' own damping.
+    (damped-diagonal-case "J = diag(1, 2^-512), a floor of 2^-1030, mu = 1" (list 1d0 (two -512)) :columns (two -1030) 1d0
+                          (list 1d0 (two -512)))
+    (damped-diagonal-case "J = diag(1, 2^-512), a floor of 2^-1030, mu = 2^40" (list 1d0 (two -512)) :columns (two -1030)
+                          (two 40) (list 1d0 (two -512)))
+    ;; Columns far apart: neither is a column of zeros, and the matrix has full column rank.
+    (damped-diagonal-case "J = diag(1, 2^-540), the columns' own damping, mu = 0" (list 1d0 (two -540)) :columns 0d0 0d0
+                          (list 1d0 (two -540)))
+    (damped-diagonal-case "J = diag(1, 2^-540), the columns' own damping, mu = 1" (list 1d0 (two -540)) :columns 0d0 1d0
+                          (list 1d0 (two -540)))
+    (damped-diagonal-case "J = diag(2^400, 2^-500), the columns' own damping, mu = 2^-3" (list (two 400) (two -500))
+                          :columns 0d0 0.125d0 (list (two 100) (two -100)))
+    (damped-diagonal-case "J = diag(2^500, 1, 2^-500), D = (2^1000, 1, 2^-1000), mu = 4"
+                          (list (two 500) 1d0 (two -500)) :given (list (two 1000) 1d0 (two -1000)) 4d0
+                          (list 1d0 1d0 1d0))
+    (damped-diagonal-case "J = diag(1, 2^-540), D = (1, 2^-1060), mu = 0" (list 1d0 (two -540)) :given
+                          (list 1d0 (two -1060)) 0d0 (list 1d0 (two -540))))
+  ;; refused-column names a pivot that was refused, and is -1 after every other refusal.
+  (let* ((small (csc-from-entries 1 1 (list (list 0 0 (scale-float 1d0 -600))))) (plan (dm:analyze small)))
+    (assert (= 0 (dm-caller:matrix-code plan small)))
+    (assert (= 0 (dm-caller:damping-code plan (doubles 1d300))))
+    (assert (= 2 (dm-caller:factor-code plan 1d0)))
+    (assert (= -1 (dm:refused-column plan)) () "After a refusal that was not of a pivot, refused-column is ~D."
+            (dm:refused-column plan)))
+  (let* ((matrix (csc-from-entries 2 2 (list (list 0 0 1d0) (list 1 1 0d0)))) (plan (dm:analyze matrix)))
+    (assert (= 0 (dm-caller:matrix-code plan matrix)))
+    (assert (= 0 (dm-caller:damping-code plan (doubles 1d0 1d0))))
+    (assert (and (= 1 (dm-caller:factor-code plan 0d0)) (= 1 (dm:refused-column plan))))
+    (assert (and (= 3 (dm-caller:factor-code plan -1d0)) (= -1 (dm:refused-column plan))) ()
+            "After a mu that cannot be used, refused-column is ~D." (dm:refused-column plan))
+    (assert (and (= 1 (dm-caller:factor-code plan 0d0)) (= 1 (dm:refused-column plan))))
+    (assert (and (= 0 (dm-caller:factor-code plan 1d0)) (= -1 (dm:refused-column plan)))))
+  ;; A column of zeros. Under the columns' own damping with a floor of zero its damping entry is zero:
+  ;; the floor is refused where it is given, and where the column of zeros comes with a later matrix
+  ;; the factor says so by name, at every mu, and names the column. With mu zero it is the pivot.
+  (let* ((identity (csc-from-entries 2 2 (list (list 0 0 1d0) (list 1 1 1d0))))
+         (zero-column (csc-from-entries 2 2 (list (list 0 0 1d0) (list 1 1 0d0))))
+         (plan (dm:analyze identity)) (out (doubles 9d0 9d0)))
+    (assert (= 0 (dm-caller:matrix-code plan zero-column)))
+    (assert (= 2 (dm-caller:column-damping-code plan 0d0)))
+    (assert (= 0 (dm-caller:matrix-code plan identity)))
+    (assert (= 0 (dm-caller:column-damping-code plan 0d0)))
+    (assert (= 0 (dm-caller:matrix-code plan zero-column)))
+    (assert (dm:damping-set? plan))
+    (dolist (mu (list 1d0 1d100 1d300 (scale-float 1d0 -1000)))
+      (let ((code (dm-caller:factor-code plan mu)))
+        (assert (and (= 5 code) (= 1 (dm:refused-column plan)) (not (dm:factor-ready? plan))) ()
+                "A column of zeros under its own damping, mu = ~S: outcome ~D, refused column ~D." mu code
+                (dm:refused-column plan)))
+      (assert (and (= 1 (dm-caller:step-code plan (doubles 1d0 1d0) out)) (= 9d0 (aref out 1)))))
+    (assert (and (= 1 (dm-caller:factor-code plan 0d0)) (= 1 (dm:refused-column plan))))
+    ;; The next matrix has no such column, and the same damping serves.
+    (assert (= 0 (dm-caller:matrix-code plan identity)))
+    (assert (and (= 0 (dm-caller:factor-code plan 1d0)) (= -1 (dm:refused-column plan)))))
+  ;; With a damping entry that is positive, any positive pivot gives the column of zeros a step
+  ;; entry of exactly zero, and its pivot is taken to be 1: neither a floor nor a mu near the top
+  ;; or the bottom of the range can be refused for it, and the other entry is exact.
+  (dolist (case (list (list :columns 1d-12 1d0) (list :columns 1d300 1d0) (list :columns 1d-300 1d-300)
+                      (list :given 1d300 1d300) (list :given 1d-300 1d-300) (list :given 1d0 8d0)))
+    (destructuring-bind (kind damping mu) case
+      (let* ((matrix (csc-from-entries 2 2 (list (list 0 0 3d0) (list 1 1 0d0)))) (plan (dm:analyze matrix))
+             (out (doubles 9d0 9d0)))
+        (assert (= 0 (dm-caller:matrix-code plan matrix)))
+        (assert (= 0 (ecase kind
+                       (:columns (dm-caller:column-damping-code plan damping))
+                       (:given (dm-caller:damping-code plan (doubles 2d0 damping))))))
+        (let ((code (dm-caller:factor-code plan mu)))
+          (assert (= 0 code) () "A column of zeros, ~A damping ~S, mu ~S: outcome ~D." kind damping mu code))
+        (assert (= 0 (dm-caller:step-code plan (doubles 1d0 5d0) out)))
+        (let* ((first-damping (ecase kind (:columns (+ 9 (rational damping))) (:given 2)))
+               (exact (- (/ 3 (+ 9 (* (rational mu) first-damping))))))
+          (assert (and (zerop (aref out 1)) (<= (abs (- (rational (aref out 0)) exact)) (* (abs exact) (expt 2 -48)))) ()
+                  "A column of zeros, ~A damping ~S, mu ~S: the step is ~S, and its first entry is exactly ~S." kind damping
+                  mu out (float exact 1d0))))))
+  (format t "DAMPED-RANGE-PASS~%"))
+
 (defun run-damped-encapsulation-tests ()
   "External Coalton callers reach the plan only through its public operations, and the status types stay apart."
   (multiple-value-bind (accepted diagnostics)
@@ -353,5 +477,6 @@ the matrix's, bit for bit: nothing is squared before it is divided."
   (run-damped-exact-tests)
   (run-damped-scale-tests)
   (run-damped-outcome-tests)
+  (run-damped-range-tests)
   (run-damped-encapsulation-tests)
   (format t "DAMPED-TESTS-PASS~%"))

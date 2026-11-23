@@ -219,9 +219,9 @@ See the [design review](design.md#coalton-interface-review-2026-11-19).
 | `set-damping!` | DampedPlan * V -> DampingStatus; a positive diagonal D in the units of the matrix squared |
 | `set-column-damping!` | DampedPlan * F64 -> DampingStatus; D = diag(Jᵀ J) + floor, following the matrix |
 | `DampedStatus` | Outcome type of factor! |
-| `DampedSuccess`, `DampedNotPositive`, `DampedNonFinite`, `DampedBadDamping`, `DampedNotReady` | DampedStatus values |
+| `DampedSuccess`, `DampedNotPositive`, `DampedZeroDamping`, `DampedNonFinite`, `DampedBadDamping`, `DampedNotReady` | DampedStatus values |
 | `factor!` | DampedPlan * F64 -> DampedStatus; the factor of Jᵀ J + mu D |
-| `refused-column` | DampedPlan -> IFix; the column whose pivot the latest factor! refused, or -1 |
+| `refused-column` | DampedPlan -> IFix; the column whose pivot, or whose zero damping, the latest factor! refused; -1 after any other outcome |
 | `StepStatus` | Outcome type of step! |
 | `StepSuccess`, `StepNoFactor`, `StepBadSize`, `StepNonFiniteRhs`, `StepNonFiniteResult` | StepStatus values |
 | `step!` | DampedPlan * V * V -> StepStatus; the step -(Jᵀ J + mu D)⁻¹ Jᵀ r |

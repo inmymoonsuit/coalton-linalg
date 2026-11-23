@@ -1,7 +1,7 @@
 # Batch 21: an independent review, and what it found
 
-State: **in progress.** Parts 1 and 2, the kept rows of a rank-deficient matrix and
-dependent rows, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
+State: **in progress.** Parts 1 to 3, the kept rows of a rank-deficient matrix, dependent
+rows and damped least squares, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
 Windows/x86-64, SBCL 2.6.10 and the pinned Coalton compiler. The other parts are listed under [what is still open](#what-is-still-open)
 with what was reproduced of each: **those defects are in this release.**
 
@@ -113,6 +113,58 @@ then `-Safety 0`.
   at most half of 2^-1074 in the divided units. No covering argument for the stored
   matrix itself is claimed.
 
+## Part 3: `coalton-linalg/sparse/damped`
+
+Three of the findings had one cause: the matrix was divided by one power of two, the one
+at its largest entry, and then squared. A column far below that entry had a square that
+could not be held, and a damping far below the matrix squared was moved to the least
+normal number so that it would not vanish.
+
+**Each column is now divided by the power of two at its own largest entry**, and μ times
+a damping entry is formed once, at the factor, in its column's units.
+
+| Finding | Before | Now |
+| --- | --- | --- |
+| A damping far below the matrix squared, under a large μ | `J = [2^520]`, `D = [1]`, `μ = 2^1023`: the step −1/3, where −1/(1 + 2⁻¹⁷) is exact. The entry was raised to 2^-1022 of the matrix squared, which μ multiplied | Exact to rounding. Nothing is raised |
+| A column far below the largest entry | `diag(1, 2^-540)`: `DampingNotPositive`, "a column of zeros", for a floor of zero, and `DampedNotPositive` with μ zero. Neither is true | Both succeed, and the step is exact; columns 2^900 apart also |
+| The columns' own damping with a floor of zero, followed into a later matrix with a column of zeros | `DampedNotPositive` at every μ, which a loop answers by raising μ | `DampedZeroDamping`, a new status: no μ helps, and `refused-column` names the column |
+| `refused-column` after a refusal that was not of a pivot | The column of an earlier refusal, or 0 | −1 |
+| A column of zeros under a floor, or a damping, near the top or bottom of the range | `DampedNonFinite`, or a pivot lost | Its pivot is 1: the one stated deviation, since any positive pivot gives a zero entry of the step there |
+
+**The gate: nothing that was right moved.** Dividing a symmetric matrix on both sides by
+powers of two changes no significand in a factorization whose order the pattern fixes.
+That was held to, not assumed: 9,000 solves, on forty seeded matrices of ten shapes, eight
+of them with a column of zeros, at five scales of the matrix from 2^-500 to 2^500 and
+three of the residual, with a damping given, the columns' own, and the columns' own with
+a floor, at five values of μ from 0 to 10⁸. Every outcome and every entry of every step
+was written out bit for bit before the change and after. The two files are identical:
+SHA-256 `167b3cfe2eb1627913745e8fbfdeeaff6d219542b01b733c1fc7369135ae4bc7` of 9,000
+lines, both times. The package's exact tests report the same worst difference as before,
+4.872 × 10⁻¹³ on 337 steps, and the scale sweep the same 925 runs.
+
+**Stated, not changed.** An entry of the residual more than 2^1022 below its largest is
+not seen: for the identity and `r = (2^600, 2^-500)` the step is `(−2^600, 0)`. One power
+of two cannot carry both, and the contract says so. So is an entry that far below the
+largest of its own column held as rounded. `DampedNotPositive` with μ zero is described
+as a finding about a computed pivot, which a matrix of full rank can also give. The
+roster's page said the step with a given damping was held everywhere; the roster holds
+it from 2^-510 to 2^510, where the damping can be scaled as the matrix squared.
+Batch 17's "relative to the step" was relative to the larger of 1 and the step.
+
+### Verification of part 3
+
+Both complete serial checks pass on the tree of this part.
+
+- **Each fix by a test seen to fail first**: fourteen diagonal problems whose steps are known
+  exactly, with a damping given and with the columns' own, the numbers powers of two and
+  not, each entry held to a relative 2⁻⁴⁸; `refused-column` after each kind of refusal; a
+  column of zeros under each damping at μ and floors from 10⁻³⁰⁰ to 10³⁰⁰; and the new
+  status at four values of μ, with the factor and the step that follow it.
+- **The gate above.**
+- **Planted source defects.** Eleven edits to the source, each applied alone with the package's suite run. Every planted source compiled. Ten failed a test at once: the step or the damping divided by another column's power, the damping entry divided before μ meets it whatever that leaves, the zero column's pivot not made positive, its zero damping not named, `refused-column` kept from an earlier refusal or not recorded, the floor not divided as its column is, the columns' own damping without the column's square, and a μ of zero adding its damping. The eleventh did not fail, and could not: it changed a branch that the value it tested for never reaches. Replaced by an edit that puts the old raise back where the division takes an entry below the normal range, it fails. The restored source passes.
+- The aliasing roster and the scale sweep pass with their counts unchanged, and the
+  allocation check of the package's loop reads zero bytes a call.
+
 ## What is still open
 
 Reproduced through the public interface and **not fixed in this release**:
@@ -128,11 +180,6 @@ Reproduced through the public interface and **not fixed in this release**:
   in the caller's units. Its operator norm estimate exceeds the Frobenius norm after four
   steps on a matrix with one dominant singular value, where the contract says it stays
   below until past the rank.
-- **Damped least squares**: a damping entry raised to the least normal number changes
-  the step under a large μ (−1/3 where −0.99999 is exact); a column 2^540 below the
-  largest entry is reported as a column of zeros, or as rank deficiency; the columns' own
-  damping with a floor of zero, followed into a later matrix's column of zeros, is refused
-  at every μ; `refused-column` is not −1 after a refusal that was not of a pivot.
 - **The two rosters** miss a call that returns nothing and holds its numbers in a handle,
   count any condition as a refusal, and hold three outputs to expectations that cannot
   fail.
