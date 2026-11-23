@@ -1,6 +1,6 @@
 # Batch 21: an independent review, and what it found
 
-State: **in progress.** Parts 1 to 6, the kept rows of a rank-deficient matrix, dependent
+State: **completed.** Parts 1 to 6, the kept rows of a rank-deficient matrix, dependent
 rows, damped least squares, conjugate gradients, least squares on an operator and the two
 rosters, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
 Windows/x86-64, SBCL 2.6.10 and the pinned Coalton compiler. No defect the review found in the numerical packages is known to remain

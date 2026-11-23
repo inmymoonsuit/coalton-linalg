@@ -1,9 +1,11 @@
 # coalton-linalg
 
 An independent numerical linear algebra library written in Coalton, for 64-bit SBCL, in
-double precision. It offers a sparse symmetric positive definite factorization with the
-sparse operations around it, and dense factorizations for the problems that one cannot
-take: indefinite systems, rank-deficient least squares, eigenvalues and singular values.
+double precision. It offers sparse factorizations, symmetric positive definite and
+nonsymmetric, with the sparse operations around them; least squares that is damped,
+rank-deficient or on an operator the caller applies; conjugate gradients and iterative
+refinement; and dense factorizations for the problems those cannot take: indefinite
+systems, rank-deficient least squares, eigenvalues and singular values.
 
 The library takes matrices and vectors and returns factors, solutions and counts.
 Thresholds, rank decisions and iteration belong to the caller: nothing here decides a
@@ -75,7 +77,7 @@ what was and was not consulted while writing it.
 
 ## Reviewing it
 
-Start with the [interface reference](docs/api.md) and the six compiled examples under
+Start with the [interface reference](docs/api.md) and the compiled examples under
 `examples/`. For a reader who knows Coalton better than this library's authors do, these are
 the places where a second opinion is most wanted:
 

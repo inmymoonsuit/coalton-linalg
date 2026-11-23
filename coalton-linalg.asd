@@ -1,5 +1,5 @@
 (asdf:defsystem "coalton-linalg"
-  :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
+  :description "Numerical linear algebra in Coalton: sparse and dense factorizations, least squares, eigenvalues and singular values, and iterative methods on an operator the caller applies."
   :version "0.22.2"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
