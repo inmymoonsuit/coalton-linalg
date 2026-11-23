@@ -1,6 +1,6 @@
 # Design: a step on a rank-deficient matrix, and certified bases
 
-State: a design, reviewed twice by the consumer that asked for it. The measurement its
+State: a design, reviewed four times by the consumer that asked for it. The measurement its
 first review asked for is done and is reported below; it changed the design in four
 places, each marked. The certificate and the kept vectors are built, as
 [kept rows and the certificate](rank-deficient.md); the step and the bases are not. It follows
@@ -137,8 +137,10 @@ error.
   inversion lemma `(I + Wᵀ W)⁻¹ = I − Wᵀ (I_d + W Wᵀ)⁻¹ W`, so it costs one dense
   symmetric positive definite system of order d, the number of rows left out, with every
   eigenvalue at least 1.
-- `x = J_Sᵀ (J_S J_Sᵀ)⁻¹ y` is the minimum-norm solve on the kept rows, with the factor
-  the search already holds and one or two steps of [refinement](refinement.md).
+- `x = J_Sᵀ (J_S J_Sᵀ)⁻¹ y` is the minimum-norm solve on the kept rows. It is made on
+  their augmented matrix and never on `J_S J_Sᵀ`, which a row touching every column
+  makes dense; [the solve on the kept rows](#the-solve-on-the-kept-rows) says how, and
+  what is proved of it.
 
 Because C has full column rank and `J_S` full row rank, `(C J_S)⁺ = J_S⁺ C⁺`: x is
 exactly the minimum-norm least squares solution for the rank-r matrix `B = C J_S`.
@@ -243,7 +245,7 @@ By name, and distinct:
 | Band not separated | `γ ≥ φ s_lo` or `τ ≤ φ s_hi`: a singular value may lie at the floor |
 | Below the method's resolution | `φ s` is below what the search can resolve, about 1.5e-8 of a row's size: no certificate could be issued at this floor by this method |
 | Bad reference scale | s not finite or not positive |
-| Bound not reached | `4γ/τ ≥ 1`, or a solve whose refinement did not converge: the step is returned by no call |
+| Bound not reached | `4γ/τ ≥ 1`; or a residual that is not finite; or a refinement whose proved bound was still at least halving at its last allowed correction: the step is returned by no call |
 | Support undecided | an entry between the two thresholds, with its row and position |
 | Kept vectors out of date | a kept vector's bound, proved again for the current values and refined, still does not come under the floor: the kept set is no longer right, and the caller searches again |
 
@@ -292,6 +294,108 @@ factorization takes about 0.02 s.
 So it is factored sparsely, by the [Gram product](gram.md) of W and the
 [positive-pivot factorization](spd-ldlt.md), and it is not the cubic cost a dense W would
 have made it.
+
+## The solve on the kept rows
+
+(Added in the fourth review, after a measurement made for it.) `x = J_S⁺ y` is the
+solution of
+
+    K [x; λ] = [0; y],        K = [[α I, J_Sᵀ], [J_S, 0]],
+
+for any α > 0: the first row puts x in the row space and the second makes it solve. K is
+as sparse as `J_S`. It is solved with a factorization of a nearby matrix and
+[refined](refinement.md) against K itself:
+
+    M = [[α I, J_Sᵀ], [J_S, −ε I]],        u ← u + M⁻¹ (b − K u),    u = [x; λ],  b = [0; y].
+
+**Two shifts on one analysis.** The certificate factors `[[τ I, J_Sᵀ], [J_S, τ I]]` and
+the solve factors M. They have one pattern and differ in the two diagonal blocks, so the
+symbolic analysis made when the kept set was found serves both, and the solve is a second
+numeric factorization at each call. The solve uses
+
+    α = τ,        ε = τ · 2⁻¹⁰,        so   α ε = τ² · 2⁻¹⁰ ,
+
+with **τ the bound the certificate has just proved for these kept rows and these values**.
+Nothing is carried from an earlier call: a τ remembered from one is only where the
+certificate's ladder starts, and is proved again before anything uses it.
+
+**What one correction does, by blocks.** In exact arithmetic the error goes to `G e` with
+`G = M⁻¹ (M − K)`, and `M − K = diag(0, −ε I)`. So G's first block column is zero, and
+with `A = J_S J_Sᵀ`:
+
+    e_λ ← G₂₂ e_λ ,     G₂₂ = α ε (A + α ε I)⁻¹ ,          ‖G₂₂‖₂ = α ε / (σ_r² + α ε) ,
+    e_x ← G₁₂ e_λ ,     G₁₂ = −ε J_Sᵀ (A + α ε I)⁻¹ ,      ‖G₁₂‖₂ = max ε σ / (σ² + α ε) ≤ ½ (ε/α)^½ .
+
+**G is not normal, and no single rate holds on the stacked vector**: `α ε / (σ_r² + α ε)`
+is its spectral radius and not a norm of it. The statement is the pair: the λ error
+contracts in the 2-norm by the first figure, and the x error after a correction is at
+most the second times the λ error before it. With the shifts above and `σ_r > τ`, the
+first is below `2⁻¹⁰` and so is the second. Both were checked on four hundred random
+matrices against the measured ratio of errors at each step, not against the spectral
+radius: on the 284 steps that were above rounding, measured over bound was at most 1.000.
+
+**The computed factor.** The factor is of `M + E` with `‖E‖₂ ≤ β`, β its
+[measured backward bound](quasidefinite.md#accuracy-growth-and-the-elimination-order).
+The iteration matrix is then `(M + E)⁻¹ (M − K + E)`, and with `η = β ‖M⁻¹‖₂`,
+`‖M⁻¹‖₂ ≤ 2/τ` for these shifts, a rate of at most `(ρ₀ + η) / (1 − η)` follows where
+`ρ₀ = 2⁻¹⁰`. **That sum is a diagnostic and decides nothing.** β is a bound through the
+trace of `|L| |D| |Lᵀ|` and grows with the order; on the largest pattern measured it
+makes the sum 0.9 where the contraction measured is 2 × 10⁻⁴. A refusal on it would
+refuse solves that reach rounding level in two corrections.
+
+**What is proved is read from the residuals, and needs no rate.** For any pair
+`(x̂, λ̂)`, however it was reached, write `ρ₁ = α x̂ + J_Sᵀ λ̂` and `ρ₂ = J_S x̂ − y`, and
+`P = J_S⁺ J_S` for the projection on the row space. Then `P x̂ − J_S⁺ y = J_S⁺ ρ₂`, and
+`(I − P) ρ₁ = α (I − P) x̂` because `J_Sᵀ λ̂` lies in the row space. So
+
+    x̂ − J_S⁺ y  =  J_S⁺ ρ₂  +  (I − P) ρ₁ / α        exactly,
+
+the two parts orthogonal, and
+
+    ‖x̂ − J_S⁺ y‖₂  ≤  ( (‖ρ₂‖₂ / τ)² + (‖ρ₁‖₂ / α)² )^½ .
+
+Each residual is formed with [its product bound](dependent-rows.md#what-is-proved), so
+what enters is a proved upper bound on its norm for the exact product, and τ is proved.
+This is the bound the step returns for its solve. The same argument serves the system of
+order d: `Cᵀ C = I + Wᵀ W` has no eigenvalue below 1, so for a computed ŷ with
+`s = Cᵀ r − (I + Wᵀ W) ŷ`, `‖ŷ − C⁺ r‖₂ ≤ ‖s‖₂`, and that error reaches x divided by τ.
+
+**The stopping rule.** After the first solve and after each correction the proved bound
+is formed, and the iterate with the smallest bound so far is the one kept.
+
+- A correction that leaves the bound above half the smallest so far ends the refinement:
+  it has stalled, at rounding or above it. **The kept iterate is returned with its
+  bound, whatever the bound is**; the caller compares it with its own gate.
+- At most six corrections are made. If the sixth still at least halved the bound, the
+  refinement had not finished, and the call refuses with "bound not reached".
+- A residual or a bound that is not finite refuses with "bound not reached".
+
+**What was measured**, on the seven patterns, for a right-hand side whose minimum-norm
+solution is known, at α of 1, τ^½ and τ and `α ε = τ² 2⁻ᵏ`:
+
+| | k = 0 | k = 10 | k = 20 | k = 30, 40 |
+| --- | --- | --- | --- | --- |
+| Contraction a correction | 0.05 to 0.17 | 5e-5 to 2e-4 | 1e-7 to 2e-5; on the lattices the first solve is off by 3e-4 to 0.3 of the answer | wheels as at 20; lattices 3e-3 to 0.05, or no factor |
+| Growth, lattices | 8e3 to 3e4 | 4e6 to 2e7 | 4e9 to 2e10 | 5e12, or a zero pivot |
+| Growth, wheels | 2e3 to 3e4 | the same | the same | the same |
+| Proved bound over ‖x‖ after one solve | 9e-5 to 2e-3 | 9e-8 to 4e-6 | 9e-11 to 3e-3 | |
+| after one correction | 3e-9 to 1e-6 | 1e-12 to 3e-11 | 6e-14 to 2e-9 | |
+| after two | 2e-10 to 1e-7 | 5e-14 to 1e-12, its floor | 3e-14 to 1e-12 | |
+
+**α changes no iterate**: the three values gave the same errors to every digit printed,
+and differ only in what growth and β read. So α is τ, the certificate's own top block.
+**k is fixed at 10.** At 0 the contraction is that of `τ² / (σ_r² + τ²)` with `σ_r` about
+three times τ, and a dozen corrections would be needed; at 20 the lattices' growth is
+10¹⁰ and the first correction is poor; at 30 they give a zero pivot. At 10 every pattern
+contracts by four decades a correction and the true error is about 10⁻¹⁵ of the step
+after two. The second factorization is to be timed with the build. A matrix whose
+factor is poor at 10
+cannot give a wrong step, only a refusal: its bound does not fall, and the bound is what
+is returned.
+
+The diagnostic sum at k = 10, `η = 2β/τ`: 2e-4 on the loose wheel, 0.006 and 0.02 on the
+loose lattices, 0.09 on the other wheels, 0.11 on the lattice of 15 and 0.48 on the
+lattice of 21.
 
 ## An option: the kept rows alone
 
@@ -412,6 +516,18 @@ In the third, before the build:
   search again by itself; the caller decides when a search is worth its cost.
 - **The bound of one vector reads only the rows that vector touches**, so that proving
   every bound again costs in proportion to the vectors and not to the matrix.
+
+In the fourth, on the solve, after its measurement:
+
+- **The solve has its own shifts**, `α = τ` and `ε = τ · 2⁻¹⁰`, on the certificate's
+  analysis. k is fixed at 10 and not searched for at each call.
+- **The contraction is stated by blocks**, because G is not normal.
+- **The bound returned is a posteriori**, from proved residuals and the τ proved at
+  this call. A rate predicted from the factor's backward bound is reported and refuses
+  nothing.
+- **A refinement that stalls returns its bound**; one still halving at its sixth
+  correction, or a residual that is not finite, is "bound not reached".
+- **The kept rows alone are not built.** The consumer will not call the option.
 
 **Built so far:** the search with kept vectors, the reproof, the certificate and the
 bounds on the largest singular value, as [kept rows and the certificate](rank-deficient.md).
