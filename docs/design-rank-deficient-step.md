@@ -2,9 +2,9 @@
 
 State: a design, reviewed four times by the consumer that asked for it. The measurement its
 first review asked for is done and is reported below; it changed the design in four
-places, each marked. The certificate, the kept vectors and the step are built, as
-[kept rows, the certificate and the step](rank-deficient.md); the refresh of one vector
-and the bases are not. It follows
+places, each marked. The certificate, the kept vectors, their refresh and the step are
+built, as [kept rows, the certificate and the step](rank-deficient.md); the supports and
+the bases are not. It follows
 [dependent rows](dependent-rows.md), whose proofs it reuses.
 
 ## What is asked for
@@ -268,9 +268,10 @@ once and kept.
   Where the rows of a dependency do not change with the values, as rows that state that
   two things coincide or are level do not, the exact multipliers are constant, the kept
   vector is still the right one, and only the product is paid.
-- A vector whose bound, proved again, fails the certificate is refined from where it
-  stands, and only that one. A row whose own entries change at each call, a distance for
-  instance, is the case.
+- A vector whose bound, proved again, is above its share of the floor is replaced from
+  the current values, and only that one. A row whose own entries change at each call, a
+  distance for instance, is the case. (As built it is solved for afresh on the kept
+  rows' augmented matrix, not refined from where it stands.)
 - The kept set is the search's and is kept with them. If a re-proved bound cannot be
   brought under the floor the kept set is no longer right for these values: the call
   refuses by name, and the caller searches again.
@@ -534,7 +535,26 @@ In the fourth, on the solve, after its measurement:
   correction, or a residual that is not finite, is "bound not reached".
 - **The kept rows alone are not built.** The consumer will not call the option.
 
-**Built so far:** the search with kept vectors, the reproof, the certificate, the bounds
-on the largest singular value, and the step with its two bounds, as
-[kept rows, the certificate and the step](rank-deficient.md). The refresh of one vector,
-the option of the kept rows alone, the supports and the bases are not built.
+In the fifth, on the refresh, which the consumer asked for before the bases:
+
+- **What goes out of date is a circuit, not a row.** A kept vector's multipliers depend
+  on every row in its combination, so a vector is out of date when any of them changes,
+  whichever row was left out. Rows that say two things coincide or are level are
+  constant; a distance is not, and neither are the rows of tangency or of a point on a
+  curve.
+- **A vector is refreshed by one solve on the kept rows' augmented matrix**, for
+  `w = (J_S J_Sᵀ)⁻¹ J_S aᵀ`, and nothing is proved by that solve: the new vector's bound
+  is proved by the product bound, for the vector as stored. The solve's shift is a bound
+  proved at an earlier call, used only as a shift.
+- **A vector is refreshed below the floor**, at its share of a target the caller gives
+  under the floor, not when the certificate has already refused.
+- **Measured along two drags, and reported before anything further**: the solves cost
+  0.13 to 0.18 ms a vector, and the system of the rows left out, dense on the wheels,
+  ten milliseconds a refresh whatever the number replaced. Agreed after the report:
+  that system is to be solved by conjugate gradients on `I + Wᵀ W`, as a batch of its
+  own, and the solves are left as they are.
+
+**Built so far:** the search with kept vectors, the reproof, the refresh, the certificate,
+the bounds on the largest singular value, and the step with its two bounds, as
+[kept rows, the certificate and the step](rank-deficient.md). The option of the kept
+rows alone, the supports and the bases are not built.

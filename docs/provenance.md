@@ -94,6 +94,16 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 18c: kept vectors refreshed
+
+No source was opened. The multipliers of a row against the kept rows are a least squares
+problem, solved through the same augmented matrix and refinement as the step of Batch
+18b, whose sources that section names. That nothing need be proved of the solve, because
+the product bound of Batch 11 proves the vector it produces, is this design's own; so is
+refreshing at a share of the floor and not at the floor, which the consumer asked for.
+The reference values in the tests are exact products and exact minimum-norm least
+squares solutions in rational arithmetic.
+
 ## Batch 18b: the step on a rank-deficient matrix
 
 No source was opened for this batch; the mathematics is in

@@ -573,6 +573,22 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                  (sweep-out "the solve's bound" (rd:step-solve-bound kept) 1 :kind :bound)
                  (sweep-out "the whole bound" (rd:step-bound kept) 1 :kind :bound)))))
 
+     (sweep-entry "kept vectors refreshed for other values" (rd:refresh!) 1d-15
+         ((-1020 -1020 :no-input) (-1000 -1000 :looser) (-800 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-dependent) k)) (kept (rd:analyze matrix))
+                (floor (sweep-number (scale-float 1d0 -20) k))
+                ;; The fourth row is the one left out; half as large again, it is still in the span.
+                (later (sweep-stored (sweep-rows '((1 2 0) (0 1 3) (2 0 1) (1.5d0 4.5d0 4.5d0))) k)))
+           (sweep-need (rd:find-kept-rows! kept matrix floor 1d-12) coalton-linalg/sparse/rank-deficient:FindFound)
+           (when (and (zerop k) (not (equalp #(3) (sweep-prefix (rd:left-out-rows kept) (rd:left-out-count kept)))))
+             (error 'sweep-premise :text "The fourth row is not the one left out."))
+           (sweep-need (rd:certify! kept floor floor) coalton-linalg/sparse/rank-deficient:Certified)
+           (sweep-need (rd:refresh! kept later floor) coalton-linalg/sparse/rank-deficient:Refreshed)
+           (list (sweep-out "how many vectors were replaced" (rd:refreshed-count kept) 0)
+                 (sweep-out "the vector" (sweep-prefix (rd:multiplier-values kept) (rd:multiplier-count kept 0)) 0)
+                 (sweep-out "the gap bound" (rd:gap-bound kept) 1 :kind :bound)))))
+
      (sweep-entry "bounds on the largest singular value" (rd:largest-singular-bounds!) 1d-15
          ((-1020 1020 :exact))
        (lambda (k)

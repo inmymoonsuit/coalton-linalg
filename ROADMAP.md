@@ -271,6 +271,16 @@ analysis, refined, and its bound is read from the residuals and the bound the
 certificate proved, with no rate of convergence assumed. [The contract](docs/rank-deficient.md#the-step)
 says what is proved and [the record](docs/batch18b.md) has the exact references.
 
+### Batch 18c: kept vectors refreshed
+
+**Completed.** `refresh!` in `coalton-linalg/sparse/rank-deficient`: for new values, the
+kept vectors whose bounds have grown are replaced by the rows' multipliers for those
+values, from the kept rows' augmented matrix, and their bounds proved as stored. A
+redundant row that changes at every step, a distance, no longer costs a search at every
+step. Nothing is proved by the solves that find the multipliers; the bound of each new
+vector is. [The contract](docs/rank-deficient.md#refreshing-the-kept-vectors) says what
+it does and [the record](docs/batch18c.md) has the times along a consumer's drags.
+
 ### Next
 
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
@@ -280,10 +290,12 @@ the library, agreed with it in advance, plan before code:
    truncated singular value decomposition gives at a relative floor, with a certificate
    that no singular value lies in a band about the floor, or a refusal by name. Built on
    [dependent rows](docs/dependent-rows.md). **[The design](docs/design-rank-deficient-step.md)
-   is reviewed and measured. The certificate and the kept vectors are Batch 18a and the
-   step with its bounds Batch 18b. Left: the refresh of one kept vector from current
-   values, for rows whose entries change at every call. The kept rows alone, as an
-   option, are not built; the consumer will not call it.** The same note covers
+   is reviewed and measured. The certificate and the kept vectors are Batch 18a, the
+   step with its bounds Batch 18b and the refresh of kept vectors Batch 18c. Measured
+   and open: the system of the rows left out is factored again at every refresh, ten
+   milliseconds where it is dense; solving it by conjugate gradients would remove that.
+   The kept rows alone, as an option, are not built; the consumer will not call it.**
+   The same note covers
    certified bases: the supports of left null vectors, and a right null-space basis with
    a proved residual.
 2. Those bases, as their own batch after the step.

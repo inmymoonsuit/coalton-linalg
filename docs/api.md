@@ -259,6 +259,10 @@ A search withdraws the earlier set and its bounds. After the analysis only
 | `ReproveStatus` | Outcome type of reprove! |
 | `Reproved`, `ReproveNothingKept`, `ReproveNonFinite` | ReproveStatus values |
 | `reprove!` | KeptRows * coalton-linalg/sparse/csc:Matrix -> ReproveStatus; every kept vector's bound for other values of the pattern |
+| `RefreshStatus` | Outcome type of refresh! |
+| `Refreshed`, `RefreshNothingKept`, `RefreshBadTarget`, `RefreshNoShift`, `RefreshFactorRefused`, `RefreshNonFinite` | RefreshStatus values |
+| `refresh!` | KeptRows * coalton-linalg/sparse/csc:Matrix * F64 -> RefreshStatus; reprove!, then each vector above its share of the gap target replaced from the values given |
+| `refreshed-count` | KeptRows -> UFix; vectors the latest refresh! replaced |
 | `residual-bound` | KeptRows * UFix -> F64; proved bound on the 2-norm of Jᵀ v for the kept vector, otherwise -1 |
 | `gap-bound` | KeptRows -> F64; upper bound on the singular value after the kept count, otherwise -1 |
 | `CertificateStatus` | Outcome type of certify! |
@@ -278,8 +282,10 @@ A search withdraws the earlier set and its bounds. After the analysis only
 
 The handle's constructor and storage are private. A search replaces the kept set, the
 vectors and the two borrowed vector arrays; a search or a reproof withdraws the
-certificate, and each of them and a certificate withdraws the step. Only `analyze` and
-`find-kept-rows!` allocate. One handle serves one call at a time.
+certificate, and each of them and a certificate withdraws the step; a refresh does both
+and replaces the two borrowed vector arrays. `analyze` and `find-kept-rows!` allocate;
+`refresh!` does while its arrays grow or where a vector changes the rows it holds, and
+nothing else does. One handle serves one call at a time.
 
 ## coalton-linalg/sparse/lu
 

@@ -88,7 +88,7 @@ of a problem by a power of two changes no significand, so every output has one
 right value at every scale: its value at scale 1 times a known power of the
 factor. A factor's `L` does not move, its `D` moves with the matrix, a solution
 of a system whose two sides move together does not move, a Gram matrix moves
-with the square. Each of thirty-two entries runs one small problem at twenty-five scales from
+with the square. Each of thirty-three entries runs one small problem at twenty-five scales from
 2^-1020 to 2^1020 and states that power for each output. Every run is put in
 one class:
 
@@ -137,6 +137,7 @@ Exponents are of two. "Everywhere" is the whole sweep, 2^-1020 to 2^1020.
 | Kept rows, their vectors, the bounds proved again and the certificate, threshold and floors 2^-20 of the entries | -800 up; a bound `:looser` at -1000 | no input at -1020 |
 | The step on certified kept rows, the matrix and the residual scaled together | -1000 up | no input at -1020 |
 | The step on certified kept rows, the residual scaled | -800 up; a bound `:looser` at -1000 and below | |
+| Kept vectors refreshed for other values | -800 up; a bound `:looser` at -1000 | no input at -1020 |
 | Bounds on the largest singular value | everywhere | |
 
 One limit is left, in bold, a property of the method as it is built:

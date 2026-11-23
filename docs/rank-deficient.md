@@ -1,10 +1,10 @@
 # Kept rows and the certificate
 
-State: implemented in Batches 18a, the kept rows and the certificate, and 18b, the step.
-The package is `coalton-linalg/sparse/rank-deficient`.
+State: implemented in Batches 18a, the kept rows and the certificate, 18b, the step, and
+18c, the refresh of kept vectors. The package is `coalton-linalg/sparse/rank-deficient`.
 [The design](design-rank-deficient-step.md) has the mathematics and the measurements
-that shaped it. The batch records, [18a](batch18a.md) and [18b](batch18b.md), have the
-evidence.
+that shaped it. The batch records, [18a](batch18a.md), [18b](batch18b.md) and
+[18c](batch18c.md), have the evidence.
 
 ## What it is for
 
@@ -36,6 +36,9 @@ from it.
   values, every kept vector's bound proved again against them. Nothing is searched, no
   vector changes, nothing is allocated. Another pattern or shape raises the typed error
   of the Gram refill.
+- `refresh!(kept, matrix, gap-target) -> RefreshStatus`: `reprove!`, and then every kept
+  vector whose bound is above its share of the target replaced by the row's multipliers
+  for these values. `refreshed-count(kept)` is how many the latest call replaced.
 - `certify!(kept, lower-floor, upper-floor) -> CertificateStatus`: that the gap bound is
   below the lower floor and every singular value of the kept rows above the upper, both
   floors in the matrix's own units.
@@ -169,6 +172,62 @@ The rows left out, the vectors and the statuses at any scale the format holds ar
 at ordinary scale, and the bounds are those times the scale;
 [the scale-sweep roster](rosters.md#what-is-declared) holds that from 2^-800 to 2^1020.
 
+## Refreshing the kept vectors
+
+A kept vector says how one row is made from the kept rows, and it stays true only while
+every row in that combination keeps its values. Rows that say two things coincide do;
+a row that is a distance does not, and a vector through one is out of date at the next
+step. `reprove!` then shows a large bound and the certificate refuses on the gap.
+
+`refresh!(kept, J, gap-target)` does what `reprove!` does and then **replaces each vector
+that no longer serves**, from the current values:
+
+1. The values are taken and every bound proved, as by `reprove!`.
+2. A vector is out of date when its bound is above its share of the target,
+   `gap-target / (2 (d + 1)^½)` with d the rows left out. With every bound under its share
+   the gap bound is under half the target. **Give a target below the lower floor the
+   certificate will be asked at**: at the floor itself a vector would be replaced only
+   once the certificate had already refused. Half the floor is what the measurements here
+   use, which replaces a vector at about an eightieth of the floor when 400 rows are left
+   out.
+3. For each such row a, its multipliers against the kept rows are recomputed,
+   `w = (J_S J_Sᵀ)⁻¹ J_S aᵀ`, by the kept rows' augmented matrix: one factorization for the
+   call, and for each vector a solve and corrections until its residual is a sixteenth of
+   its share.
+4. The new vector is stored as a search stores one, with the search's own drop tolerance,
+   and **its bound is proved for the vector as stored and these values**.
+
+**Nothing is proved by the solves, and nothing needs to be.** A solve that went badly
+gives a vector with a wide bound, and the certificate refuses; it cannot give a false
+one. For that reason the solve's shift is taken from the bound a certificate proved at
+an *earlier* call: it is a shift and nothing more, no bound of this call rests on it,
+and the next step makes its own factor from the bound proved at its own call.
+
+The kept set does not change. A row that has left the span of the kept rows gets the
+best combination there is, its bound is then its distance from the span, and the
+certificate refuses on the gap: the rank has changed, and that is the caller's signal to
+search again. No certificate and no step stand after a refresh.
+
+| RefreshStatus | Meaning |
+| --- | --- |
+| Refreshed | Every bound stands for the values given; `refreshed-count` vectors were replaced, possibly none |
+| RefreshNothingKept | No kept set stands |
+| RefreshBadTarget | The target was not positive and finite; nothing changed |
+| RefreshNoShift | No certificate has been issued for this kept set, so there is no shift to solve with; the bounds stand and no vector was replaced |
+| RefreshFactorRefused | The kept rows' solve could not be factored; the bounds stand and no vector was replaced |
+| RefreshNonFinite | A bound was not finite; the vectors stand, the bounds do not |
+
+A vector whose solve refuses, or whose multipliers are not finite, is left as it was.
+Another pattern or shape raises the typed error of the Gram refill.
+
+**What it costs.** The system of the rows left out is filled and factored again whenever
+a vector was replaced, without a new analysis unless a vector changed the rows it holds.
+Where no vector changes its rows and the arrays have reached their size, a refresh
+allocates nothing. [The record](batch18c.md#what-it-costs) has the times along a
+consumer's drags: 0.13 to 0.18 ms for each vector replaced, and, where the rows left out
+are coupled through one dense system of order 400, ten milliseconds for that system
+whatever the number replaced.
+
 ## The step
 
 `step!(kept, r, out)` writes the step a solver takes against a residual r on the matrix
@@ -291,15 +350,15 @@ each: the lower floor by `out[0]` and the upper by `out[1]`.
 kept = analyze(J)                                   once for the pattern
 find-kept-rows!(kept, J, tolerance, 1e-12)          once for a kept set
 each later matrix of the pattern:
-    reprove!(kept, J)
+    refresh!(kept, J, lower-floor / 2)              or reprove!(kept, J) where no row changes
     certify!(kept, lower-floor, upper-floor)        Certified: the kept set serves
-    gap above floor: the vectors are out of date for these values; search again
+    gap above floor after a refresh: the rank has changed; search again
     step!(kept, r, p)                               StepTaken: p is the step
     step-bound(kept)                                compare with the solver's own gate
 ```
 
 [The first example](../examples/kept-rows.ct) finds a redundant row, proves its bound
-again for other values, and reads what the certificate proved.
+again for other values, reads what the certificate proved, and refreshes the vector.
 [The second](../examples/rank-deficient-step.ct) takes the step on two equal rows and
 reads its bound.
 

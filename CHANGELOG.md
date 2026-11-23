@@ -2,6 +2,17 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.18.0 — 2026-11-23
+
+Added to `coalton-linalg/sparse/rank-deficient`: `refresh!(kept, matrix, gap-target)`,
+which proves the kept vectors' bounds for new values as `reprove!` does and then replaces
+each vector whose bound is above its share of the target by the row's multipliers for
+those values; and `refreshed-count`. A redundant row whose values change at every step
+no longer needs a search at every step. Six named outcomes.
+[Contract](docs/rank-deficient.md#refreshing-the-kept-vectors) · [record](docs/batch18c.md).
+
+No result of 0.17.0 changes.
+
 ## 0.17.0 — 2026-11-23
 
 Added to `coalton-linalg/sparse/rank-deficient`: `step!(kept, r, out)`, the step on the

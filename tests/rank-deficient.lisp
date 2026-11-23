@@ -818,6 +818,237 @@ matrix's, bit for bit, and bounds that are the first ones times the same."
   (run-step-outcome-tests)
   (format t "STEP-TESTS-PASS~%"))
 
+;;; ---- The refresh of kept vectors -----------------------------------------------------------
+
+(defun rd-vectors (kept m)
+  "Every kept vector as a dense vector, in order."
+  (loop :for p :below (rd:left-out-count kept) :collect (rd-vector kept p m)))
+
+(defun rd-scaled-rows (entries rows factor)
+  "ENTRIES with every entry of the ROWS given multiplied by FACTOR."
+  (mapcar (lambda (entry)
+            (list (first entry) (second entry) (if (member (first entry) rows) (* (third entry) factor) (third entry))))
+          entries))
+
+(defun run-refresh-exact-tests ()
+  "Rows left out are multiplied by 1 + 2^-12, which keeps the rank and the row space and makes each kept combination
+wrong by that much. A refresh brings every bound back under its share of the target, proved against the new values
+exactly; the certificate that was refused is issued; and the step is the exact step again, to a bound of rounding
+size."
+  (let ((state (sb-ext:seed-random-state 20261125)) (cases 0) (replaced 0) (partial 0) (everywhere 0))
+    (loop :for (bases columns extras) :in '((2 4 1) (3 5 2) (4 6 3) (5 5 4) (6 9 5) (4 4 2) (7 10 6))
+          :do (dotimes (repeat 4)
+                (multiple-value-bind (entries m) (rd-redundant-entries state bases columns extras)
+                  (let* ((label (format nil "refresh, ~D+~D rows by ~D #~D" bases extras columns repeat))
+                         (matrix (csc-from-entries m columns entries)) (kept (rd:analyze matrix)) (out (zeros columns)))
+                    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+                    (let* ((d (rd:left-out-count kept))
+                           (left (coerce (subseq (rd:left-out-rows kept) 0 d) 'list))
+                           (kept-rows (rd-kept-rows kept m))
+                           (factor (+ 1d0 (scale-float 1d0 -12)))
+                           (later (rd-scaled-rows entries left factor))
+                           (other (csc-from-entries m columns later)) (b (dr-dense m columns later))
+                           (first-vectors (rd-vectors kept m)))
+                      ;; With no certificate ever issued there is no shift to solve with: the bounds are
+                      ;; proved, as a reproof would, and nothing is replaced.
+                      (assert (= 3 (rd-caller:refresh-code kept other 1d-9)) () "~A: a refresh with no shift gave ~D." label
+                              (rd-caller:refresh-code kept other 1d-9))
+                      (assert (and (= 0 (rd:refreshed-count kept)) (> (rd:gap-bound kept) 1d-6)))
+                      (rd-check-bounds (format nil "~A, no shift" label) kept other b m)
+                      (assert (= 0 (rd-caller:reprove-code kept matrix)))
+                      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                      ;; The same values: nothing is out of date, and nothing changes.
+                      (assert (= 0 (rd-caller:refresh-code kept matrix 1d-9)))
+                      (assert (and (= 0 (rd:refreshed-count kept)) (every #'same-bits-p first-vectors (rd-vectors kept m))
+                                   (not (rd:certified? kept))))
+                      ;; The later values, with a certificate and a step standing for the first.
+                      (incf cases)
+                      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                      (assert (= 0 (rd-caller:step-code kept (rd-seeded-vector state m) out)))
+                      (assert (and (rd:certified? kept) (rd:step-taken? kept)))
+                      (assert (= 0 (rd-caller:refresh-code kept other 1d-9)) () "~A: the refresh gave ~D." label
+                              (rd-caller:refresh-code kept other 1d-9))
+                      (assert (= d (rd:refreshed-count kept)) () "~A: ~D of ~D vectors were replaced." label
+                              (rd:refreshed-count kept) d)
+                      (incf replaced d)
+                      (assert (and (equal kept-rows (rd-kept-rows kept m)) (not (rd:certified? kept)) (not (rd:step-taken? kept))
+                                   (= -1d0 (rd:proved-lower-bound kept))))
+                      (rd-check-bounds label kept other b m)
+                      (assert (<= (rd:gap-bound kept) 1d-10) () "~A: the gap bound after the refresh is ~E." label
+                              (rd:gap-bound kept))
+                      ;; Each new vector is the old one with its multipliers scaled, to rounding.
+                      (loop :for old :in first-vectors :for new :in (rd-vectors kept m) :for own :in left
+                            :do (dotimes (i m)
+                                  (let ((expected (if (= i own) 1d0 (* factor (aref old i)))))
+                                    (assert (<= (abs (- (aref new i) expected)) (* 1d-9 (max 1d0 (abs expected)))) ()
+                                            "~A: a refreshed vector holds ~S at row ~D, not ~S." label (aref new i) i expected))))
+                      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                      (let ((residual (rd-seeded-vector state m)))
+                        (assert (= 0 (rd-caller:step-code kept residual out)))
+                        (rd-check-step label kept b m residual out)
+                        (let ((size (+ (sqrt (loop :for x :across out :sum (* x x))) (sqrt (loop :for x :across residual :sum (* x x))))))
+                          (assert (<= (rd:step-bound kept) (* 1d-9 size)) () "~A: after the refresh the step's bound is ~E beside ~E."
+                                  label (rd:step-bound kept) size)))
+                      ;; Only the first row left out moved: only its vector is replaced.
+                      (when (> d 1)
+                        (let* ((moved (rd-scaled-rows entries (list (first left)) factor))
+                               (one-moved (csc-from-entries m columns moved)) (c (dr-dense m columns moved)))
+                          (assert (= 0 (rd-caller:refresh-code kept matrix 1d-9)))
+                          (assert (= d (rd:refreshed-count kept)))
+                          (let ((before (rd-vectors kept m)))
+                            (assert (= 0 (rd-caller:refresh-code kept one-moved 1d-9)))
+                            (assert (= 1 (rd:refreshed-count kept)) () "~A: one row moved and ~D vectors were replaced." label
+                                    (rd:refreshed-count kept))
+                            (incf partial)
+                            (loop :for old :in (rest before) :for new :in (rest (rd-vectors kept m))
+                                  :do (assert (same-bits-p old new) () "~A: a vector that was not out of date changed." label))
+                            (rd-check-bounds (format nil "~A, one row moved" label) kept one-moved c m)
+                            (assert (<= (rd:gap-bound kept) 1d-10)))))
+                      ;; Every row multiplied by a factor of its own, 1.125 to 1.5: the kept rows change
+                      ;; as well, the span and the rank do not, and each multiplier changes by the ratio
+                      ;; of two factors.
+                      (let* ((every (mapcar (lambda (entry)
+                                              (list (first entry) (second entry)
+                                                    (* (third entry) (+ 1d0 (/ (+ 1 (mod (first entry) 4)) 8d0)))))
+                                            entries))
+                             (all-moved (csc-from-entries m columns every)) (e (dr-dense m columns every))
+                             (residual (rd-seeded-vector state m)))
+                        (assert (= 0 (rd-caller:refresh-code kept all-moved 1d-9)))
+                        (when (> d 0) (incf everywhere (rd:refreshed-count kept)))
+                        (rd-check-bounds (format nil "~A, every row moved" label) kept all-moved e m)
+                        (assert (<= (rd:gap-bound kept) 1d-10) () "~A, every row moved: the gap bound is ~E." label
+                                (rd:gap-bound kept))
+                        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                        (assert (= 0 (rd-caller:step-code kept residual out)))
+                        (rd-check-step (format nil "~A, every row moved" label) kept e m residual out)
+                        (let ((size (+ (sqrt (loop :for x :across out :sum (* x x))) (sqrt (loop :for x :across residual :sum (* x x))))))
+                          (assert (<= (rd:step-bound kept) (* 1d-9 size)) () "~A, every row moved: the step's bound is ~E beside ~E."
+                                  label (rd:step-bound kept) size))))))))
+    (assert (and (> replaced 50) (> partial 10) (> everywhere 50)) ()
+            "The premise: ~D vectors replaced, ~D matrices with one row moved, ~D replaced with every row moved." replaced partial
+            everywhere)
+    (format t "REFRESH-EXACT-PASS cases=~D replaced=~D one-row-moved=~D replaced-with-every-row-moved=~D~%" cases replaced partial
+            everywhere)))
+
+(defun run-refresh-outcome-tests ()
+  (let* ((entries '((0 0 1) (0 1 2) (1 1 1) (1 2 3) (2 0 2) (2 2 1) (3 0 1) (3 1 3) (3 2 3) (4 0 3) (4 1 2) (4 2 4)))
+         (matrix (csc-from-entries 5 3 entries)) (kept (rd:analyze matrix))
+         (nan (not-a-number)) (infinity sb-ext:double-float-positive-infinity))
+    ;; Before a search; targets that cannot be used, which change nothing; another pattern or shape.
+    (assert (and (= 1 (rd-caller:refresh-code kept matrix 1d-9)) (= 0 (rd:refreshed-count kept))))
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+    (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+    (dolist (target (list 0d0 -1d-9 nan infinity))
+      (assert (= 2 (rd-caller:refresh-code kept matrix target)) () "A target of ~S was taken." target)
+      (assert (rd:certified? kept)))
+    (assert (= 91 (rd-caller:refresh-code kept (csc-from-entries 5 3 (cons '(0 2 1) entries)) 1d-9)))
+    (assert (= 92 (rd-caller:refresh-code kept (csc-from-entries 6 3 entries) 1d-9)))
+    ;; After a refused search nothing is kept, there is nothing to refresh, and the count of an
+    ;; earlier refresh is not read.
+    (let ((left (coerce (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) 'list)))
+      (assert (= 0 (rd-caller:refresh-code kept (csc-from-entries 5 3 (rd-scaled-rows entries left 1.25d0)) 1d-9)))
+      (assert (= 2 (rd:refreshed-count kept))))
+    (assert (= 4 (rd-caller:find-code kept matrix 1d-6 2d0)))
+    (assert (= 0 (rd:refreshed-count kept)))
+    (assert (= 1 (rd-caller:refresh-code kept matrix 1d-9)))
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+    ;; A vector that changes its rows. Row 2 holds a stored zero in the second column and is row 0;
+    ;; with a 1 there it is row 0 plus row 1, and its vector gains an entry; with the zero again
+    ;; it loses it. The system of the rows left out is analyzed again each time.
+    (flet ((corner (x) (list '(0 0 1) '(1 1 1) '(2 0 1) (list 2 1 x))))
+      (let* ((plain (csc-from-entries 3 2 (corner 0))) (kept (rd:analyze plain)) (out (zeros 2)))
+        (assert (= 0 (rd-caller:find-code kept plain 1d-6 1d-12)))
+        (assert (and (= 1 (rd:left-out-count kept)) (= 2 (aref (rd:left-out-rows kept) 0)) (= 1 (rd:multiplier-count kept 0)))
+                () "The premise: row 2 is left out with one entry; rows ~S, ~D entries."
+                (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) (rd:multiplier-count kept 0))
+        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+        (dolist (x '(1 0 3 0))
+          (let ((entries (corner x)))
+            (assert (= 0 (rd-caller:refresh-code kept (csc-from-entries 3 2 entries) 1d-9)))
+            (assert (and (= 1 (rd:refreshed-count kept)) (= (if (zerop x) 1 2) (rd:multiplier-count kept 0))) ()
+                    "With ~D in the corner: ~D replaced, ~D entries." x (rd:refreshed-count kept) (rd:multiplier-count kept 0))
+            (rd-check-bounds (format nil "a corner of ~D" x) kept (csc-from-entries 3 2 entries) (dr-dense 3 2 entries) 3)
+            (assert (<= (rd:gap-bound kept) 1d-12))
+            (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+            (assert (= 0 (rd-caller:step-code kept (doubles 1d0 2d0 4d0) out)))
+            (rd-check-step (format nil "a corner of ~D" x) kept (dr-dense 3 2 entries) 3 (doubles 1d0 2d0 4d0) out)))))
+    ;; A vector that keeps its length and changes its row: row 2 is row 0, then row 1, while row 3
+    ;; stays row 0. The system of the rows left out has as many entries and another pattern: the
+    ;; two rows left out share a kept row, and then do not.
+    (flet ((turned (a b) (list '(0 0 1) '(1 1 1) (list 2 0 a) (list 2 1 b) '(3 0 1))))
+      (let* ((plain (csc-from-entries 4 2 (turned 1 0))) (kept (rd:analyze plain)) (out (zeros 2))
+             (residual (doubles 1d0 2d0 4d0 -3d0)))
+        (assert (= 0 (rd-caller:find-code kept plain 1d-6 1d-12)))
+        (assert (and (equalp #(2 3) (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)))
+                     (= 1 (rd:multiplier-count kept 0)) (= 1 (rd:multiplier-count kept 1))
+                     (= 0 (aref (rd:multiplier-rows kept) 0)) (= 0 (aref (rd:multiplier-rows kept) 1)))
+                () "The premise: rows 2 and 3 are left out, each as row 0; rows ~S at ~S."
+                (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) (subseq (rd:multiplier-rows kept) 0 2))
+        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+        (dolist (pair '((0 1) (1 0) (0 2)))
+          (let ((entries (turned (first pair) (second pair))))
+            (assert (= 0 (rd-caller:refresh-code kept (csc-from-entries 4 2 entries) 1d-9)))
+            (assert (and (= 1 (rd:refreshed-count kept)) (= 1 (rd:multiplier-count kept 0))
+                         (= (if (zerop (first pair)) 1 0) (aref (rd:multiplier-rows kept) 0)))
+                    () "Row 2 as ~S: ~D replaced, ~D entries, at row ~D." pair (rd:refreshed-count kept)
+                    (rd:multiplier-count kept 0) (aref (rd:multiplier-rows kept) 0))
+            (rd-check-bounds (format nil "row 2 as ~S" pair) kept (csc-from-entries 4 2 entries) (dr-dense 4 2 entries) 4)
+            (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+            (assert (= 0 (rd-caller:step-code kept residual out)))
+            (rd-check-step (format nil "row 2 as ~S" pair) kept (dr-dense 4 2 entries) 4 residual out)
+            (assert (<= (rd:step-bound kept) 1d-9) () "Row 2 as ~S: the step's bound is ~E." pair (rd:step-bound kept))))))
+    ;; A row that no longer depends on the kept rows. Row 2 holds a stored zero in a column no kept
+    ;; row reaches; with a half there it is half a unit from their span. The refresh leaves the
+    ;; best combination, its bound is that distance, and the certificate refuses on the gap: the
+    ;; rank has changed, and the caller searches again.
+    (flet ((spur (y) (list '(0 0 1) '(1 1 1) '(2 0 1) (list 2 2 y))))
+      (let* ((plain (csc-from-entries 3 3 (spur 0))) (kept (rd:analyze plain)))
+        (assert (= 0 (rd-caller:find-code kept plain 1d-6 1d-12)))
+        (assert (and (= 1 (rd:left-out-count kept)) (= 2 (aref (rd:left-out-rows kept) 0))))
+        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+        (let ((entries (spur 0.5d0)))
+          (assert (= 0 (rd-caller:refresh-code kept (csc-from-entries 3 3 entries) 1d-9)))
+          (rd-check-bounds "a row half a unit from the span" kept (csc-from-entries 3 3 entries) (dr-dense 3 3 entries) 3)
+          (assert (<= 0.5d0 (rd:gap-bound kept) 0.500001d0) () "A row half a unit from the span: the gap bound is ~S."
+                  (rd:gap-bound kept))
+          (assert (= 1 (rd-caller:certify-code kept 1d-9 1d-9))))))
+    ;; The same matrix at other scales: the same vectors bit for bit, and a gap bound times the scale.
+    (flet ((at (power)
+             (let* ((scaled (lambda (list) (mapcar (lambda (entry)
+                                                     (list (first entry) (second entry)
+                                                           (scale-float (coerce (third entry) 'double-float) power)))
+                                                   list)))
+                    (first-matrix (csc-from-entries 5 3 (funcall scaled entries))) (kept (rd:analyze first-matrix))
+                    (floor (scale-float 1d-6 power)))
+               (assert (= 0 (rd-caller:find-code kept first-matrix floor 1d-12)))
+               (assert (= 0 (rd-caller:certify-code kept floor floor)))
+               (let* ((left (coerce (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) 'list))
+                      (later (rd-scaled-rows (funcall scaled entries) left 1.25d0)))
+                 (assert (= 0 (rd-caller:refresh-code kept (csc-from-entries 5 3 later) floor)))
+                 (assert (= 2 (rd:refreshed-count kept)))
+                 (list (copy-seq (rd:multiplier-rows kept)) (copy-seq (rd:multiplier-values kept)) (rd:gap-bound kept))))))
+      (let ((reference (at 0)))
+        (dolist (power '(-900 -300 300 900))
+          (let ((scaled (at power)))
+            (assert (and (equalp (first reference) (first scaled)) (same-bits-p (second reference) (second scaled))
+                         (= (scale-float (third reference) power) (third scaled)))
+                    () "At 2^~D the refreshed vectors are ~S with a gap bound of ~S; at scale 1 ~S and ~S." power (second scaled)
+                    (third scaled) (second reference) (third reference))))))
+    ;; Steady state: a refresh that replaces two vectors, a certificate and a step allocate nothing.
+    (let* ((left (progn (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+                        (coerce (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) 'list)))
+           (other (csc-from-entries 5 3 (rd-scaled-rows entries left 1.25d0))) (out (zeros 3))
+           (residual (doubles 1d0 -2d0 3d0 5d0 -4d0)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (allocation-check "kept-rows-refresh-loop"
+                        (lambda () (assert (= 0 (rd-caller:refresh-loop kept matrix other 1d-9 residual out 1))))))
+    (format t "REFRESH-OUTCOMES-PASS~%")))
+
+(defun run-refresh-tests ()
+  (run-refresh-exact-tests)
+  (run-refresh-outcome-tests)
+  (format t "REFRESH-TESTS-PASS~%"))
+
 (defun run-rank-deficient-tests ()
   (run-rank-deficient-exact-tests)
   (run-rank-deficient-reprove-tests)
@@ -825,5 +1056,6 @@ matrix's, bit for bit, and bounds that are the first ones times the same."
   (run-singular-bounds-tests)
   (run-rank-deficient-outcome-tests)
   (run-step-tests)
+  (run-refresh-tests)
   (run-rank-deficient-encapsulation-tests)
   (format t "RANK-DEFICIENT-TESTS-PASS~%"))

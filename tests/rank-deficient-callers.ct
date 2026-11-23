@@ -5,7 +5,7 @@
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:err #:coalton-linalg/errors))
   (:export #:find-code #:reprove-code #:certify-code #:bounds-code #:analysis-code #:kept-loop
-           #:step-code #:step-loop))
+           #:step-code #:step-loop #:refresh-code #:refresh-loop))
 (cl:in-package #:coalton-linalg/tests/rank-deficient-callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -115,4 +115,44 @@
         (cell:write! failures (+ (cell:read failures) 1)))
       (unless (== (rd:step! kept r out) rd:StepTaken)
         (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare refresh-status-code (rd:RefreshStatus -> UFix))
+  (define (refresh-status-code status)
+    (match status
+      ((rd:Refreshed) 0)
+      ((rd:RefreshNothingKept) 1)
+      ((rd:RefreshBadTarget) 2)
+      ((rd:RefreshNoShift) 3)
+      ((rd:RefreshFactorRefused) 4)
+      ((rd:RefreshNonFinite) 5)))
+
+  (declare refresh-code (rd:KeptRows * csc:Matrix * F64 -> UFix))
+  (define (refresh-code kept matrix gap-target)
+    "Exhaustively matched outcome: refreshed 0, nothing kept 1, bad target 2, no shift 3, factor refused 4, non-finite 5; a typed error's category from 91."
+    (catch (refresh-status-code (rd:refresh! kept matrix gap-target))
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare refresh-turn (rd:KeptRows * csc:Matrix * F64 * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (refresh-turn kept matrix floor r out)
+    "One iteration on rows that change: refresh the kept vectors for the values, ask for the certificate, take the step; count what goes wrong, a refresh that replaced nothing included."
+    (let failures = (cell:new (the UFix 0)))
+    (unless (== (rd:refresh! kept matrix floor) rd:Refreshed)
+      (cell:write! failures (+ (cell:read failures) 1)))
+    (when (== (rd:refreshed-count kept) 0)
+      (cell:write! failures (+ (cell:read failures) 1)))
+    (unless (== (rd:certify! kept floor floor) rd:Certified)
+      (cell:write! failures (+ (cell:read failures) 1)))
+    (unless (== (rd:step! kept r out) rd:StepTaken)
+      (cell:write! failures (+ (cell:read failures) 1)))
+    (cell:read failures))
+
+  (declare refresh-loop (rd:KeptRows * csc:Matrix * csc:Matrix * F64 * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (refresh-loop kept one other floor r out repeats)
+    "A real external caller, as a solver's iteration on rows that change is: the two matrices in turn, each refreshed for, certified and stepped on."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k repeats)
+      (cell:write! failures (+ (cell:read failures) (refresh-turn kept other floor r out)))
+      (cell:write! failures (+ (cell:read failures) (refresh-turn kept one floor r out))))
     (cell:read failures)))
