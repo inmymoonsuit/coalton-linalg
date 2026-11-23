@@ -97,6 +97,15 @@ at which the value arose and may itself hold one.
   inner products likewise retain a separate binary exponent until their ratio is taken.
   The ordinary sums can still overflow for vectors of magnitude near 10¹⁵⁴; scale such
   a system first. This is not compensated summation.
+- **The range is measured, and narrower when the operator is large or small as well.**
+  With a right-hand side of size 2^k and an operator of ordinary size, `cg!` and `pcg!`
+  give the same iterates bit for bit from 2^-800 to 2^400 and end `CgNonFinite` from
+  2^510. With the operator's entries of size 2^k too, `cg!` holds from 2^-512 to 2^300:
+  above, the product of a direction and its image is not finite; below, the image of a
+  direction underflows, its curvature is computed as zero, and the call ends
+  `CgNotPositive` for an operator that is positive definite. A preconditioner of the
+  operator's own scale keeps the directions of ordinary size, and `pcg!` then holds
+  from 2^-800 to 2^400. [The scale-sweep roster](rosters.md#what-is-declared) pins these.
 
 ## The method
 

@@ -215,6 +215,23 @@ miscompiles a function holding a cell when inlined from another package; the cod
 arranged to avoid that and the build now fails on a compiler warning.
 [The record](docs/batch14.md) has each finding and how it was confirmed.
 
+### Batch 15: the audit's two questions asked of every call
+
+**Completed.** The audit's findings were answers to questions nobody had asked of the
+routines. Two of them are now asked of every exported call at once, by rosters that read
+their members from the sources: what a call does when two of its arrays are one array,
+and what it does with the same problem at every scale of the format. The first found
+nothing. The second found one silent wrong answer, in the search for dependent rows at
+very small scales, which is now refused by name, and measured the range of every
+routine; conjugate gradients and dependent rows reach less than the whole range, and
+their contracts now say how much. [The rosters' page](docs/rosters.md) is the contract
+and [the record](docs/batch15.md) the evidence.
+
+Left open by it, for a decision: widening conjugate gradients at the large end the way
+the audit widened it at the small one, and at both ends when the operator is scaled, by
+normalizing the direction; and scaling inside the dependent-rows search by a power of
+two, which would give it the whole range in place of half.
+
 ### Next
 
 From 2026-11-20 the library develops ahead of any one consumer's measurements, toward

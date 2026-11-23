@@ -24,6 +24,8 @@
   (run-dependent-rows-tests)
   (run-lu-tests)
   (run-cg-tests)
+  (run-aliasing-tests)
+  (run-scale-sweep-tests)
   (coalton-linalg/tests/typed-errors:run-typed-error-tests)
   (coalton-linalg/tests/encapsulation:run-encapsulation-tests)
   (coalton-linalg/tests/encapsulation:run-status-type-tests)

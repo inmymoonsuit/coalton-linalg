@@ -6,6 +6,7 @@
                     (#:gram #:coalton-linalg/sparse/gram)
                     (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
                     (#:rf #:coalton-linalg/refinement)
+                    (#:fp #:coalton-linalg/internal/float)
                     (#:err #:coalton-linalg/errors))
   (:export #:RowAnalysis #:analyze #:analyze-with-limit #:default-analysis-entry-limit
            #:RowStatus #:RowsFound #:RowsNonFinite #:RowsBadThreshold
@@ -56,9 +57,9 @@
     RowsFound
     "A kept set stands; read the counts and the rows left out."
     RowsNonFinite
-    "An intermediate result was not finite; no set stands."
+    "An intermediate result was not finite, or with a threshold of zero the square of a row was too small to hold; no set stands."
     RowsBadThreshold
-    "The threshold was negative or not a number, or its square was not finite; no set stands.")
+    "The threshold was negative or not a number, or its square was not finite or was too small to hold; no set stands.")
 
   (derive Eq)
   (repr :enum)
@@ -253,9 +254,22 @@
     (arr:set! st 0 0)
     (arr:set! st 1 0)
     (let floor = (* threshold threshold))
-    (unless (and (>= threshold 0.0d0) (inline (math:finite? floor))) (return RowsBadThreshold))
+    ;; The search compares squares. A positive threshold whose square is below the least normal
+    ;; number has become zero or lost its digits, and would be compared as another threshold.
+    (unless (and (>= threshold 0.0d0) (inline (math:finite? floor))
+                 (or (== threshold 0.0d0) (>= floor fp:least-normal)))
+      (return RowsBadThreshold))
     (gram:refill-csc! (.plan s) matrix (.product s))
     (let source = (csc:entries matrix))
+    ;; Under a positive threshold a row whose square underflowed is shorter than the threshold
+    ;; and is rightly left out. Under a threshold of zero nothing says so: the row would be
+    ;; left out as dependent because its square could not be held.
+    (let diagonals = (gram:column-pointers (.plan s)))
+    (when (== threshold 0.0d0)
+      (for ((q 0 (+ q 1))) :while (< q (arr:length source))
+        (unless (or (== (arr:aref source q) 0.0d0)
+                    (>= (arr:aref (.product s) (arr:aref diagonals (arr:aref (.indices s) q))) fp:least-normal))
+          (return RowsNonFinite))))
     (let entries = (.entries s))
     (for ((q 0 (+ q 1))) :while (< q (arr:length entries))
       (arr:set! entries q (arr:aref source q)))

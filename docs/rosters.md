@@ -1,0 +1,175 @@
+# The rosters
+
+Two questions are asked of every call in the library at once, by test, rather
+than of each routine when someone remembers to. Both came from an outside audit
+that found defects the routines' own tests passed ([record](batch14.md)); the
+[contributor notes](../CONTRIBUTING.md#four-questions-for-every-numeric-routine)
+have the four questions that audit amounts to. This page is the contract of the
+two that are mechanized, and how a new call joins them.
+
+## Membership is read from the sources
+
+Neither roster lists its members by hand. Each reads every `src/**/*.ct` file,
+takes the names its package exports, and keeps those whose declared type fits a
+rule:
+
+| Roster | A member is an exported function whose type |
+| --- | --- |
+| Aliasing | has two or more arrays among its own parameters |
+| Scale sweep | mentions a floating-point number anywhere, or returns a status |
+
+The roster then fails for a member it has no entry for, and for an entry that
+names no member. So a call added to the library joins by being declared, and
+the suite is red until someone has answered for it. Arrays passed inside a
+handle, and functions taken as arguments, are not counted as array parameters.
+
+## The aliasing roster
+
+[`tests/aliasing.lisp`](../tests/aliasing.lisp). The contract every member is
+held to:
+
+> A call given one array in two argument positions either does exactly what it
+> does when given two arrays of equal contents, or refuses before it writes
+> anything.
+
+For each member and each pair of its array arguments that could be one array —
+the same element type and the same length — the roster makes the call twice:
+once with two arrays of equal contents, once with one array in both positions.
+
+- If the second call refuses, every argument must be bit for bit what it was.
+- If it succeeds, the first must have succeeded too, every argument and every
+  returned array must agree with the first call's bit for bit, and the shared
+  array must hold what the first call wrote to whichever of the two it wrote.
+  A call that writes both cannot succeed.
+
+Each entry declares which of the two each pair does, and the roster fails when
+a pair does the other. So accepting an alias that was refused, or refusing one
+that was accepted, is a change to the interface that the entry has to be
+changed to make.
+
+The matrices behind the solves are chosen so that every factorization reorders
+or pivots, and each asserts that it does. With a matrix factored in its own
+order, a solve that read its right-hand side after beginning to write could
+read the right entries by accident.
+
+### What the entries declare
+
+| Call | Pairs that may be one array | Pairs that are refused |
+| --- | --- | --- |
+| `cg!`, `pcg!`, `refine!` | `b` and `x` | |
+| `solve!` of the sparse, dense symmetric, orthogonal and LU factorizations; `solve-cholesky!`, `solve-skipping!`, `solve-transpose!` | the right-hand side and the output | |
+| `matvec!`, `transpose-matvec!` | | the vector and the output |
+| `from-csc`, `from-coo`, `permute` | the two index arrays, which are only read | |
+| `gram:refill!` | | the values and the output |
+| `row-maxima!`, `column-maxima!` | | the values and the output |
+| `equilibrate!` | | any two of the values and the two scale vectors |
+| `scale!` | the values and either scale vector; the two scale vectors | the output and anything else |
+| `scale-vector!` | the vector and the output; the scales and the vector | the scales and the output |
+| `equilibrate-symmetric!` | | the values and the scales |
+| `scale-symmetric!` | the values and the scales | the output and either |
+
+`augmented:refill!` has no pair: its output is longer than its input by the
+order of the augmented matrix. `ordering:minimum-degree` is exempt, with its
+reason in the roster: the package is the library's own, and its callers pass
+it the two arrays of a pattern they have validated.
+
+### Adding a call
+
+Add an entry to `alias-roster`: the member's name, a function that makes its
+array arguments afresh, a function that makes the call on them and returns 0
+for success, and the outcome of each pair. Run the suite; where a pair's
+outcome was guessed wrong the failure prints what it measured. Decide whether
+that is the contract you want before writing it down.
+
+## The scale-sweep roster
+
+[`tests/scale-sweep.lisp`](../tests/scale-sweep.lisp). Multiplying every input
+of a problem by a power of two changes no significand, so every output has one
+right value at every scale: its value at scale 1 times a known power of the
+factor. A factor's `L` does not move, its `D` moves with the matrix, a solution
+of a system whose two sides move together does not move, a Gram matrix moves
+with the square. Each of twenty-three entries runs one small problem at twenty-five scales from
+2^-1020 to 2^1020 and states that power for each output. Every run is put in
+one class:
+
+| Class | The run |
+| --- | --- |
+| `:exact` | succeeded, and every output is its scaled value bit for bit |
+| `:close` | succeeded, and every output is within the entry's tolerance of it, against the largest magnitude in its array |
+| `:looser` | succeeded, and an upper bound came out above its scaled value, which a bound may |
+| `:lost` | succeeded, and an output's right value is too small to be a normal number: what came back is zero or has lost digits |
+| `:refused` | refused, and some output's right value cannot be held at that scale |
+| `:limit` | refused although every output's right value can be held: the scale is outside what the routine's own arithmetic reaches |
+| `:no-input` | was not made: an input of the problem, a tolerance usually, is not a normal number at that scale |
+| `:wrong` | succeeded with an output that is neither its right value nor lost |
+
+**`:wrong` fails wherever it appears.** Every other class is declared by the
+entry, as the ranges of the sweep it holds over, and the roster fails when a
+run leaves its declared class in either direction. A range of `:exact` that
+shrinks is a regression. A range of `:limit` that shrinks is an improvement,
+and the entry has to be changed to record it.
+
+An entry names the calls it answers for, and the name is accepted only if the
+entry's own code calls it. The entries call the library directly, not through
+the compiled callers the other tests use.
+
+### What is declared
+
+Exponents are of two. "Everywhere" is the whole sweep, 2^-1020 to 2^1020.
+
+| Entry | `:exact` or `:close` | Outside it |
+| --- | --- | --- |
+| `norm2`, `norm-inf` | everywhere | |
+| Stored matrices and their products | to 2^1000 | refused at 2^1020, where a product is too large to hold |
+| Gram refill | -520 to 400 | refused above, where a square is too large; **`:lost` at -600 and below**: the squares underflow and zeros come back |
+| Augmented refill; row, column and symmetric scaling | everywhere | |
+| Sparse factorization with positive pivots, solve, condition estimate | everywhere | |
+| Cholesky form and its solve; the factorization that leaves pivots out | everywhere | |
+| Signed-pivot factorization, growth and bound | to 2^1000; the bound `:looser` at -1000 and below | refused at 2^1020, where a pivot is too large to hold |
+| Dense symmetric factorization, with a two-by-two pivot at the large end and at the small; orthogonal factorization and everything read from it | everywhere | |
+| Symmetric eigenvalues; singular values | everywhere | |
+| Sparse LU, solves, growth and bound | everywhere; the bound `:looser` at both ends, infinite at 2^1020 | |
+| Refinement | -800 up | no input below |
+| `cg!`, right-hand side scaled | -800 to 400 | **`:limit` from 2^510**: `CgNonFinite` |
+| `cg!`, matrix and right-hand side scaled together | -512 to 300 | **`:limit` from 2^400**, `CgNonFinite`, and **at 2^-520 and below, `CgNotPositive`** |
+| `pcg!`, matrix, preconditioner and right-hand side scaled together | -800 to 400 | **`:limit` from 2^510**: `CgNonFinite` |
+| Dependent rows, threshold 2^-20 of the entries | -400 to 400 | **`:limit` outside**: `RowsBadThreshold`, or the Gram product's error |
+| Dependent rows, threshold zero | -512 to 510 | **`:limit` outside**: `RowsNonFinite`, or the Gram product's error |
+
+The limits in bold are properties of the methods as they are built, measured
+here and now pinned:
+
+- **Conjugate gradients sum squares as they stand at the large end.** A
+  residual of norm near 2^512 has a sum of squares that is not finite, and the
+  call ends `CgNonFinite`. With the matrix scaled as well, the product of a
+  direction and its image leaves the range sooner, and at the small end the
+  image of a direction underflows and the call ends `CgNotPositive` although
+  the operator is positive definite. [The contract](conjugate-gradient.md#what-is-and-is-not-claimed)
+  says to scale such a system first.
+- **Dependent rows works on `A Aᵀ`**, so it reaches half the exponent range of
+  its matrix, and a threshold whose square cannot be held is refused.
+  [Its contract](dependent-rows.md#interface) has the terms.
+- **A Gram refill returns what its products round to.** Above the range that is
+  a refusal. Below it there is none: the squares become zero, and a
+  factorization of the result then refuses a pivot.
+
+### What the sweep does not ask
+
+- It multiplies a whole problem by one factor. It does not ask what happens
+  when the entries of one matrix lie far apart; the [scaling](scaling.md)
+  module's own range tests ask that.
+- Its inputs are normal numbers. A scale at which an input would be subnormal is
+  `:no-input`, and what a routine does with subnormal entries is its own tests'.
+- The law is relative to scale 1. A defect that is the same at every scale is
+  the other tests' to find.
+- The problems are of order three and four. Growth with size is not swept.
+
+### Adding a call
+
+Add its name to the entry whose problem exercises it, or write an entry: a
+function of the exponent that builds the problem with `sweep-number`,
+`sweep-array`, `sweep-stored` or `sweep-column-major`, makes the calls, and
+returns each output with its power. Give the declaration as `:measure` and run
+the suite: it prints the ranges it found and what decided each run that was not
+exact. Read them before writing them down. A `:limit` is a finding about the
+routine, to fix or to state in its contract, not a line to copy.

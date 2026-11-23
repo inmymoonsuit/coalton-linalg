@@ -2,6 +2,20 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.13.4 — 2026-11-22
+
+Fixed: `find-dependent-rows!` on a matrix of entries near 10⁻¹⁸⁰ and below returned
+`RowsFound` with every row left out, the squares it compares having underflowed to zero.
+A positive threshold whose square is too small to be a normal number is now
+`RowsBadThreshold`, and under a threshold of zero a row whose square is too small is
+`RowsNonFinite`. A caller that passed a positive threshold below about 1.5 × 10⁻¹⁵⁴ and
+took the answer now gets the refusal. [Contract](docs/dependent-rows.md#interface).
+
+Added: two rosters in the test suite that every exported call must answer, one for two
+arguments that are one array and one for the same problem at every scale, and the
+measured range of each routine in its contract. No other result changes.
+[The rosters](docs/rosters.md) · [record](docs/batch15.md).
+
 ## 0.13.3 — 2026-11-22
 
 Changed: the pinned Coalton compiler moves from `b6e284b` to `deb300be`, which fixes the

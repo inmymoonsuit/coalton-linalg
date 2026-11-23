@@ -58,8 +58,8 @@ that chose badly is seen to have.
 | RowStatus | Meaning |
 | --- | --- |
 | RowsFound | A kept set stands |
-| RowsNonFinite | An intermediate result of the factorization was not finite; no set stands |
-| RowsBadThreshold | The threshold was negative or not a number, or its square was not finite; no set stands |
+| RowsNonFinite | An intermediate result of the factorization was not finite, or under a threshold of zero the square of a row holding a nonzero entry was too small to be a normal number; no set stands |
+| RowsBadThreshold | The threshold was negative or not a number, or its square was not finite, or it was positive with a square too small to be a normal number; no set stands |
 
 | NullStatus | Meaning |
 | --- | --- |
@@ -231,6 +231,25 @@ so that the vectors and bounds of a search refer to the values that search read 
 the caller's matrix has changed since. The operator and the solve the refinement needs
 are made once, at analysis, over that storage. The kept set is recorded as the rows left
 out, which are few, and a flag for each row.
+
+**The search reaches half the exponent range of the matrix**, because it compares squares:
+those of the rows, in `A Aᵀ`, with that of the threshold. A product too large to hold is
+the Gram refill's typed error. At the small end nothing used to be said, and a matrix of
+entries near 10⁻¹⁸⁰ came back with every row left out, its squares having become zero.
+That is refused now, by the two statuses above:
+
+- A positive threshold whose square is below the least normal number, about 1.5 × 10⁻¹⁵⁴
+  for the threshold itself, is `RowsBadThreshold`: squared, it is zero or has lost its
+  digits, and would be compared as another threshold.
+- Under a threshold that can be held, a row whose square underflowed is shorter than the
+  threshold and is left out, as the contract says.
+- Under a threshold of zero there is no such statement to fall back on, and a row holding
+  a nonzero entry whose square is below the least normal number is `RowsNonFinite`. The
+  name is the nearest of the two there are; what it reports here is a square too small,
+  not one that is not finite.
+
+A caller whose entries are that small scales them first, as for any other reason, and
+[the scale-sweep roster](rosters.md#what-is-declared) holds the range measured.
 
 The threshold is absolute. A caller with rows of very different sizes scales them first,
 by [`equilibrate!`](scaling.md) or its own normalization, and should know that scaling

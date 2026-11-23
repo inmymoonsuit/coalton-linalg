@@ -143,7 +143,10 @@ Run these **serially**; each takes about a minute. They rebuild the library for 
 chosen safety policy and run every roster the batch records describe: interface and
 allocation regressions, compiled Coalton callers and examples, the exact-reference tests of
 each package, the external compile probes, the artifact drivers' own regressions, and the
-independent Python verifiers with their planted controls. Generated artifacts stay under
+independent Python verifiers with their planted controls. Two [rosters](docs/rosters.md)
+read every exported call from the sources and hold each to one answer: what it does when
+two of its arrays are one, and what it does with the same problem at every scale of the
+format. Generated artifacts stay under
 `build/`. See the [initial review evidence](docs/initial-review.md) for fresh-source setup
 verification and [pinned toolchain details](docs/toolchain.md) for the measurement protocol.
 The planted source defects are run by hand for each batch, one process at a time, and are

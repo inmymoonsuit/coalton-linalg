@@ -57,6 +57,13 @@ the actual input values array, including when empty. Existing output contents ne
 not be finite: every slot is overwritten. Never use csc:entries of a constructed
 output Matrix as the destination; those arrays are read-only by contract.
 
+A product or sum too large to hold is NonFiniteResult. One too small is not
+refused: a refill returns what its products round to, so source entries below
+about 10⁻¹⁵⁴ give squares that are zero or have lost digits, with no signal.
+A factorization of such a result refuses a pivot; a caller with entries that
+small scales them first. [The scale-sweep roster](rosters.md#what-is-declared)
+records where this begins.
+
 All preflight failures leave output, input and plan structure unchanged. Once
 arithmetic starts, NonFiniteResult leaves all output contents unspecified; input
 and structure remain unchanged. The plan remains reusable after every refusal:
