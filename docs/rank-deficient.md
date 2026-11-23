@@ -1,9 +1,10 @@
 # Kept rows and the certificate
 
-State: the first of two parts, implemented in Batch 18a. The package is
-`coalton-linalg/sparse/rank-deficient`. [The design](design-rank-deficient-step.md) has
-the mathematics, the measurements that shaped it and what the second part, the step
-itself, will add. [The batch record](batch18a.md) has the evidence.
+State: implemented in Batches 18a, the kept rows and the certificate, and 18b, the step.
+The package is `coalton-linalg/sparse/rank-deficient`.
+[The design](design-rank-deficient-step.md) has the mathematics and the measurements
+that shaped it. The batch records, [18a](batch18a.md) and [18b](batch18b.md), have the
+evidence.
 
 ## What it is for
 
@@ -16,8 +17,10 @@ step, cheaply and **holding as stated or refused by name**:
 - a proof that no singular value lies in a band about the floor the solver cuts at.
 
 [Dependent rows](dependent-rows.md) finds the first once. This package keeps what was
-found, proves the second again for new values without finding anything, and issues the
-third. It solves nothing yet; the step built on it is the second part.
+found, proves the second again for new values without finding anything, issues the
+third, and then takes the step: the minimum-norm least squares step of the matrix with
+its small singular values cut off, with a proved bound on how far the step written is
+from it.
 
 ## Interface
 
@@ -42,6 +45,12 @@ third. It solves nothing yet; the step built on it is the second part.
 - `kept-count`, `left-out-count`, `left-out-rows`; `multiplier-start`,
   `multiplier-count`, `multiplier-rows`, `multiplier-values` for the vectors as kept;
   `kept-found?`, `certified?`, `row-count`, `column-count`.
+- `step!(kept, r, out) -> StepStatus`: the step against a residual, for the matrix the
+  standing certificate is of. Nothing is allocated.
+- `step-solve-bound(kept)`, `step-bound(kept)`: the two bounds of the standing step, −1
+  when none stands. `step-taken?`, `step-corrections`, `correction-limit`.
+- `solve-growth`, `solve-backward-bound`, `predicted-rate`: diagnostics of the factor the
+  steps solve with, −1 when there is none.
 - `largest-singular-bounds!(matrix, steps, work-columns, work-rows, out)`: a lower and an
   upper bound on the largest singular value of any stored matrix, which is what a floor
   given as a fraction of it needs. The three arrays must be distinct.
@@ -160,6 +169,108 @@ The rows left out, the vectors and the statuses at any scale the format holds ar
 at ordinary scale, and the bounds are those times the scale;
 [the scale-sweep roster](rosters.md#what-is-declared) holds that from 2^-800 to 2^1020.
 
+## The step
+
+`step!(kept, r, out)` writes the step a solver takes against a residual r on the matrix
+the standing certificate is of:
+
+    out = −B⁺ r ,        B = C J_S ,
+
+where `J_S` is the kept rows and C puts each row left out back as its kept combination of
+them: the identity on the kept rows over W, whose row for a row left out is that row's
+multipliers. `B⁺ r` is the minimum-norm least squares solution for B. The sign is that
+of [the damped step](damped.md), so that a loop may take either.
+
+**B is not the matrix, and the step says how far that takes it.** B has rank r exactly
+and differs from the matrix by at most the gap bound. Two bounds stand after a step:
+
+- `step-solve-bound`: on `‖out + B⁺ r‖₂`, what the two solves below left.
+- `step-bound`: on the distance from out to **the step of the matrix truncated at the kept
+  count**, `−J_r⁺ r` with `J_r` the nearest matrix of rank r, which is what a singular
+  value decomposition cut at the certified floor gives. It includes the first.
+
+With γ the gap bound, τ the bound the certificate proved, x the exact step for B and
+`x*` the truncated one, the second adds to the first
+
+    ‖x − x*‖₂  ≤  2γ ( 2 X / τ + ρ / τ² ) / (1 − 4γ/τ) ,
+
+where X bounds `‖x‖₂` and ρ bounds the residual outside the range, `‖r − J x‖₂ + γ X`;
+[the design](design-rank-deficient-step.md#how-far-x-is-from-x) derives it. Each quantity
+in it is proved: the norms from computed vectors with their rounding allowed for, γ and τ
+by the certificate. **Where `4γ/τ` is not below 1 the inequality has no solution and the
+call is `StepBoundNotReached`.** A certificate holds whenever γ is below τ, so vectors
+that are far out of date can be certified and still be refused here.
+
+| StepStatus | Meaning |
+| --- | --- |
+| StepTaken | The step was written and its two bounds stand |
+| StepNoCertificate | No certificate stands for the values held |
+| StepBadSize | The residual has not the row count, or the output not the column count |
+| StepNonFiniteRhs | An entry of the residual was not finite |
+| StepFactorRefused | The system of the rows left out, or the kept rows' solve, could not be factored |
+| StepBoundNotReached | `4γ/τ ≥ 1`; or a residual of a solve was not finite; or the refinement was still at least halving its bound at its last correction |
+| StepNonFiniteResult | The step cannot be held in the caller's units |
+
+Every status but the first writes nothing to `out` and leaves no step standing. A step
+needs a standing certificate and does not survive a search, a reproof or another
+certificate. The residual and the output may be one array where the matrix is square.
+
+### How it is computed
+
+1. `y = C⁺ r`, a least squares problem whose normal matrix `I + Wᵀ W` is solved through
+   the smaller `I + W Wᵀ`, of the order of the rows left out and as sparse as W. It is
+   analyzed and factored once, by the search; its eigenvalues are at least 1. It is
+   corrected while its proved residual at least halves, and the candidate with the
+   smallest is kept.
+2. `x = J_S⁺ y` by the kept rows' augmented matrix, on the analysis the certificate uses,
+   with its own two shifts, refined against the same matrix with no bottom block.
+
+Nothing is solved on the kept rows' Gram matrix, which a row touching every column makes
+dense. [The design](design-rank-deficient-step.md#the-solve-on-the-kept-rows) has the
+shifts, the contraction of a correction by blocks, and the measurement they were chosen
+on.
+
+**What the solve's bound rests on is the residuals and nothing else.** For any pair
+`(x̂, λ̂)`, with `ρ₁ = τ x̂ + J_Sᵀ λ̂` and `ρ₂ = J_S x̂ − y`,
+
+    x̂ − J_S⁺ y  =  J_S⁺ ρ₂  +  (I − J_S⁺ J_S) ρ₁ / τ        exactly,
+
+the two parts orthogonal, so the distance is at most `(‖ρ₁‖² + ‖ρ₂‖²)^½ / τ`. Each residual
+is formed with a bound on its own rounding, and **τ is the one the standing certificate
+proved, for these kept rows and these values**. The error of y is bounded the same way,
+by `‖Cᵀ(r − C ŷ)‖`, and reaches x divided by τ. No rate of convergence enters.
+
+**The bound on y widens with the multipliers.** That residual's own rounding grows with
+the square of the largest multiplier, and the bound with it: over the step's norm it was
+9 × 10⁻⁹ at a multiplier of 2¹⁰, 4 × 10⁻⁵ at 2¹⁶ and 10⁻² at 2²⁰. A certificate limits
+the multipliers to about the matrix's size over the bound it proved; where the rows are
+of comparable size they are of order 1.
+
+**The refinement stops by a rule on that bound.** It is formed after the first solve and
+after each correction, and the iterate with the smallest is kept.
+
+- A correction that leaves the bound above half the smallest so far ends the refinement.
+  The kept iterate is the step, **with its bound, however wide**: the caller compares it
+  with its own gate.
+- At most `correction-limit` corrections are made, 8. If the last still at least halved
+  the bound the refinement had not finished and the call is `StepBoundNotReached`. A
+  correction contracts by 2⁻¹⁰ or better while it is above rounding, so six exhaust the
+  precision; two are left for corrections that halve the bound by chance at the bottom.
+
+`step-corrections` is how many the standing step made. The factorization for the solve is
+made by the first step after a certificate and serves every later step until the next
+certificate, reproof or search.
+
+**Three diagnostics, on which nothing is refused**: `solve-growth` and
+`solve-backward-bound` of that factor, and `predicted-rate`, the contraction that
+backward bound predicts, `(2⁻¹⁰ + η) / (1 − η)` with `η = 2β/τ`. The prediction
+overstates by decades, since the backward bound is a bound through a trace; the bounds
+of a step do not use it.
+
+**The residual is divided by the power of two at its largest entry**, as the matrix is by
+its own, and the step is multiplied back by the two. A step at any scale the format holds
+is the step at ordinary scale, bit for bit, and the bounds are those times the scale.
+
 ## Bounds on the largest singular value
 
 `largest-singular-bounds!` writes two numbers with `out[0] ≤ σ₁ ≤ out[1]`.
@@ -183,10 +294,14 @@ each later matrix of the pattern:
     reprove!(kept, J)
     certify!(kept, lower-floor, upper-floor)        Certified: the kept set serves
     gap above floor: the vectors are out of date for these values; search again
+    step!(kept, r, p)                               StepTaken: p is the step
+    step-bound(kept)                                compare with the solver's own gate
 ```
 
-[The example](../examples/kept-rows.ct) finds a redundant row, proves its bound again for
-other values, and reads what the certificate proved.
+[The first example](../examples/kept-rows.ct) finds a redundant row, proves its bound
+again for other values, and reads what the certificate proved.
+[The second](../examples/rank-deficient-step.ct) takes the step on two equal rows and
+reads its bound.
 
 ## Representation choices
 
@@ -198,6 +313,9 @@ every call cost a thousand times the other.
 The vectors are kept one after another in two arrays that grow by doubling during the
 search. The pattern is held a second time by rows, which is what lets a bound read only
 the rows a vector touches.
+
+The system of the rows left out is factored by the search and not by the step, because
+W changes only when the vectors do.
 
 The handle owns its own search. A caller that already holds a
 [dependent rows](dependent-rows.md) analysis of the same pattern has two; the pattern

@@ -2,8 +2,9 @@
 
 State: a design, reviewed four times by the consumer that asked for it. The measurement its
 first review asked for is done and is reported below; it changed the design in four
-places, each marked. The certificate and the kept vectors are built, as
-[kept rows and the certificate](rank-deficient.md); the step and the bases are not. It follows
+places, each marked. The certificate, the kept vectors and the step are built, as
+[kept rows, the certificate and the step](rank-deficient.md); the refresh of one vector
+and the bases are not. It follows
 [dependent rows](dependent-rows.md), whose proofs it reuses.
 
 ## What is asked for
@@ -366,8 +367,12 @@ is formed, and the iterate with the smallest bound so far is the one kept.
 - A correction that leaves the bound above half the smallest so far ends the refinement:
   it has stalled, at rounding or above it. **The kept iterate is returned with its
   bound, whatever the bound is**; the caller compares it with its own gate.
-- At most six corrections are made. If the sixth still at least halved the bound, the
-  refinement had not finished, and the call refuses with "bound not reached".
+- At most eight corrections are made. If the eighth still at least halved the bound, the
+  refinement had not finished, and the call refuses with "bound not reached". Eight and
+  not six: a correction contracts by 2⁻¹⁰ or better while it is above rounding, so six
+  exhaust the precision, and on small matrices whose smallest singular value is near τ
+  five were seen; two are left for corrections that halve the bound by chance at the
+  bottom, so that a finished refinement is not refused.
 - A residual or a bound that is not finite refuses with "bound not reached".
 
 **What was measured**, on the seven patterns, for a right-hand side whose minimum-norm
@@ -525,10 +530,11 @@ In the fourth, on the solve, after its measurement:
 - **The bound returned is a posteriori**, from proved residuals and the τ proved at
   this call. A rate predicted from the factor's backward bound is reported and refuses
   nothing.
-- **A refinement that stalls returns its bound**; one still halving at its sixth
+- **A refinement that stalls returns its bound**; one still halving at its eighth
   correction, or a residual that is not finite, is "bound not reached".
 - **The kept rows alone are not built.** The consumer will not call the option.
 
-**Built so far:** the search with kept vectors, the reproof, the certificate and the
-bounds on the largest singular value, as [kept rows and the certificate](rank-deficient.md).
-The step, its bound, the option and the refresh of one vector are not built.
+**Built so far:** the search with kept vectors, the reproof, the certificate, the bounds
+on the largest singular value, and the step with its two bounds, as
+[kept rows, the certificate and the step](rank-deficient.md). The refresh of one vector,
+the option of the kept rows alone, the supports and the bases are not built.

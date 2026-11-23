@@ -2,6 +2,22 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.17.0 — 2026-11-23
+
+Added to `coalton-linalg/sparse/rank-deficient`: `step!(kept, r, out)`, the step on the
+matrix a certificate stands on. It writes `−B⁺ r`, B being the matrix with each row left
+out replaced by its kept combination of the kept rows, and leaves two proved bounds:
+`step-solve-bound`, on the distance from the exact step for B, and `step-bound`, on the
+distance from the step of the matrix truncated at the kept count. Seven named outcomes;
+a refusal writes nothing. Also `step-taken?`, `step-corrections`, `correction-limit`, and
+three diagnostics, `solve-growth`, `solve-backward-bound` and `predicted-rate`. A steady
+loop of reproof, certificate and step allocates nothing.
+[Contract](docs/rank-deficient.md#the-step) · [record](docs/batch18b.md).
+
+Changed: `find-kept-rows!` also analyzes and factors the system of the rows left out, and
+so can raise the typed errors of those analyses where 0.16.0 did not. No result of
+0.16.0 changes.
+
 ## 0.16.0 — 2026-11-23
 
 Added: `coalton-linalg/sparse/rank-deficient`, the kept rows of a rank-deficient matrix

@@ -58,4 +58,7 @@
     (assert (and (= 4 (length bounds)) (<= 0d0 (aref bounds 0) 1d-12) (<= 1d-6 (aref bounds 1) 1d0)
                  (<= 0.999d-3 (aref bounds 2) 1.001d-3) (= -1d0 (aref bounds 3)))
             () "The kept-rows example gave ~S." bounds))
+  (let ((step (coalton-linalg/examples/rank-deficient-step:redundant-step)))
+    (assert (and (= 2 (length step)) (<= (abs (+ 2d0 (aref step 0))) 1d-14) (<= 0d0 (aref step 1) 1d-12))
+            () "The rank-deficient step example gave ~S." step))
   (format t "COALTON-EXAMPLE-PASS~%LIBRARY-TESTS-PASS~%"))

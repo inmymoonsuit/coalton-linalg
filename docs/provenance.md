@@ -94,6 +94,27 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 18b: the step on a rank-deficient matrix
+
+No source was opened for this batch; the mathematics is in
+[the design](design-rank-deficient-step.md), written and reviewed before the code. Three
+things in it are known from the literature as statements. That the minimum-norm solution
+of a full-row-rank system is the first block of the solution of the augmented system,
+and that a system factored with a small regularizing block can be refined against the
+system without it, are classical in least squares (Björck's work on the augmented
+system); the form here, with both diagonal blocks tied to the bound a certificate
+proved, was chosen from a measurement. The decomposition of the difference of two
+pseudo-inverses is Wedin's (1973); it is an identity, and it and the bound taken from
+it were checked by multiplying out numerically before they were used. The inversion
+lemma is textbook. **What the step's bound rests on was worked out here and checked by
+the consumer that asked for the step**: that for any pair the error of the kept rows'
+solve is an exact expression in the two residuals, in two orthogonal parts, so that no
+rate of convergence is needed; and that the iteration matrix of the refinement is not
+normal, so that its contraction is stated by blocks, which that consumer pointed out.
+No listing or pseudocode was read and no implementation. The reference values in the
+tests are exact minimum-norm least squares solutions in rational arithmetic, by the
+tests' own elimination.
+
 ## Batch 18a: kept rows and the certificate
 
 Nothing here is a method taken from a source, and no source was opened for it: it is

@@ -260,6 +260,17 @@ value of the kept rows above another. The same package bounds the largest singul
 value from both sides. It solves nothing yet. [The contract](docs/rank-deficient.md)
 says what is proved and [the record](docs/batch18a.md) has the exact references.
 
+### Batch 18b: the step on a rank-deficient matrix
+
+**Completed.** `step!` in `coalton-linalg/sparse/rank-deficient`: for the matrix a
+certificate stands on, the minimum-norm least squares step of the matrix whose rows left
+out are replaced by their kept combinations, with two proved bounds, on what the solves
+left and on the distance to the step of the matrix truncated at the kept count. The
+solve on the kept rows is through their augmented matrix, on the certificate's own
+analysis, refined, and its bound is read from the residuals and the bound the
+certificate proved, with no rate of convergence assumed. [The contract](docs/rank-deficient.md#the-step)
+says what is proved and [the record](docs/batch18b.md) has the exact references.
+
 ### Next
 
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
@@ -269,9 +280,10 @@ the library, agreed with it in advance, plan before code:
    truncated singular value decomposition gives at a relative floor, with a certificate
    that no singular value lies in a band about the floor, or a refusal by name. Built on
    [dependent rows](docs/dependent-rows.md). **[The design](docs/design-rank-deficient-step.md)
-   is reviewed and measured. The certificate and the kept vectors are Batch 18a; the step,
-   its bound to the truncated answer, the option of the kept rows alone and the refresh
-   of one vector are next, as 18b.** The same note covers
+   is reviewed and measured. The certificate and the kept vectors are Batch 18a and the
+   step with its bounds Batch 18b. Left: the refresh of one kept vector from current
+   values, for rows whose entries change at every call. The kept rows alone, as an
+   option, are not built; the consumer will not call it.** The same note covers
    certified bases: the supports of left null vectors, and a right null-space basis with
    a proved residual.
 2. Those bases, as their own batch after the step.

@@ -275,6 +275,17 @@ expected of each pair that can be one array. An entry of (key :exempt reason) ha
              (lambda (a) (rd-caller:bounds-code (csc-from-entries 2 2 '((0 0 3) (1 0 1) (1 1 4))) 10
                                                 (first a) (second a) (third a)))
              '(((0 1) :refused) ((0 2) :refused) ((1 2) :refused)))
+       ;; Three rows on three columns, the third the sum of the others, so that the residual and the step
+       ;; have one length and a row is left out.
+       (list "coalton-linalg/sparse/rank-deficient:step!" #'short-right-hand-side
+             (lambda (a)
+               (let* ((matrix (csc-from-entries 3 3 '((0 0 1) (0 1 5) (0 2 2) (1 1 1) (1 2 7) (2 0 1) (2 1 6) (2 2 9))))
+                      (kept (rd:analyze matrix)))
+                 (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+                 (assert (= 1 (rd:left-out-count kept)) () "The premise: one row is left out; ~D are." (rd:left-out-count kept))
+                 (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                 (rd-caller:step-code kept (first a) (second a))))
+             '(((0 1) :same)))
        (list "coalton-linalg/sparse/damped:step!" #'short-right-hand-side
              (lambda (a)
                (let* ((matrix (alias-stored (alias-columns))) (plan (dm:analyze matrix)))

@@ -267,11 +267,19 @@ A search withdraws the earlier set and its bounds. After the analysis only
 | `certified?` | KeptRows -> Boolean |
 | `proved-lower-bound` | KeptRows -> F64; what the standing certificate proved every singular value of the kept rows exceeds, otherwise -1 |
 | `largest-singular-bounds!` | coalton-linalg/sparse/csc:Matrix * UFix * V * V * V -> Void; a lower and an upper bound on the largest singular value, into the third array |
+| `StepStatus` | Outcome type of step! |
+| `StepTaken`, `StepNoCertificate`, `StepBadSize`, `StepNonFiniteRhs`, `StepFactorRefused`, `StepBoundNotReached`, `StepNonFiniteResult` | StepStatus values |
+| `step!` | KeptRows * V * V -> StepStatus; the step −B⁺ r against a residual, for the certified matrix |
+| `step-taken?` | KeptRows -> Boolean |
+| `step-solve-bound`, `step-bound` | KeptRows -> F64; proved bounds on the standing step's distance from the exact step for B, and from the truncated matrix's step; otherwise -1 |
+| `step-corrections` | KeptRows -> UFix; corrections the standing step's refinement made |
+| `correction-limit` | UFix; 8 |
+| `solve-growth`, `solve-backward-bound`, `predicted-rate` | KeptRows -> F64; diagnostics of the factor the steps solve with, otherwise -1 |
 
 The handle's constructor and storage are private. A search replaces the kept set, the
 vectors and the two borrowed vector arrays; a search or a reproof withdraws the
-certificate. Only `analyze` and `find-kept-rows!` allocate. One handle serves one call
-at a time.
+certificate, and each of them and a certificate withdraws the step. Only `analyze` and
+`find-kept-rows!` allocate. One handle serves one call at a time.
 
 ## coalton-linalg/sparse/lu
 

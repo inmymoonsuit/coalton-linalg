@@ -469,11 +469,361 @@ eigenvalue, and J^T J less the square of the lower has one that is not negative.
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "RANK-DEFICIENT-ENCAPSULATION-PASS rejected=~D public-control=1~%" (length *rank-deficient-encapsulation-probes*)))
 
+;;; ---- The step ------------------------------------------------------------------------------
+
+(defun rd-b-matrix (a kept m)
+  "B exactly: the stored matrix with each row left out replaced by its kept combination of the kept rows, the
+multipliers being the kept vector's stored doubles with the sign changed."
+  (let* ((n (array-dimension a 1)) (b (rect m n (lambda (i j) (aref a i j)))) (rows (rd:multiplier-rows kept))
+         (values (rd:multiplier-values kept)))
+    (dotimes (p (rd:left-out-count kept) b)
+      (let ((own (aref (rd:left-out-rows kept) p)) (start (rd:multiplier-start kept p)))
+        (dotimes (j n)
+          (setf (aref b own j)
+                (loop :for e :below (rd:multiplier-count kept p)
+                      :sum (* (- (rational (aref values (+ start e)))) (aref a (aref rows (+ start e)) j)))))))))
+
+(defun rd-distance-squared (step exact)
+  "The exact squared distance of the step written, a vector of doubles, from minus an exact solution."
+  (loop :for x :across step :for e :in exact :sum (expt (+ (rational x) e) 2)))
+
+(defun rd-check-step (label kept a m residual step)
+  "Both bounds of the standing step hold exactly: the solve's against the exact step for B, and, where the stored
+matrix has exactly the kept count for its rank, the whole one against its exact minimum-norm least squares
+step. Returns the two exact squared distances; the second is nil where the rank is not the kept count."
+  (let* ((b-values (coerce residual 'list)) (rhs (mapcar #'rational b-values))
+         (for-b (rd-distance-squared step (exact-minimum-norm (rd-b-matrix a kept m) rhs)))
+         (solve-bound (rd:step-solve-bound kept)) (whole-bound (rd:step-bound kept))
+         (ranked (= (dr-rank a) (rd:kept-count kept)))
+         (for-a (and ranked (rd-distance-squared step (exact-minimum-norm a rhs)))))
+    (assert (and (rd:step-taken? kept) (<= 0d0 solve-bound whole-bound)) () "~A: the bounds are ~S and ~S." label
+            solve-bound whole-bound)
+    (assert (<= for-b (expt (rational solve-bound) 2)) ()
+            "~A: the step is ~E from the exact step for B, and the solve's bound is ~E." label (sqrt (float for-b 1d0))
+            solve-bound)
+    (when ranked
+      (assert (<= for-a (expt (rational whole-bound) 2)) ()
+              "~A: the step is ~E from the exact step, and its bound is ~E." label (sqrt (float for-a 1d0)) whole-bound))
+    (values for-b for-a)))
+
+(defun rd-seeded-vector (state count)
+  (let ((v (zeros count)))
+    (dotimes (i count v) (setf (aref v i) (coerce (- (random 13 state) 6) 'double-float)))))
+
+(defun run-step-exact-tests ()
+  (let ((state (sb-ext:seed-random-state 20261124)) (cases 0) (stale 0) (stale-refused 0) (moved 0)
+        (tally (make-list (1+ rd:correction-limit) :initial-element 0)) (widest 0d0))
+    (loop :for (bases columns extras) :in '((2 4 1) (3 5 2) (4 6 3) (5 5 4) (6 9 5) (4 4 2) (7 10 6) (3 6 0))
+          :do (dotimes (repeat 5)
+                (multiple-value-bind (entries m) (rd-redundant-entries state bases columns extras)
+                  (let* ((label (format nil "step, ~D+~D rows by ~D #~D" bases extras columns repeat))
+                         (matrix (csc-from-entries m columns entries)) (a (dr-dense m columns entries))
+                         (kept (rd:analyze matrix)) (out (zeros columns)))
+                    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+                    (assert (= 1 (rd-caller:step-code kept (zeros m) out)) () "~A: a step was taken with no certificate." label)
+                    (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                    ;; Two residuals: one anywhere, one in the range of the matrix.
+                    (dolist (residual (list (rd-seeded-vector state m)
+                                            (let ((x (rd-seeded-vector state columns)) (r (zeros m)))
+                                              (dolist (entry entries r)
+                                                (incf (aref r (first entry)) (* (third entry) (aref x (second entry))))))))
+                      (incf cases)
+                      (assert (= 0 (rd-caller:step-code kept residual out)) () "~A: the step gave ~D." label
+                              (rd-caller:step-code kept residual out))
+                      (rd-check-step label kept a m residual out)
+                      (incf (nth (rd:step-corrections kept) tally))
+                      ;; Fresh vectors: the whole bound is rounding beside the step and the residual.
+                      (let ((size (+ (sqrt (loop :for x :across out :sum (* x x))) (sqrt (loop :for x :across residual :sum (* x x))))))
+                        (setf widest (max widest (/ (rd:step-bound kept) (max size 1d-300))))
+                        (assert (<= (rd:step-bound kept) (* 1d-9 size)) () "~A: the bound is ~E beside a size of ~E." label
+                                (rd:step-bound kept) size)))
+                    ;; The kept vectors out of date on purpose, and still under the floor: every row left
+                    ;; out is multiplied by 1 + 2^-12, which keeps the rank and the row space and makes
+                    ;; each kept combination wrong by that much. The step for B is then not the step.
+                    (when (plusp (rd:left-out-count kept))
+                      (let* ((left (coerce (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) 'list))
+                             (later (mapcar (lambda (entry)
+                                              (list (first entry) (second entry)
+                                                    (if (member (first entry) left)
+                                                        (* (third entry) (+ 1d0 (scale-float 1d0 -12)))
+                                                        (third entry))))
+                                            entries))
+                             (other (csc-from-entries m columns later)) (b (dr-dense m columns later))
+                             (anywhere (rd-seeded-vector state m))
+                             (in-range (let ((x (rd-seeded-vector state columns)) (r (zeros m)))
+                                         (dolist (entry later r)
+                                           (incf (aref r (first entry)) (* (third entry) (aref x (second entry))))))))
+                        (assert (= 0 (rd-caller:reprove-code kept other)))
+                        (assert (= 1 (rd-caller:step-code kept anywhere out)))
+                        (let ((floor (* 2d0 (rd:gap-bound kept))))
+                          (cond
+                            ((/= 0 (rd-caller:certify-code kept floor floor)) (incf stale-refused))
+                            (t
+                             (dolist (residual (list anywhere in-range))
+                               (let ((code (rd-caller:step-code kept residual out)))
+                                 (assert (member code '(0 5)) () "~A, out of date: the step gave ~D." label code)
+                                 (cond
+                                   ((= code 5)
+                                    (incf stale-refused)
+                                    (assert (>= (* 4.001d0 (rd:gap-bound kept)) (rd:proved-lower-bound kept)) ()
+                                            "~A: bound not reached with a gap of ~E under a proved ~E." label
+                                            (rd:gap-bound kept) (rd:proved-lower-bound kept)))
+                                   (t
+                                    (incf stale)
+                                    (multiple-value-bind (for-b for-a)
+                                        (rd-check-step (format nil "~A, out of date" label) kept b m residual out)
+                                      (when (> for-a (* 4 (max for-b (expt (rational (rd:step-solve-bound kept)) 2))))
+                                        (incf moved))))))))))))))))
+    (assert (and (> stale 20) (> moved 10)) ()
+            "The premise: out-of-date vectors gave ~D steps, of which ~D were further from the exact step than from B's." stale moved)
+    (format t "STEP-EXACT-PASS cases=~D out-of-date=~D of-them-moved=~D out-of-date-refused=~D by-corrections=~S widest-fresh-bound=~,2E~%"
+            cases stale moved stale-refused tally widest)))
+
+(defun run-step-scale-tests ()
+  "The matrix and the residual each at its own scale give the step at scale 1 times the residual's power over the
+matrix's, bit for bit, and bounds that are the first ones times the same."
+  (let* ((entries '((0 0 1) (0 1 2) (1 1 1) (1 2 3) (2 0 2) (2 2 1) (3 0 1) (3 1 3) (3 2 3) (4 0 3) (4 1 2) (4 2 4)))
+         (m 5) (n 3) (residual (doubles 1d0 -2d0 3d0 5d0 -4d0)) (cases 0))
+    (flet ((at (matrix-power residual-power)
+             (let* ((matrix (csc-from-entries m n (mapcar (lambda (entry)
+                                                            (list (first entry) (second entry)
+                                                                  (scale-float (coerce (third entry) 'double-float) matrix-power)))
+                                                          entries)))
+                    (kept (rd:analyze matrix)) (floor (scale-float 1d-6 matrix-power)) (out (zeros n))
+                    (r (map '(simple-array double-float (*)) (lambda (x) (scale-float x residual-power)) residual)))
+               (assert (= 0 (rd-caller:find-code kept matrix floor 1d-12)))
+               (assert (= 0 (rd-caller:certify-code kept floor floor)))
+               (assert (= 0 (rd-caller:step-code kept r out)) () "At 2^~D and 2^~D the step gave ~D." matrix-power residual-power
+                       (rd-caller:step-code kept r out))
+               (list out (rd:step-solve-bound kept) (rd:step-bound kept) (rd:step-corrections kept)))))
+      (let ((reference (at 0 0)))
+        (dolist (powers '((-900 0) (900 0) (0 -900) (0 900) (500 -500) (-500 500) (-400 -400) (300 300) (-1000 -1000)))
+          (let* ((scaled (at (first powers) (second powers))) (shift (- (second powers) (first powers))))
+            (incf cases)
+            (assert (same-bits-p (map '(simple-array double-float (*)) (lambda (x) (scale-float x shift)) (first reference))
+                                 (first scaled))
+                    () "At 2^~D and 2^~D the step is ~S, and scaled from scale 1 it is ~S." (first powers) (second powers)
+                    (first scaled) (map 'vector (lambda (x) (scale-float x shift)) (first reference)))
+            ;; A bound below the normal range is rounded upward, so it is compared from both sides.
+            (flet ((scaled-bound-p (first-bound bound)
+                     (let ((exact (* (rational first-bound) (expt 2 shift))))
+                       (if (>= exact least-positive-normalized-double-float)
+                           (= exact (rational bound))
+                           (<= exact (rational bound) (+ exact (* 2 (rational least-positive-double-float))))))))
+              (assert (and (scaled-bound-p (second reference) (second scaled)) (scaled-bound-p (third reference) (third scaled))
+                           (= (fourth reference) (fourth scaled)))
+                      () "At 2^~D and 2^~D the bounds are ~S and ~S; at scale 1 they are ~S and ~S." (first powers)
+                      (second powers) (second scaled) (third scaled) (second reference) (third reference)))))))
+    (format t "STEP-SCALE-PASS cases=~D~%" cases)))
+
+(defun run-step-outcome-tests ()
+  (let* ((entries '((0 0 1) (0 1 2) (1 1 1) (1 2 3) (2 0 2) (2 2 1) (3 0 1) (3 1 3) (3 2 3) (4 0 3) (4 1 2) (4 2 4)))
+         (matrix (csc-from-entries 5 3 entries)) (a (dr-dense 5 3 entries)) (kept (rd:analyze matrix))
+         (residual (doubles 1d0 -2d0 3d0 5d0 -4d0)) (out (doubles 7d0 7d0 7d0))
+         (nan (not-a-number)) (infinity sb-ext:double-float-positive-infinity))
+    (flet ((untouched () (assert (equalp out (doubles 7d0 7d0 7d0)) () "A refused step wrote ~S." out))
+           (nothing () (assert (and (not (rd:step-taken? kept)) (= -1d0 (rd:step-bound kept)) (= -1d0 (rd:step-solve-bound kept))
+                                    (= 0 (rd:step-corrections kept))))))
+      (assert (= 8 rd:correction-limit))
+      ;; No certificate: before a search, after one, after a refused certificate, after a reproof.
+      (assert (= 1 (rd-caller:step-code kept residual out)))
+      (nothing)
+      (assert (and (= -1d0 (rd:solve-growth kept)) (= -1d0 (rd:solve-backward-bound kept)) (= -1d0 (rd:predicted-rate kept))))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+      (assert (= 1 (rd-caller:step-code kept residual out)))
+      (assert (= 2 (rd-caller:certify-code kept 1d-9 1d3)))
+      (assert (= 1 (rd-caller:step-code kept residual out)))
+      (untouched)
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= -1d0 (rd:solve-growth kept)))
+      ;; Sizes and residuals that cannot be used leave everything as it was.
+      (assert (= 2 (rd-caller:step-code kept (zeros 4) out)))
+      (assert (= 2 (rd-caller:step-code kept (zeros 6) out)))
+      (assert (= 2 (rd-caller:step-code kept residual (zeros 2))))
+      (assert (= 2 (rd-caller:step-code kept residual (zeros 4))))
+      (dolist (bad (list nan infinity (- infinity)))
+        (let ((r (copy-seq residual)))
+          (setf (aref r 3) bad)
+          (assert (= 3 (rd-caller:step-code kept r out)) () "A residual holding ~S was taken." bad)))
+      (untouched)
+      (nothing)
+      ;; A step, and what it leaves readable.
+      (assert (= 0 (rd-caller:step-code kept residual out)))
+      (rd-check-step "the outcome matrix" kept a 5 residual out)
+      (assert (and (plusp (rd:solve-growth kept)) (plusp (rd:solve-backward-bound kept)) (plusp (rd:predicted-rate kept))
+                   (<= (rd:step-corrections kept) rd:correction-limit))
+              () "Growth ~S, backward bound ~S, predicted rate ~S, ~D corrections." (rd:solve-growth kept)
+              (rd:solve-backward-bound kept) (rd:predicted-rate kept) (rd:step-corrections kept))
+      ;; A second step on the same certificate uses the factor the first left, and is the same step.
+      (let ((first (copy-seq out)) (bound (rd:step-bound kept)) (growth (rd:solve-growth kept)))
+        (fill out 7d0)
+        (assert (= 0 (rd-caller:step-code kept residual out)))
+        (assert (and (same-bits-p first out) (= bound (rd:step-bound kept)) (= growth (rd:solve-growth kept))))
+        ;; A refused step withdraws the standing one and writes nothing.
+        (fill out 7d0)
+        (assert (= 2 (rd-caller:step-code kept (zeros 4) out)))
+        (untouched)
+        (nothing)
+        (assert (= growth (rd:solve-growth kept)))
+        ;; A residual of zeros: the step is zero.
+        (assert (= 0 (rd-caller:step-code kept (zeros 5) out)))
+        (assert (and (every #'zerop out) (<= 0d0 (rd:step-bound kept) 1d-150)) () "A residual of zeros gave ~S within ~S." out
+                (rd:step-bound kept))
+        ;; A step does not survive a certificate, a reproof or a search, and neither does its factor.
+        (assert (= 0 (rd-caller:step-code kept residual out)))
+        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+        (nothing)
+        (assert (= -1d0 (rd:solve-growth kept)))
+        (assert (= 0 (rd-caller:step-code kept residual out)))
+        (assert (and (same-bits-p first out) (rd:step-taken? kept)))
+        (assert (= 0 (rd-caller:reprove-code kept matrix)))
+        (nothing)
+        (assert (and (= -1d0 (rd:solve-growth kept)) (= 1 (rd-caller:step-code kept residual out))))
+        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+        (assert (= 0 (rd-caller:step-code kept residual out)))
+        (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+        (nothing)
+        (assert (= -1d0 (rd:solve-backward-bound kept)))))
+    ;; The sign and the size, by hand: two equal rows [1; 1] and the residual [1, 3]. The least
+    ;; squares answer is 2, the mean, and the step is minus it; the kept row alone would give -1.
+    (let* ((pair '((0 0 1) (1 0 1))) (matrix (csc-from-entries 2 1 pair)) (kept (rd:analyze matrix)) (out (zeros 1)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:step-code kept (doubles 1d0 3d0) out)))
+      (assert (<= (abs (+ (aref out 0) 2d0)) 1d-14) () "Two equal rows against [1, 3]: the step is ~S." (aref out 0))
+      (rd-check-step "two equal rows" kept (dr-dense 2 1 pair) 2 (doubles 1d0 3d0) out))
+    ;; No row left out, on more columns than rows: the minimum-norm step, with nothing to solve
+    ;; for the rows left out.
+    (let* ((wide '((0 0 1) (0 1 2) (0 3 3) (1 1 1) (1 2 4) (1 3 1))) (matrix (csc-from-entries 2 4 wide))
+           (kept (rd:analyze matrix)) (out (zeros 4)) (residual (doubles 3d0 -5d0)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+      (assert (and (= 0 (rd:left-out-count kept)) (= 0 (rd-caller:certify-code kept 1d-9 1d-9))))
+      (assert (= 0 (rd-caller:step-code kept residual out)))
+      (rd-check-step "no row left out" kept (dr-dense 2 4 wide) 2 residual out)
+      (assert (<= (rd:step-solve-bound kept) (rd:step-bound kept) (* (rd:step-solve-bound kept) (+ 1d0 1d-12))) ()
+              "With no row left out the two bounds differ: ~S and ~S." (rd:step-solve-bound kept) (rd:step-bound kept)))
+    ;; Rows with no entry and rows of stored zeros beside real ones; one entry; a matrix of zeros,
+    ;; whose step is zero.
+    (let* ((entries '((0 0 1) (0 1 2) (2 0 0) (2 1 0) (3 0 2) (3 1 4) (4 1 5)))
+           (matrix (csc-from-entries 5 2 entries)) (kept (rd:analyze matrix)) (out (zeros 2))
+           (residual (doubles 1d0 2d0 3d0 4d0 5d0)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:step-code kept residual out)))
+      (rd-check-step "an empty row and a row of zeros" kept (dr-dense 5 2 entries) 5 residual out))
+    (let* ((one (csc-from-entries 1 1 '((0 0 5)))) (kept (rd:analyze one)) (out (zeros 1)))
+      (assert (= 0 (rd-caller:find-code kept one 1d-6 1d-12)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:step-code kept (doubles 10d0) out)))
+      (assert (<= (abs (+ (aref out 0) 2d0)) 1d-14) () "One entry of 5 against 10: the step is ~S." (aref out 0)))
+    ;; Steps that are not numbers the format holds, on one entry: 1 over 3, 1 over 7, 2 over 3 and
+    ;; the like. The step written is a rounded number and its residual can compute to exactly
+    ;; zero; the bound must still be above the distance to the exact quotient, which is not zero.
+    (let ((nonzero 0))
+      (dolist (pair '((3 1) (7 1) (3 2) (11 5) (13 1) (9 7) (49 1) (6 5)))
+        (let* ((entries (list (list 0 0 (first pair)))) (one (csc-from-entries 1 1 entries)) (kept (rd:analyze one))
+               (out (zeros 1)) (residual (doubles (coerce (second pair) 'double-float))))
+          (assert (= 0 (rd-caller:find-code kept one 1d-6 1d-12)))
+          (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+          (assert (= 0 (rd-caller:step-code kept residual out)))
+          (multiple-value-bind (for-b for-a) (rd-check-step (format nil "one entry, ~S" pair) kept (dr-dense 1 1 entries) 1 residual out)
+            (declare (ignore for-b))
+            (when (plusp for-a) (incf nonzero)))))
+      (assert (>= nonzero 6) () "The premise: the quotients are not numbers the format holds; ~D of 8 steps were inexact." nonzero))
+    (let* ((zero (csc-from-entries 2 2 '((0 0 0) (1 1 0)))) (kept (rd:analyze zero)) (out (doubles 7d0 7d0)))
+      (assert (= 0 (rd-caller:find-code kept zero 1d-6 1d-12)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:step-code kept (doubles 3d0 4d0) out)) () "A matrix of zeros: the step gave ~D."
+              (rd-caller:step-code kept (doubles 3d0 4d0) out))
+      (assert (and (every #'zerop out) (<= 0d0 (rd:step-bound kept) 1d-100)) () "A matrix of zeros gave the step ~S within ~S." out
+              (rd:step-bound kept)))
+    ;; Bound not reached. One kept row [1, 0] and a second that was equal to it when the vector was
+    ;; found and is 1.3 times it now: the gap bound is 0.3 and the kept row is proved above 0.35,
+    ;; so the certificate holds between them, and four times the gap is not below what is proved.
+    (let* ((kept-matrix (csc-from-entries 2 2 '((0 0 1) (1 0 1)))) (kept (rd:analyze kept-matrix)) (out (doubles 7d0 7d0)))
+      (assert (= 0 (rd-caller:find-code kept kept-matrix 1d-6 1d-12)))
+      (assert (= 0 (rd-caller:reprove-code kept (csc-from-entries 2 2 '((0 0 1) (1 0 1.3d0))))))
+      (assert (<= 0.3d0 (rd:gap-bound kept) 0.3001d0) () "The premise: a gap bound of 0.3; it is ~S." (rd:gap-bound kept))
+      (assert (= 0 (rd-caller:certify-code kept 0.35d0 0.35d0)))
+      (assert (= 5 (rd-caller:step-code kept (doubles 1d0 1d0) out)))
+      (assert (and (equalp out (doubles 7d0 7d0)) (not (rd:step-taken? kept)) (= -1d0 (rd:step-bound kept))))
+      ;; The same rows 1.01 apart: the step is taken, and its bound covers the exact step.
+      (let ((near '((0 0 1) (1 0 1.01d0))))
+        (assert (= 0 (rd-caller:reprove-code kept (csc-from-entries 2 2 near))))
+        (assert (= 0 (rd-caller:certify-code kept 0.05d0 0.05d0)))
+        (assert (= 0 (rd-caller:step-code kept (doubles 1d0 1d0) out)))
+        (multiple-value-bind (for-b for-a) (rd-check-step "rows 1.01 apart" kept (dr-dense 2 2 near) 2 (doubles 1d0 1d0) out)
+          (assert (> for-a (* 100 (max for-b (expt (rational (rd:step-solve-bound kept)) 2)))) ()
+                  "The premise: the step for B is not the exact step; the squared distances are ~E and ~E."
+                  (float for-b 1d0) (float for-a 1d0)))
+        ;; A residual the kept combination maps to nothing, [1, -1]: the step for B is zero and the
+        ;; exact step is not, and what covers the difference is the residual outside the range.
+        (assert (= 0 (rd-caller:step-code kept (doubles 1d0 -1d0) out)))
+        (assert (<= (abs (aref out 0)) 1d-15) () "The premise: the step for B against [1, -1] is zero; it is ~S." (aref out 0))
+        (multiple-value-bind (for-b for-a) (rd-check-step "rows 1.01 apart, a residual outside the range" kept
+                                                          (dr-dense 2 2 near) 2 (doubles 1d0 -1d0) out)
+          (declare (ignore for-b))
+          (assert (> for-a 1d-6) () "The premise: the exact step is not zero; its squared distance is ~E." (float for-a 1d0)))))
+    ;; Two rows a part in a million apart, kept both: the solve is ill conditioned, and its bound
+    ;; still covers the exact step.
+    (let* ((close (list (list 0 0 1) (list 0 1 1) (list 1 0 1) (list 1 1 1.000001d0)))
+           (matrix (csc-from-entries 2 2 close)) (kept (rd:analyze matrix))
+           (out (zeros 2)) (residual (doubles 1d0 2d0)))
+      (assert (= 0 (rd-caller:find-code kept matrix 0d0 1d-12)))
+      (assert (and (= 2 (rd:kept-count kept)) (= 0 (rd-caller:certify-code kept 1d-300 1d-10))))
+      (assert (= 0 (rd-caller:step-code kept residual out)))
+      (multiple-value-bind (for-b for-a) (rd-check-step "rows a part in a million apart" kept (dr-dense 2 2 close) 2 residual out)
+        (declare (ignore for-b))
+        (assert (and (> (abs (aref out 0)) 1d5) (<= (rd:step-bound kept) (* 1d-3 (abs (aref out 0))))) ()
+                "Rows a part in a million apart: the step is ~S within ~S, at a squared distance of ~E." out
+                (rd:step-bound kept) (float for-a 1d0))))
+    ;; A large multiplier: a kept row 2^-20 the size of the row left out, which is 2^20 times it
+    ;; plus another. The system of the rows left out then loses digits to cancellation; the
+    ;; bound is wider for it, and still a bound.
+    (dolist (power '(10 16 20 21))
+      (let* ((small (scale-float 1d0 (- power)))
+             (uneven (list (list 0 0 small) (list 0 1 small) (list 1 1 1) (list 1 2 1) (list 2 0 1) (list 2 1 2) (list 2 2 1)))
+             (matrix (csc-from-entries 3 3 uneven)) (kept (rd:analyze matrix)) (out (zeros 3)))
+        (assert (= 0 (rd-caller:find-code kept matrix 1d-9 1d-12)))
+        (assert (and (= 1 (rd:left-out-count kept)) (= 2 (aref (rd:left-out-rows kept) 0))
+                     (= (- (scale-float 1d0 power)) (aref (rd:multiplier-values kept) 0)))
+                () "The premise: row 2 is left out with a multiplier of 2^~D; rows ~S, vector ~S." power
+                (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) (subseq (rd:multiplier-values kept) 0 2))
+        (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)) () "The premise: the uneven rows are certified at 2^~D; ~D." power
+                (rd-caller:certify-code kept 1d-9 1d-9))
+        (dolist (residual (list (doubles 1d0 2d0 -3d0) (doubles 0.3d0 -0.7d0 0.9d0) (doubles 1d0 0d0 0d0) (doubles 0d0 0d0 1d0)))
+          (assert (= 0 (rd-caller:step-code kept residual out)))
+          (rd-check-step (format nil "a multiplier of 2^~D" power) kept (dr-dense 3 3 uneven) 3 residual out))
+        (format t "STEP-LARGE-MULTIPLIER 2^~D: solve bound ~,2E and whole bound ~,2E of the step's norm~%" power
+                (/ (rd:step-solve-bound kept) (sqrt (loop :for x :across out :sum (* x x))))
+                (/ (rd:step-bound kept) (sqrt (loop :for x :across out :sum (* x x)))))))
+    ;; A step that cannot be held: a residual of 2^1000 against a matrix of 2^-1000.
+    (let* ((tiny (csc-from-entries 2 2 (list (list 0 0 (scale-float 1d0 -1000)) (list 1 1 (scale-float 3d0 -1000)))))
+           (kept (rd:analyze tiny)) (out (doubles 7d0 7d0)) (floor (scale-float 1d-6 -1000)))
+      (assert (= 0 (rd-caller:find-code kept tiny floor 1d-12)))
+      (assert (= 0 (rd-caller:certify-code kept floor floor)))
+      (assert (= 6 (rd-caller:step-code kept (doubles (scale-float 1d0 1000) 1d0) out)))
+      (assert (and (equalp out (doubles 7d0 7d0)) (not (rd:step-taken? kept))))
+      (assert (= 0 (rd-caller:step-code kept (doubles (scale-float 1d0 20) 1d0) out)))
+      (assert (<= (abs (+ 1d0 (scale-float (aref out 0) -1020))) 1d-14) () "2^20 over 2^-1000: the step is ~S." (aref out 0)))
+    ;; Steady state: a reproof, a certificate and two steps allocate nothing.
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+    (allocation-check "kept-rows-step-loop"
+                      (lambda () (assert (= 0 (rd-caller:step-loop kept matrix 1d-9 1d-9 residual out 1)))))
+    (format t "STEP-OUTCOMES-PASS~%")))
+
+(defun run-step-tests ()
+  (run-step-exact-tests)
+  (run-step-scale-tests)
+  (run-step-outcome-tests)
+  (format t "STEP-TESTS-PASS~%"))
+
 (defun run-rank-deficient-tests ()
   (run-rank-deficient-exact-tests)
   (run-rank-deficient-reprove-tests)
   (run-rank-deficient-scale-tests)
   (run-singular-bounds-tests)
   (run-rank-deficient-outcome-tests)
+  (run-step-tests)
   (run-rank-deficient-encapsulation-tests)
   (format t "RANK-DEFICIENT-TESTS-PASS~%"))

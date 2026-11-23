@@ -4,6 +4,7 @@
                     (#:math #:coalton/math)
                     (#:csc #:coalton-linalg/sparse/csc)
                     (#:rows #:coalton-linalg/sparse/dependent-rows)
+                    (#:gram #:coalton-linalg/sparse/gram)
                     (#:aug #:coalton-linalg/sparse/augmented)
                     (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
                     (#:fp #:coalton-linalg/internal/float)
@@ -19,7 +20,11 @@
            #:largest-singular-bounds!
            #:CertificateStatus #:Certified #:CertificateGapAboveFloor #:CertificateKeptNotAboveFloor
            #:CertificateUnresolved #:CertificateBadFloor #:CertificateNothingKept
-           #:certify! #:certified? #:proved-lower-bound))
+           #:certify! #:certified? #:proved-lower-bound
+           #:StepStatus #:StepTaken #:StepNoCertificate #:StepBadSize #:StepNonFiniteRhs #:StepFactorRefused
+           #:StepBoundNotReached #:StepNonFiniteResult
+           #:step! #:step-taken? #:step-solve-bound #:step-bound #:step-corrections #:correction-limit
+           #:solve-growth #:solve-backward-bound #:predicted-rate))
 (cl:in-package #:coalton-linalg/sparse/rank-deficient)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -28,6 +33,29 @@
 ;;; docs/rank-deficient.md for the contract and docs/design-rank-deficient-step.md for the design.
 
 (coalton-toplevel
+  (define-struct StepStorage
+    "What a step on a standing kept set works in: the kept rows' numbering, the system of the rows left out, and the vectors of the two solves."
+    (numbers (arr:LispArray UFix))
+    (system (Optional ldlt:Symbolic))
+    (marks (arr:LispArray UFix))
+    (longest (arr:LispArray UFix))
+    (uses (arr:LispArray UFix))
+    (residual (arr:LispArray F64))
+    (z (arr:LispArray F64))
+    (y (arr:LispArray F64))
+    (trial (arr:LispArray F64))
+    (kept-sums (arr:LispArray F64))
+    (kept-magnitudes (arr:LispArray F64))
+    (kept-extras (arr:LispArray F64))
+    (out-values (arr:LispArray F64))
+    (out-solved (arr:LispArray F64))
+    (out-errors (arr:LispArray F64))
+    (unknown (arr:LispArray F64))
+    (best (arr:LispArray F64))
+    (defect (arr:LispArray F64))
+    (change (arr:LispArray F64))
+    (figures (arr:LispArray F64)))
+
   (define-struct KeptStorage
     "Owns the search, a copy of the pattern by rows, the kept vectors, and what the certificate factors."
     (rows UFix)
@@ -56,7 +84,8 @@
     (kept-values (cell:Cell (arr:LispArray F64)))
     (augmented (cell:Cell (arr:LispArray F64)))
     (plan (cell:Cell (Optional aug:AugmentedPlan)))
-    (symbolic (cell:Cell (Optional ldlt:Symbolic))))
+    (symbolic (cell:Cell (Optional ldlt:Symbolic)))
+    (step (cell:Cell (Optional StepStorage))))
 
   (repr :transparent)
   (define-type KeptRows
@@ -123,7 +152,17 @@
   ;; from next time, in the divided units, or 0.
   ;;
   ;; The state array: [0] 1 when a kept set and its vectors stand; [1] the rows left out; [2] 1
-  ;; when the bounds stand for the values held; [3] 1 when a certificate stands.
+  ;; when the bounds stand for the values held; [3] 1 when a certificate stands; [4] 1 when the
+  ;; factor the symbolic analysis holds is the solve's, for the standing certificate; [5] 1 when a
+  ;; step stands.
+  ;;
+  ;; A step's marks: [0] the system of the rows left out: 0 it could not be factored, 1 its factor
+  ;; stands, 2 there is none to solve; [1] the corrections the latest step made.
+  ;;
+  ;; A step's figures: [0] the solve's bound and [1] the whole bound of the latest step, in the
+  ;; caller's units; [2] the growth, [3] the backward bound and [4] the predicted rate of the
+  ;; solve's factor; [5] the power of two at the residual's largest entry and [6] its reciprocal;
+  ;; [8] to [11] are where the residual routines leave their results.
 
   (declare analyze-with-limit (csc:Matrix * UFix -> KeptRows))
   (define (analyze-with-limit matrix maximum-entries)
@@ -157,13 +196,13 @@
     (arr:set! scale 3 -1.0d0)
     (MkKeptRows
      (KeptStorage m n maximum-entries analysis column-starts row-indices row-starts row-columns row-positions
-                  (arr:make entry-total 0.0d0) scale (arr:make 4 (the UFix 0))
+                  (arr:make entry-total 0.0d0) scale (arr:make 6 (the UFix 0))
                   (arr:make m (the UFix 1)) (arr:make (+ m 1) (the UFix 0))
                   (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0))
                   (arr:make m -1.0d0) (arr:make m 0.0d0)
                   (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make n (the UFix 0)) (arr:make n (the UFix 0))
                   (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0)) (cell:new (arr:make 0 0.0d0))
-                  (cell:new None) (cell:new None))))
+                  (cell:new None) (cell:new None) (cell:new None))))
 
   (declare analyze (csc:Matrix -> KeptRows))
   (define (analyze matrix)
@@ -287,6 +326,13 @@
                   (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
                   fp:infinity)))
 
+  (inline)
+  (declare withdraw-step! (arr:LispArray UFix -> Void))
+  (define (withdraw-step! st)
+    "No solve factor and no step stand: a search, a reproof and a certificate each factor over the one, and change what the other was of."
+    (arr:set! st 4 0)
+    (arr:set! st 5 0))
+
   (declare take-values! (KeptStorage * csc:Matrix -> Void))
   (define (take-values! s matrix)
     "Hold the matrix's values divided by the power of two at the largest."
@@ -319,6 +365,53 @@
                       (math:sqrt (+ (cell:read total) (* order fp:least-positive))))))
     (arr:set! (.scale s) 2 gap)
     (inline (math:finite? gap)))
+
+  (declare left-out-system! (KeptStorage * arr:LispArray UFix * UFix * arr:LispArray UFix * arr:LispArray UFix
+                             -> Optional ldlt:Symbolic))
+  (define (left-out-system! s number r uses marks)
+    "Analyze and factor I + W W^T, W holding in row p the multipliers of the row left out at position p, the kept vector's entries with the sign changed. Counts into uses how many vectors hold each kept row, and sets marks[0]: 2 when there is nothing to solve, 1 when the factor stands, 0 when the squares cannot be held or the factorization refused."
+    (let d = (arr:aref (.state s) 1))
+    (let starts = (.vector-starts s))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (let held = (arr:aref starts d))
+    (let biggest = (cell:new 0.0d0))
+    (for ((e 0 (+ e 1))) :while (< e held)
+      (let k = (arr:aref number (arr:aref vector-rows e)))
+      (arr:set! uses k (+ (arr:aref uses k) 1))
+      (when (> (abs (arr:aref vector-values e)) (cell:read biggest))
+        (cell:write! biggest (abs (arr:aref vector-values e)))))
+    (arr:set! marks 0 0)
+    (when (or (== d 0) (== held 0))
+      (arr:set! marks 0 2)
+      (return None))
+    (let squares = (* (* (cell:read biggest) (cell:read biggest)) (fp:count->float (+ held 1))))
+    (unless (and (inline (math:finite? squares)) (< squares (* 0.25d0 fp:greatest)))
+      (return None))
+    (let w-pointers = (arr:make (+ r 1) (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k r)
+      (arr:set! w-pointers (+ k 1) (+ (arr:aref w-pointers k) (arr:aref uses k))))
+    (let w-cursor = (arr:make r (the UFix 0)))
+    (let w-indices = (arr:make held (the UFix 0)))
+    (let w-values = (arr:make held 0.0d0))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+        (let k = (arr:aref number (arr:aref vector-rows e)))
+        (let at = (+ (arr:aref w-pointers k) (arr:aref w-cursor k)))
+        (arr:set! w-indices at p)
+        (arr:set! w-values at (- 0.0d0 (arr:aref vector-values e)))
+        (arr:set! w-cursor k (+ (arr:aref w-cursor k) 1))))
+    (let w-matrix = (csc:from-csc d r w-pointers w-indices w-values))
+    (let w-plan = (gram:analyze-aat-with-limit w-matrix (.limit s)))
+    (let product = (arr:make (gram:entry-count w-plan) 0.0d0))
+    (gram:refill-csc! w-plan w-matrix product)
+    (let w-symbolic = (ldlt:analyze-with-limit
+                       (ldlt:Pattern (gram:dimension w-plan) (gram:column-pointers w-plan) (gram:row-indices w-plan))
+                       (.limit s)))
+    ;; A shift of -1 adds the identity.
+    (when (== (ldlt:factor! w-symbolic product -1.0d0) ldlt:FactorSuccess)
+      (arr:set! marks 0 1))
+    (Some w-symbolic))
 
   (declare build-kept! (KeptStorage -> Unit))
   (define (build-kept! s)
@@ -363,6 +456,30 @@
     (cell:write! (.augmented s) (arr:make (aug:entry-count plan) 0.0d0))
     (cell:write! (.plan s) (Some plan))
     (cell:write! (.symbolic s) (Some symbolic))
+    ;; What a step works in.
+    (let d = (- m r))
+    (let uses = (arr:make r (the UFix 0)))
+    (let marks = (arr:make 2 (the UFix 0)))
+    (let system = (left-out-system! s number r uses marks))
+    (let longest = (arr:make 2 (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let extent = (- (arr:aref (.row-starts s) (+ i 1)) (arr:aref (.row-starts s) i)))
+      (when (> extent (arr:aref longest 0)) (arr:set! longest 0 extent)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let extent = (- (arr:aref column-starts (+ j 1)) (arr:aref column-starts j)))
+      (when (> extent (arr:aref longest 1)) (arr:set! longest 1 extent)))
+    (let figures = (arr:make 12 0.0d0))
+    (arr:set! figures 0 -1.0d0)
+    (arr:set! figures 1 -1.0d0)
+    (cell:write! (.step s)
+                 (Some (StepStorage number system marks longest uses
+                                    (arr:make m 0.0d0)
+                                    (arr:make r 0.0d0) (arr:make r 0.0d0) (arr:make r 0.0d0)
+                                    (arr:make r 0.0d0) (arr:make r 0.0d0) (arr:make r 0.0d0)
+                                    (arr:make d 0.0d0) (arr:make d 0.0d0) (arr:make d 0.0d0)
+                                    (arr:make (+ n r) 0.0d0) (arr:make (+ n r) 0.0d0)
+                                    (arr:make (+ n r) 0.0d0) (arr:make (+ n r) 0.0d0)
+                                    figures)))
     Unit)
 
   (declare find-kept-rows! (KeptRows * csc:Matrix * F64 * F64 -> FindStatus))
@@ -373,6 +490,7 @@
     (arr:set! st 0 0)
     (arr:set! st 2 0)
     (arr:set! st 3 0)
+    (withdraw-step! st)
     (arr:set! (.scale s) 3 -1.0d0)
     (arr:set! (.scale s) 4 0.0d0)
     (unless (and (> drop 0.0d0) (< drop 1.0d0)) (return FindBadDrop))
@@ -445,6 +563,7 @@
     (unless (== (arr:aref st 0) 1) (return ReproveNothingKept))
     (arr:set! st 2 0)
     (arr:set! st 3 0)
+    (withdraw-step! st)
     (arr:set! (.scale s) 3 -1.0d0)
     (rows:check-pattern! (.analysis s) matrix)
     (take-values! s matrix)
@@ -626,6 +745,7 @@
     (let s = (storage kept))
     (let st = (.state s))
     (arr:set! st 3 0)
+    (withdraw-step! st)
     (arr:set! (.scale s) 3 -1.0d0)
     (unless (and (== (arr:aref st 0) 1) (== (arr:aref st 2) 1)) (return CertificateNothingKept))
     (unless (and (> lower-floor 0.0d0)
@@ -676,4 +796,465 @@
   (declare proved-lower-bound (KeptRows -> F64))
   (define (proved-lower-bound kept)
     "The bound the standing certificate proved: every singular value of the kept rows, and so the kept count's largest of the matrix, exceeds it. At least the upper floor asked for; -1 when no certificate stands."
-    (arr:aref (.scale (storage kept)) 3)))
+    (arr:aref (.scale (storage kept)) 3))
+
+  ;;; The step. See docs/rank-deficient.md, The step, and docs/design-rank-deficient-step.md.
+
+  (derive Eq)
+  (repr :enum)
+  (define-type StepStatus
+    "Outcome of a step on the certified kept rows."
+    StepTaken
+    "The step was written and its two bounds stand."
+    StepNoCertificate
+    "No certificate stands for the values held; nothing was written."
+    StepBadSize
+    "The residual has not the row count, or the output not the column count; nothing was written."
+    StepNonFiniteRhs
+    "An entry of the residual was not finite; nothing was written."
+    StepFactorRefused
+    "The system of the rows left out, or the kept rows' solve, could not be factored; nothing was written."
+    StepBoundNotReached
+    "A residual was not finite, the refinement was still at least halving its bound at its last correction, or four times the gap bound is not below the bound proved on the kept rows; nothing was written."
+    StepNonFiniteResult
+    "The step cannot be held in the caller's units; nothing was written.")
+
+  (declare correction-limit UFix)
+  (define correction-limit
+    "The most corrections a step's refinement makes after its first solve: 8. A correction contracts by 2^-10 or better while it is above rounding, so six exhaust the precision and two are left for corrections that halve the bound by chance at the bottom."
+    8)
+
+  (declare solve-shift F64)
+  (define solve-shift
+    "The solve's bottom block over its top block, 2^-10: with the top block at the bound the certificate proved, the contraction of a correction is below 2^-10 in exact arithmetic."
+    9.765625d-4)
+
+  (inline)
+  (declare rounding (UFix -> F64))
+  (define (rounding terms)
+    "k u / (1 - k u): what a sum of k rounded operations can be off by, relative to the sum of its terms' magnitudes."
+    (let k = (fp:count->float terms))
+    (/ (* k fp:unit-roundoff) (- 1.0d0 (* k fp:unit-roundoff))))
+
+  (declare left-out-product! (KeptStorage * StepStorage * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (left-out-product! s ws source target)
+    "target = W source: for each row left out, its multipliers against a vector over the kept rows."
+    (let d = (arr:aref (.state s) 1))
+    (let starts = (.vector-starts s))
+    (let numbers = (.numbers ws))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (let sum = (cell:new 0.0d0))
+      (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+        (cell:write! sum (- (cell:read sum)
+                            (* (arr:aref vector-values e)
+                               (arr:aref source (arr:aref numbers (arr:aref vector-rows e)))))))
+      (arr:set! target p (cell:read sum))))
+
+  (declare project! (KeptStorage * StepStorage * arr:LispArray F64 * arr:LispArray F64 -> Boolean))
+  (define (project! s ws source target)
+    "target = (I + W^T W)^-1 source, as source - W^T (I + W W^T)^-1 W source; the two arrays are distinct. False when the system's solve refuses."
+    (let d = (arr:aref (.state s) 1))
+    (let r = (- (.rows s) d))
+    (for ((k 0 (+ k 1))) :while (< k r)
+      (arr:set! target k (arr:aref source k)))
+    (match (.system ws)
+      ((None) True)
+      ((Some symbolic)
+       (left-out-product! s ws source (.out-values ws))
+       (if (== (ldlt:solve! (ldlt:symbolic-factor symbolic) (.out-values ws) (.out-solved ws)) ldlt:SolveSuccess)
+           (progn
+             (let starts = (.vector-starts s))
+             (let numbers = (.numbers ws))
+             (let vector-rows = (cell:read (.vector-rows s)))
+             (let vector-values = (cell:read (.vector-values s)))
+             (let solved = (.out-solved ws))
+             (for ((p 0 (+ p 1))) :while (< p d)
+               (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+                 (let k = (arr:aref numbers (arr:aref vector-rows e)))
+                 (arr:set! target k (+ (arr:aref target k) (* (arr:aref vector-values e) (arr:aref solved p))))))
+             True)
+           False))))
+
+  (declare system-residual! (KeptStorage * StepStorage * arr:LispArray F64 -> Void))
+  (define (system-residual! s ws candidate)
+    "For a candidate y over the kept rows: leave C^T (r - C y), as computed, in the kept sums, and in figures[9] an upper bound on the 2-norm of the exact one, or infinity. C is the identity on the kept rows over W."
+    (let m = (.rows s))
+    (let d = (arr:aref (.state s) 1))
+    (let r = (- m d))
+    (let flags = (.flags s))
+    (let numbers = (.numbers ws))
+    (let left = (rows:left-out-rows (.analysis s)))
+    (let starts = (.vector-starts s))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (let residual = (.residual ws))
+    (let sums = (.kept-sums ws))
+    (let magnitudes = (.kept-magnitudes ws))
+    (let extras = (.kept-extras ws))
+    (let out-values = (.out-values ws))
+    (let out-errors = (.out-errors ws))
+    ;; The rows left out: r_t - (W y)_t, and what its rounding can be.
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (let own = (arr:aref residual (arr:aref left p)))
+      (let sum = (cell:new own))
+      (let magnitude = (cell:new (abs own)))
+      (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+        (let product = (* (arr:aref vector-values e) (arr:aref candidate (arr:aref numbers (arr:aref vector-rows e)))))
+        (cell:write! sum (+ (cell:read sum) product))
+        (cell:write! magnitude (+ (cell:read magnitude) (abs product))))
+      (let terms = (+ (- (arr:aref starts (+ p 1)) (arr:aref starts p)) 1))
+      (arr:set! out-values p (cell:read sum))
+      (arr:set! out-errors p (+ (* (rounding (+ (* 2 terms) 2)) (cell:read magnitude))
+                                (* (fp:count->float terms) fp:least-positive))))
+    ;; The kept rows: (r_k - y_k) + (W^T of the above)_k.
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (when (== (arr:aref flags i) 1)
+        (let k = (arr:aref numbers i))
+        (arr:set! sums k (- (arr:aref residual i) (arr:aref candidate k)))
+        (arr:set! magnitudes k (+ (abs (arr:aref residual i)) (abs (arr:aref candidate k))))
+        (arr:set! extras k 0.0d0)))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+        (let k = (arr:aref numbers (arr:aref vector-rows e)))
+        (let product = (* (arr:aref vector-values e) (arr:aref out-values p)))
+        (arr:set! sums k (- (arr:aref sums k) product))
+        (arr:set! magnitudes k (+ (arr:aref magnitudes k) (abs product)))
+        (arr:set! extras k (+ (arr:aref extras k) (* (abs (arr:aref vector-values e)) (arr:aref out-errors p))))))
+    (let total = (cell:new 0.0d0))
+    (for ((k 0 (+ k 1))) :while (< k r)
+      (let terms = (+ (arr:aref (.uses ws) k) 2))
+      (let relative = (rounding (+ (* 2 terms) 2)))
+      (let entry = (+ (+ (abs (arr:aref sums k)) (* relative (arr:aref magnitudes k)))
+                      (+ (* (+ 1.0d0 relative) (arr:aref extras k)) (* (fp:count->float terms) fp:least-positive))))
+      (cell:write! total (+ (cell:read total) (* entry entry))))
+    (let order = (fp:count->float r))
+    (let padded = (+ (cell:read total) (* order fp:least-positive)))
+    (arr:set! (.figures ws) 9
+              (if (inline (math:finite? padded))
+                  (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
+                  fp:infinity)))
+
+  (declare saddle-residual! (KeptStorage * StepStorage * F64 -> Void))
+  (define (saddle-residual! s ws tau)
+    "For the iterate [x; l] in the unknown and y: leave [0; y] - K [x; l] in the defect, K = [[tau I, J_S^T], [J_S, 0]], and in figures[8] an upper bound on the 2-norm of x - J_S^+ y: the root of the sum of the squares of the two exact residuals' norms, over tau. It may be infinite."
+    (let m = (.rows s))
+    (let n = (.columns s))
+    (let d = (arr:aref (.state s) 1))
+    (let r = (- m d))
+    (let flags = (.flags s))
+    (let numbers = (.numbers ws))
+    (let starts = (.row-starts s))
+    (let columns = (.row-columns s))
+    (let positions = (.row-positions s))
+    (let entries = (.entries s))
+    (let unknown = (.unknown ws))
+    (let defect = (.defect ws))
+    (let y = (.y ws))
+    (let sums = (.sums s))
+    (let magnitudes = (.magnitudes s))
+    (let by-rows = (+ (arr:aref (.longest ws) 0) 2))
+    (let by-columns = (+ (arr:aref (.longest ws) 1) 2))
+    (let row-relative = (rounding (+ (* 2 by-rows) 2)))
+    (let column-relative = (rounding (+ (* 2 by-columns) 2)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let a = (* tau (arr:aref unknown j)))
+      (arr:set! sums j (- 0.0d0 a))
+      (arr:set! magnitudes j (abs a)))
+    (let total = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (when (== (arr:aref flags i) 1)
+        (let k = (arr:aref numbers i))
+        (let multiplier = (arr:aref unknown (+ n k)))
+        (let sum = (cell:new (arr:aref y k)))
+        (let magnitude = (cell:new (abs (arr:aref y k))))
+        (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+          (let j = (arr:aref columns q))
+          (let a = (arr:aref entries (arr:aref positions q)))
+          (let above = (* a multiplier))
+          (arr:set! sums j (- (arr:aref sums j) above))
+          (arr:set! magnitudes j (+ (arr:aref magnitudes j) (abs above)))
+          (let across = (* a (arr:aref unknown j)))
+          (cell:write! sum (- (cell:read sum) across))
+          (cell:write! magnitude (+ (cell:read magnitude) (abs across))))
+        (arr:set! defect (+ n k) (cell:read sum))
+        (let entry = (+ (+ (abs (cell:read sum)) (* row-relative (cell:read magnitude)))
+                        (* (fp:count->float by-rows) fp:least-positive)))
+        (cell:write! total (+ (cell:read total) (* entry entry)))))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! defect j (arr:aref sums j))
+      (let entry = (+ (+ (abs (arr:aref sums j)) (* column-relative (arr:aref magnitudes j)))
+                      (* (fp:count->float by-columns) fp:least-positive)))
+      (cell:write! total (+ (cell:read total) (* entry entry)))
+      (arr:set! sums j 0.0d0)
+      (arr:set! magnitudes j 0.0d0))
+    (let order = (fp:count->float (+ n r)))
+    (let padded = (+ (cell:read total) (* order fp:least-positive)))
+    (arr:set! (.figures ws) 8
+              (if (inline (math:finite? padded))
+                  (/ (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 12.0d0))) (math:sqrt padded)) tau)
+                  fp:infinity)))
+
+  (declare whole-residual! (KeptStorage * StepStorage -> Void))
+  (define (whole-residual! s ws)
+    "For the kept iterate x: leave in figures[10] an upper bound on the 2-norm of r - J x over every row, exact product, and in figures[11] an upper bound on the largest singular value of J, the root of its 1-norm times its infinity-norm; both for the divided values, and either may be infinite."
+    (let m = (.rows s))
+    (let n = (.columns s))
+    (let starts = (.row-starts s))
+    (let columns = (.row-columns s))
+    (let positions = (.row-positions s))
+    (let entries = (.entries s))
+    (let residual = (.residual ws))
+    (let x = (.best ws))
+    (let sums = (.sums s))
+    (let by-rows = (+ (arr:aref (.longest ws) 0) 1))
+    (let relative = (rounding (+ (* 2 by-rows) 2)))
+    (let total = (cell:new 0.0d0))
+    (let tallest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let sum = (cell:new (arr:aref residual i)))
+      (let magnitude = (cell:new (abs (arr:aref residual i))))
+      (let across = (cell:new 0.0d0))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (let j = (arr:aref columns q))
+        (let a = (arr:aref entries (arr:aref positions q)))
+        (let product = (* a (arr:aref x j)))
+        (cell:write! sum (- (cell:read sum) product))
+        (cell:write! magnitude (+ (cell:read magnitude) (abs product)))
+        (cell:write! across (+ (cell:read across) (abs a)))
+        (arr:set! sums j (+ (arr:aref sums j) (abs a))))
+      (when (> (cell:read across) (cell:read tallest)) (cell:write! tallest (cell:read across)))
+      (let entry = (+ (+ (abs (cell:read sum)) (* relative (cell:read magnitude)))
+                      (* (fp:count->float by-rows) fp:least-positive)))
+      (cell:write! total (+ (cell:read total) (* entry entry))))
+    (let widest = (cell:new 0.0d0))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (when (> (arr:aref sums j) (cell:read widest)) (cell:write! widest (arr:aref sums j)))
+      (arr:set! sums j 0.0d0))
+    (let order = (fp:count->float m))
+    (let padded = (+ (cell:read total) (* order fp:least-positive)))
+    (arr:set! (.figures ws) 10
+              (if (inline (math:finite? padded))
+                  (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
+                  fp:infinity))
+    (arr:set! (.figures ws) 11
+              (* (+ 1.0d0 (* (* 4.0d0 fp:unit-roundoff) (fp:count->float (+ (+ m n) 4))))
+                 (math:sqrt (* (cell:read widest) (cell:read tallest))))))
+
+  (inline)
+  (declare unscaled (F64 * F64 * F64 -> F64))
+  (define (unscaled value by-residual by-matrix)
+    "A quantity of the divided problem in the caller's units: times the residual's power of two and over the matrix's, together where their product can be held and one after the other where it cannot."
+    (let together = (* by-residual by-matrix))
+    (if (or (== together 0.0d0) (not (inline (math:finite? together))))
+        (* (* value by-residual) by-matrix)
+        (* value together)))
+
+  (declare step! (KeptRows * arr:LispArray F64 * arr:LispArray F64 -> StepStatus))
+  (define (step! kept r out)
+    "Write the step -B^+ r for the matrix the standing certificate is of: B is that matrix with each row left out replaced by its kept combination of the kept rows, and B^+ r is its minimum-norm least squares solution. Two bounds then stand: on the distance from the exact step for B, and on the distance from the step of the matrix truncated at the kept count. Needs a standing certificate; allocates nothing. See docs/rank-deficient.md."
+    (let s = (storage kept))
+    (let st = (.state s))
+    (arr:set! st 5 0)
+    (unless (== (arr:aref st 3) 1) (return StepNoCertificate))
+    (let ws = (match (cell:read (.step s)) ((Some held) held) ((None) (return StepNoCertificate))))
+    (let plan = (match (cell:read (.plan s)) ((Some held) held) ((None) (return StepNoCertificate))))
+    (let symbolic = (match (cell:read (.symbolic s)) ((Some held) held) ((None) (return StepNoCertificate))))
+    (let m = (.rows s))
+    (let n = (.columns s))
+    (let d = (arr:aref st 1))
+    (let kept-count = (- m d))
+    (unless (and (== (arr:length r) m) (== (arr:length out) n)) (return StepBadSize))
+    (let largest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let a = (abs (arr:aref r i)))
+      (unless (inline (math:finite? a)) (return StepNonFiniteRhs))
+      (when (> a (cell:read largest)) (cell:write! largest a)))
+    (let figures = (.figures ws))
+    (let marks = (.marks ws))
+    (when (== (arr:aref marks 0) 0) (return StepFactorRefused))
+    ;; The solve's factor, unless it already stands for this certificate. tau and the gap bound
+    ;; are the ones the standing certificate was issued on, in the divided matrix's units.
+    (let tau = (arr:aref (.scale s) 4))
+    (let gap = (arr:aref (.scale s) 2))
+    (let factor = (ldlt:symbolic-factor symbolic))
+    (when (/= (arr:aref st 4) 1)
+      (let augmented = (cell:read (.augmented s)))
+      (aug:refill! plan (cell:read (.kept-values s)) tau (* tau solve-shift) augmented)
+      (unless (== (ldlt:factor-signed! symbolic augmented 0.0d0) ldlt:SignedSuccess)
+        (return StepFactorRefused))
+      (unless (and (== (ldlt:positive-pivot-count factor) n) (== (ldlt:negative-pivot-count factor) kept-count))
+        (return StepFactorRefused))
+      (let beta = (ldlt:factor-backward-bound factor))
+      (let eta = (/ (* 2.0d0 beta) tau))
+      (arr:set! figures 2 (ldlt:factor-growth factor))
+      (arr:set! figures 3 beta)
+      (arr:set! figures 4 (if (< eta 1.0d0) (/ (+ solve-shift eta) (- 1.0d0 eta)) fp:infinity))
+      (arr:set! st 4 1))
+    ;; The residual divided by the power of two at its largest entry.
+    (fp:binade! (cell:read largest) figures 5)
+    (let residual = (.residual ws))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! residual i (* (arr:aref r i) (arr:aref figures 6))))
+    ;; y = C^+ r: z = C^T r, then (I + W^T W) y = z, and corrections while the proved residual
+    ;; at least halves, the candidate with the smallest kept.
+    (let flags = (.flags s))
+    (let numbers = (.numbers ws))
+    (let left = (rows:left-out-rows (.analysis s)))
+    (let starts = (.vector-starts s))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (let z = (.z ws))
+    (let y = (.y ws))
+    (let trial = (.trial ws))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (when (== (arr:aref flags i) 1)
+        (arr:set! z (arr:aref numbers i) (arr:aref residual i))))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (let own = (arr:aref residual (arr:aref left p)))
+      (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+        (let k = (arr:aref numbers (arr:aref vector-rows e)))
+        (arr:set! z k (- (arr:aref z k) (* (arr:aref vector-values e) own)))))
+    (unless (project! s ws z y) (return StepBoundNotReached))
+    (system-residual! s ws y)
+    (let system-bound = (cell:new (arr:aref figures 9)))
+    (unless (inline (math:finite? (cell:read system-bound))) (return StepBoundNotReached))
+    (let system-going = (cell:new True))
+    (let system-corrections = (cell:new (the UFix 0)))
+    (for () :while (and (cell:read system-going) (< (cell:read system-corrections) correction-limit))
+      (cell:write! system-corrections (+ (cell:read system-corrections) 1))
+      ;; The kept sums hold the residual of y as it stands: a candidate is taken whenever it
+      ;; is the better, and the corrections go on only from a candidate that was taken.
+      (let projected = (project! s ws (.kept-sums ws) trial))
+      (unless projected (cell:write! system-going False))
+      (when projected
+        (for ((k 0 (+ k 1))) :while (< k kept-count)
+          (arr:set! trial k (+ (arr:aref y k) (arr:aref trial k))))
+        (system-residual! s ws trial)
+        (let bound = (arr:aref figures 9))
+        (let halved = (<= (* 2.0d0 bound) (cell:read system-bound)))
+        (when (< bound (cell:read system-bound))
+          (cell:write! system-bound bound)
+          (for ((k 0 (+ k 1))) :while (< k kept-count)
+            (arr:set! y k (arr:aref trial k))))
+        (unless halved
+          (cell:write! system-going False))))
+    ;; x = J_S^+ y through the augmented matrix: a first solve, then corrections against the
+    ;; matrix with no bottom block, the iterate with the smallest proved bound kept.
+    (let order = (+ n kept-count))
+    (let unknown = (.unknown ws))
+    (let best = (.best ws))
+    (let defect = (.defect ws))
+    (let change = (.change ws))
+    (for ((q 0 (+ q 1))) :while (< q n)
+      (arr:set! defect q 0.0d0))
+    (for ((k 0 (+ k 1))) :while (< k kept-count)
+      (arr:set! defect (+ n k) (arr:aref y k)))
+    (unless (== (ldlt:solve! factor defect unknown) ldlt:SolveSuccess) (return StepBoundNotReached))
+    (saddle-residual! s ws tau)
+    (let smallest = (cell:new (arr:aref figures 8)))
+    (unless (inline (math:finite? (cell:read smallest))) (return StepBoundNotReached))
+    (for ((q 0 (+ q 1))) :while (< q order)
+      (arr:set! best q (arr:aref unknown q)))
+    (let corrections = (cell:new (the UFix 0)))
+    (let going = (cell:new True))
+    (let unfinished = (cell:new False))
+    (for () :while (and (cell:read going) (< (cell:read corrections) correction-limit))
+      (unless (== (ldlt:solve! factor defect change) ldlt:SolveSuccess) (return StepBoundNotReached))
+      (for ((q 0 (+ q 1))) :while (< q order)
+        (arr:set! unknown q (+ (arr:aref unknown q) (arr:aref change q))))
+      (cell:write! corrections (+ (cell:read corrections) 1))
+      (saddle-residual! s ws tau)
+      (let bound = (arr:aref figures 8))
+      (unless (inline (math:finite? bound)) (return StepBoundNotReached))
+      (let halved = (<= (* 2.0d0 bound) (cell:read smallest)))
+      (when (< bound (cell:read smallest))
+        (cell:write! smallest bound)
+        (for ((q 0 (+ q 1))) :while (< q order)
+          (arr:set! best q (arr:aref unknown q))))
+      (when (and halved (== (cell:read corrections) correction-limit))
+        (cell:write! unfinished True))
+      (unless halved
+        (cell:write! going False)))
+    (when (cell:read unfinished) (return StepBoundNotReached))
+    ;; The solve's bound: the kept rows' solve, and the error of y carried through J_S^+.
+    (let margin = (+ 1.0d0 (* 64.0d0 fp:unit-roundoff)))
+    (let solve-bound = (* margin (+ (cell:read smallest) (/ (cell:read system-bound) tau))))
+    ;; The distance to the step of the matrix truncated at the kept count. With X bounding the
+    ;; exact step's norm and rho the residual outside the range,
+    ;;   delta <= 2 gap (2 X / tau + rho / tau^2) / (1 - 4 gap / tau).
+    (let squares = (cell:new 0.0d0))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (cell:write! squares (+ (cell:read squares) (* (arr:aref best j) (arr:aref best j)))))
+    (let step-norm = (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (fp:count->float (+ n 10))))
+                     (math:sqrt (+ (cell:read squares) (* (fp:count->float n) fp:least-positive)))))
+    (whole-residual! s ws)
+    (let reach = (* margin (+ step-norm solve-bound)))
+    (let outside = (* margin (+ (+ (arr:aref figures 10) (* (arr:aref figures 11) solve-bound)) (* gap reach))))
+    (let ratio = (/ (* 4.0d0 gap) tau))
+    (unless (< (* margin ratio) 1.0d0) (return StepBoundNotReached))
+    (let truncation = (/ (* margin (* (* 2.0d0 gap) (+ (/ (* 2.0d0 reach) tau) (/ (/ outside tau) tau))))
+                         (- 1.0d0 (* margin ratio))))
+    (let whole = (* margin (+ solve-bound truncation)))
+    (unless (inline (math:finite? whole)) (return StepBoundNotReached))
+    ;; Back to the caller's units, and against the residual: nothing is written unless all of it can be.
+    (let by-residual = (arr:aref figures 5))
+    (let by-matrix = (arr:aref (.scale s) 1))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let v = (inline (unscaled (- 0.0d0 (arr:aref best j)) by-residual by-matrix)))
+      (unless (inline (math:finite? v)) (return StepNonFiniteResult))
+      (arr:set! change j v))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! out j (arr:aref change j)))
+    (arr:set! figures 0 (inline (restored (inline (unscaled solve-bound by-residual by-matrix)) 1.0d0)))
+    (arr:set! figures 1 (inline (restored (inline (unscaled whole by-residual by-matrix)) 1.0d0)))
+    (arr:set! marks 1 (cell:read corrections))
+    (arr:set! st 5 1)
+    StepTaken)
+
+  (declare step-taken? (KeptRows -> Boolean))
+  (define (step-taken? kept)
+    "Whether a step stands: the latest step! returned StepTaken and neither a search, a reproof nor a certificate came since."
+    (== (arr:aref (.state (storage kept)) 5) 1))
+
+  (declare step-figure (KeptRows * UFix * UFix -> F64))
+  (define (step-figure kept slot needed)
+    "A figure of the step's storage while the state at needed is 1; -1 otherwise."
+    (let s = (storage kept))
+    (match (cell:read (.step s))
+      ((Some ws) (if (== (arr:aref (.state s) needed) 1) (arr:aref (.figures ws) slot) -1.0d0))
+      ((None) -1.0d0)))
+
+  (declare step-solve-bound (KeptRows -> F64))
+  (define (step-solve-bound kept)
+    "For the standing step x and the residual it was taken on: an upper bound on the 2-norm of x + B^+ r, the distance from the exact step for B. -1 when no step stands. It may be infinite."
+    (step-figure kept 0 5))
+
+  (declare step-bound (KeptRows -> F64))
+  (define (step-bound kept)
+    "For the standing step x: an upper bound on the 2-norm of its distance from the step of the matrix truncated at the kept count, the minimum-norm least squares step a singular value decomposition cut at the certified floor gives. It includes the solve's bound. -1 when no step stands."
+    (step-figure kept 1 5))
+
+  (declare step-corrections (KeptRows -> UFix))
+  (define (step-corrections kept)
+    "Corrections the standing step's refinement made after its first solve; 0 when no step stands."
+    (let s = (storage kept))
+    (match (cell:read (.step s))
+      ((Some ws) (if (== (arr:aref (.state s) 5) 1) (arr:aref (.marks ws) 1) 0))
+      ((None) 0)))
+
+  (declare solve-growth (KeptRows -> F64))
+  (define (solve-growth kept)
+    "The growth of the factor the steps since the standing certificate solve with; -1 when there is none. A diagnostic: nothing is refused on it."
+    (step-figure kept 2 4))
+
+  (declare solve-backward-bound (KeptRows -> F64))
+  (define (solve-backward-bound kept)
+    "The backward bound of that factor, in the divided matrix's units; -1 when there is none. A diagnostic."
+    (step-figure kept 3 4))
+
+  (declare predicted-rate (KeptRows -> F64))
+  (define (predicted-rate kept)
+    "What that backward bound predicts a correction's contraction to be at most, (2^-10 + e) / (1 - e) with e twice the bound over the proved lower bound, or infinity where e is 1 or more; -1 when there is none. A diagnostic: it overstates by decades, and the bounds a step returns do not use it."
+    (step-figure kept 4 4)))

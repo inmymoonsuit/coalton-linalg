@@ -4,7 +4,8 @@
                     (#:csc #:coalton-linalg/sparse/csc)
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:err #:coalton-linalg/errors))
-  (:export #:find-code #:reprove-code #:certify-code #:bounds-code #:analysis-code #:kept-loop))
+  (:export #:find-code #:reprove-code #:certify-code #:bounds-code #:analysis-code #:kept-loop
+           #:step-code #:step-loop))
 (cl:in-package #:coalton-linalg/tests/rank-deficient-callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -86,5 +87,32 @@
       (unless (== (rd:reprove! kept matrix) rd:Reproved)
         (cell:write! failures (+ (cell:read failures) 1)))
       (unless (== (rd:certify! kept lower-floor upper-floor) rd:Certified)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures))
+
+  (declare step-code (rd:KeptRows * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (step-code kept r out)
+    "Exhaustively matched outcome: taken 0, no certificate 1, bad size 2, non-finite residual 3, factor refused 4, bound not reached 5, non-finite result 6."
+    (match (rd:step! kept r out)
+      ((rd:StepTaken) 0)
+      ((rd:StepNoCertificate) 1)
+      ((rd:StepBadSize) 2)
+      ((rd:StepNonFiniteRhs) 3)
+      ((rd:StepFactorRefused) 4)
+      ((rd:StepBoundNotReached) 5)
+      ((rd:StepNonFiniteResult) 6)))
+
+  (declare step-loop (rd:KeptRows * csc:Matrix * F64 * F64 * arr:LispArray F64 * arr:LispArray F64 * UFix -> UFix))
+  (define (step-loop kept matrix lower-floor upper-floor r out repeats)
+    "A real external caller, as a solver's iteration is: prove the bounds again for the values, ask for the certificate, take the step twice, the second on the factor the first left; count what goes wrong."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k repeats)
+      (unless (== (rd:reprove! kept matrix) rd:Reproved)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (rd:certify! kept lower-floor upper-floor) rd:Certified)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (rd:step! kept r out) rd:StepTaken)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (rd:step! kept r out) rd:StepTaken)
         (cell:write! failures (+ (cell:read failures) 1))))
     (cell:read failures)))

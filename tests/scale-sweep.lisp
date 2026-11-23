@@ -544,6 +544,35 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                    (sweep-out "the gap bound" (rd:gap-bound kept) 1 :kind :bound)
                    (sweep-out "the lower bound proved" (rd:proved-lower-bound kept) 1))))))
 
+     (sweep-entry "the step on certified kept rows, the matrix and the residual scaled together"
+         (rd:step! rd:step-solve-bound rd:step-bound rd:solve-growth rd:solve-backward-bound rd:predicted-rate)
+         1d-15
+         ((-1020 -1020 :no-input) (-1000 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-dependent) k)) (kept (rd:analyze matrix))
+                (floor (sweep-number (scale-float 1d0 -20) k)) (step (zeros 3)))
+           (sweep-need (rd:find-kept-rows! kept matrix floor 1d-12) coalton-linalg/sparse/rank-deficient:FindFound)
+           (sweep-need (rd:certify! kept floor floor) coalton-linalg/sparse/rank-deficient:Certified)
+           (sweep-need (rd:step! kept (sweep-array b4 k) step) coalton-linalg/sparse/rank-deficient:StepTaken)
+           (list (sweep-out "the step" step 0)
+                 (sweep-out "the solve's bound" (rd:step-solve-bound kept) 0 :kind :bound)
+                 (sweep-out "the whole bound" (rd:step-bound kept) 0 :kind :bound)
+                 (sweep-out "the solve factor's growth" (rd:solve-growth kept) 0)
+                 (sweep-out "its backward bound" (rd:solve-backward-bound kept) 0 :kind :bound)
+                 (sweep-out "the predicted rate" (rd:predicted-rate kept) 0 :kind :bound)))))
+
+     (sweep-entry "the step on certified kept rows, the residual scaled" (rd:step! rd:step-solve-bound rd:step-bound)
+         1d-15
+         ((-1020 -1000 :looser) (-800 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-dependent) 0)) (kept (rd:analyze matrix)) (step (zeros 3)))
+           (sweep-need (rd:find-kept-rows! kept matrix 1d-6 1d-12) coalton-linalg/sparse/rank-deficient:FindFound)
+           (sweep-need (rd:certify! kept 1d-6 1d-6) coalton-linalg/sparse/rank-deficient:Certified)
+           (sweep-need (rd:step! kept (sweep-array b4 k) step) coalton-linalg/sparse/rank-deficient:StepTaken)
+           (list (sweep-out "the step" step 1)
+                 (sweep-out "the solve's bound" (rd:step-solve-bound kept) 1 :kind :bound)
+                 (sweep-out "the whole bound" (rd:step-bound kept) 1 :kind :bound)))))
+
      (sweep-entry "bounds on the largest singular value" (rd:largest-singular-bounds!) 1d-15
          ((-1020 1020 :exact))
        (lambda (k)

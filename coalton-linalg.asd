@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.16.0"
+  :version "0.17.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -30,7 +30,7 @@
                                                 (:ct-file "augmented-minimum-norm") (:ct-file "scaled-solve")
                                                 (:ct-file "redundant-rows") (:ct-file "nonsymmetric-solve")
                                                 (:ct-file "matrix-free-solve") (:ct-file "damped-step")
-                                                (:ct-file "kept-rows")))))
+                                                (:ct-file "kept-rows") (:ct-file "rank-deficient-step")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."

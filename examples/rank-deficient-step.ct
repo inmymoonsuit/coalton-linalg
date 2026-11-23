@@ -1,0 +1,49 @@
+(cl:defpackage #:coalton-linalg/examples/rank-deficient-step
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:rd #:coalton-linalg/sparse/rank-deficient))
+  (:export #:redundant-step))
+(cl:in-package #:coalton-linalg/examples/rank-deficient-step)
+
+(coalton-toplevel
+  (declare twice (Void -> csc:Matrix))
+  (define (twice)
+    "One unknown constrained twice by the same condition.
+
+    x = ...
+    x = ..."
+    (let rows = (arr:make 2 (the UFix 0)))
+    (let columns = (arr:make 2 (the UFix 0)))
+    (let values = (arr:make 2 1.0d0))
+    (arr:set! rows 1 1)
+    (csc:from-coo 2 1 rows columns values csc:RejectDuplicates))
+
+  (declare redundant-step (Void -> arr:LispArray F64))
+  (define (redundant-step)
+    "The step against the residual [1, 3] on two equal rows. Returns two numbers, or an empty vector if a call refused:
+
+    [0] the step, -2: minus the least squares answer, which is the mean of the two residuals.
+        Solving the kept row alone would give -1, for it never sees the residual on the row
+        left out;
+    [1] the proved bound on the step's distance from the step a singular value decomposition
+        cut at the certified floor gives: rounding level.
+
+One row is kept and the other left out as a copy of it. The certificate proves that the
+matrix has one singular value above the floor and none between the floors; the step is
+then the minimum-norm least squares step at that rank."
+    (let matrix = (twice))
+    (let kept = (rd:analyze matrix))
+    (unless (== (rd:find-kept-rows! kept matrix 1.0d-6 1.0d-12) rd:FindFound)
+      (return (arr:make 0 0.0d0)))
+    (unless (== (rd:certify! kept 1.0d-6 1.0d-6) rd:Certified)
+      (return (arr:make 0 0.0d0)))
+    (let residual = (arr:make 2 1.0d0))
+    (arr:set! residual 1 3.0d0)
+    (let step = (arr:make 1 0.0d0))
+    (unless (== (rd:step! kept residual step) rd:StepTaken)
+      (return (arr:make 0 0.0d0)))
+    (let out = (arr:make 2 0.0d0))
+    (arr:set! out 0 (arr:aref step 0))
+    (arr:set! out 1 (rd:step-bound kept))
+    out))
