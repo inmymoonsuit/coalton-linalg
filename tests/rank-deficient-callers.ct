@@ -5,7 +5,7 @@
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:err #:coalton-linalg/errors))
   (:export #:find-code #:reprove-code #:certify-code #:bounds-code #:analysis-code #:kept-loop
-           #:step-code #:step-loop #:refresh-code #:refresh-loop))
+           #:step-code #:step-loop #:refresh-code #:refresh-to-code #:refresh-loop))
 (cl:in-package #:coalton-linalg/tests/rank-deficient-callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -131,6 +131,13 @@
   (define (refresh-code kept matrix gap-target)
     "Exhaustively matched outcome: refreshed 0, nothing kept 1, bad target 2, no shift 3, factor refused 4, non-finite 5; a typed error's category from 91."
     (catch (refresh-status-code (rd:refresh! kept matrix gap-target))
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare refresh-to-code (rd:KeptRows * csc:Matrix * F64 * F64 -> UFix))
+  (define (refresh-to-code kept matrix gap-target fraction)
+    "refresh-code for the form that takes the fraction of its share a replaced vector is corrected to."
+    (catch (refresh-status-code (rd:refresh-to! kept matrix gap-target fraction))
       ((the err:LinalgError problem) (error-code problem))
       (_ 99)))
 

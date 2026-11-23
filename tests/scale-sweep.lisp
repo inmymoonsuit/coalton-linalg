@@ -545,7 +545,8 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                    (sweep-out "the lower bound proved" (rd:proved-lower-bound kept) 1))))))
 
      (sweep-entry "the step on certified kept rows, the matrix and the residual scaled together"
-         (rd:step! rd:step-solve-bound rd:step-bound rd:solve-growth rd:solve-backward-bound rd:predicted-rate)
+         (rd:step! rd:step-solve-bound rd:step-bound rd:step-norm-term rd:step-outside-term rd:solve-growth
+          rd:solve-backward-bound rd:predicted-rate)
          1d-15
          ((-1020 -1020 :no-input) (-1000 1020 :exact))
        (lambda (k)
@@ -557,6 +558,8 @@ function of the exponent that returns the outputs. The run's source is kept, to 
            (list (sweep-out "the step" step 0)
                  (sweep-out "the solve's bound" (rd:step-solve-bound kept) 0 :kind :bound)
                  (sweep-out "the whole bound" (rd:step-bound kept) 0 :kind :bound)
+                 (sweep-out "its term in the step's norm" (rd:step-norm-term kept) 0 :kind :bound)
+                 (sweep-out "its term in the residual outside the range" (rd:step-outside-term kept) 0 :kind :bound)
                  (sweep-out "the solve factor's growth" (rd:solve-growth kept) 0)
                  (sweep-out "its backward bound" (rd:solve-backward-bound kept) 0 :kind :bound)
                  (sweep-out "the predicted rate" (rd:predicted-rate kept) 0 :kind :bound)))))
@@ -573,7 +576,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                  (sweep-out "the solve's bound" (rd:step-solve-bound kept) 1 :kind :bound)
                  (sweep-out "the whole bound" (rd:step-bound kept) 1 :kind :bound)))))
 
-     (sweep-entry "kept vectors refreshed for other values" (rd:refresh!) 1d-15
+     (sweep-entry "kept vectors refreshed for other values" (rd:refresh! rd:refresh-to!) 1d-15
          ((-1020 -1020 :no-input) (-1000 -1000 :looser) (-800 1020 :exact))
        (lambda (k)
          (let* ((matrix (sweep-stored (sweep-dependent) k)) (kept (rd:analyze matrix))
@@ -585,9 +588,18 @@ function of the exponent that returns the outputs. The run's source is kept, to 
              (error 'sweep-premise :text "The fourth row is not the one left out."))
            (sweep-need (rd:certify! kept floor floor) coalton-linalg/sparse/rank-deficient:Certified)
            (sweep-need (rd:refresh! kept later floor) coalton-linalg/sparse/rank-deficient:Refreshed)
-           (list (sweep-out "how many vectors were replaced" (rd:refreshed-count kept) 0)
-                 (sweep-out "the vector" (sweep-prefix (rd:multiplier-values kept) (rd:multiplier-count kept 0)) 0)
-                 (sweep-out "the gap bound" (rd:gap-bound kept) 1 :kind :bound)))))
+           (let ((replaced (rd:refreshed-count kept))
+                 (vector (sweep-prefix (rd:multiplier-values kept) (rd:multiplier-count kept 0))) (gap (rd:gap-bound kept)))
+             ;; The same again from the search's vectors, corrected as far as the corrections go.
+             (sweep-need (rd:find-kept-rows! kept matrix floor 1d-12) coalton-linalg/sparse/rank-deficient:FindFound)
+             (sweep-need (rd:certify! kept floor floor) coalton-linalg/sparse/rank-deficient:Certified)
+             (sweep-need (rd:refresh-to! kept later floor 0d0) coalton-linalg/sparse/rank-deficient:Refreshed)
+             (list (sweep-out "how many vectors were replaced" replaced 0)
+                   (sweep-out "the vector" vector 0)
+                   (sweep-out "the gap bound" gap 1 :kind :bound)
+                   (sweep-out "the vector, corrected as far as it goes"
+                              (sweep-prefix (rd:multiplier-values kept) (rd:multiplier-count kept 0)) 0)
+                   (sweep-out "its gap bound" (rd:gap-bound kept) 1 :kind :bound))))))
 
      (sweep-entry "bounds on the largest singular value" (rd:largest-singular-bounds!) 1d-15
          ((-1020 1020 :exact))

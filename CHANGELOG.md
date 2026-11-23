@@ -2,6 +2,28 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.19.0 — 2026-11-23
+
+Changed, in `coalton-linalg/sparse/rank-deficient`:
+
+- `refresh!` first looks for a vector's new multipliers on the rows the vector already
+  holds, and solves on all the kept rows only where those do not serve. So it replaces
+  such vectors where 0.18.0 returned `RefreshNoShift` and replaced none: **that status,
+  and `RefreshFactorRefused`, now mean that a vector needed the kept rows' solve and it
+  could not be had, the other vectors having been replaced.** After a refresh the gap
+  bound is under the target as before, and can be nearer to it than 0.18.0 left it.
+- A refresh no longer factors the system of the rows left out again where no vector
+  changed its rows. The step solves it by conjugate gradients preconditioned with the
+  factor it has, and makes the factor again only when a solve does not converge in
+  eight iterations. A step taken with a factor of the vectors as they stand is
+  unchanged, bit for bit.
+
+Added: `refresh-to!`, a refresh with the fraction of its share a replaced vector is
+corrected to, and `default-refresh-fraction`; `step-norm-term` and `step-outside-term`,
+the two terms `step-bound` adds to `step-solve-bound`; `system-iterations`,
+`system-factor-count` and `system-iteration-limit`.
+[Contract](docs/rank-deficient.md#refreshing-the-kept-vectors) · [record](docs/batch18d.md).
+
 ## 0.18.0 — 2026-11-23
 
 Added to `coalton-linalg/sparse/rank-deficient`: `refresh!(kept, matrix, gap-target)`,

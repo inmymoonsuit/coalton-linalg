@@ -27,7 +27,9 @@
            #:solve-growth #:solve-backward-bound #:predicted-rate
            #:RefreshStatus #:Refreshed #:RefreshNothingKept #:RefreshBadTarget #:RefreshNoShift
            #:RefreshFactorRefused #:RefreshNonFinite
-           #:refresh! #:refreshed-count))
+           #:refresh! #:refresh-to! #:default-refresh-fraction #:refreshed-count
+           #:step-norm-term #:step-outside-term
+           #:system-iterations #:system-factor-count #:system-iteration-limit))
 (cl:in-package #:coalton-linalg/sparse/rank-deficient)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -62,6 +64,12 @@
     (out-values (arr:LispArray F64))
     (out-solved (arr:LispArray F64))
     (out-errors (arr:LispArray F64))
+    (pcg-defect (arr:LispArray F64))
+    (pcg-solved (arr:LispArray F64))
+    (pcg-direction (arr:LispArray F64))
+    (pcg-image (arr:LispArray F64))
+    (kept-work (arr:LispArray F64))
+    (small (arr:LispArray F64))
     (unknown (arr:LispArray F64))
     (best (arr:LispArray F64))
     (defect (arr:LispArray F64))
@@ -173,13 +181,17 @@
   ;; step stands.
   ;;
   ;; A step's marks: [0] the system of the rows left out: 0 it could not be factored, 1 its factor
-  ;; stands, 2 there is none to solve; [1] the corrections the latest step made; [2] the vectors
-  ;; the latest refresh replaced.
+  ;; stands, 2 there is none to solve, 4 its factor stands for the vectors of an earlier call and
+  ;; serves as a preconditioner; [1] the corrections the latest step made; [2] the vectors the
+  ;; latest refresh replaced; [3] the preconditioned iterations the latest step made; [4] the
+  ;; factorizations of the system since the search, the search's own included.
   ;;
   ;; A step's figures: [0] the solve's bound and [1] the whole bound of the latest step, in the
   ;; caller's units; [2] the growth, [3] the backward bound and [4] the predicted rate of the
   ;; solve's factor; [5] the power of two at the residual's largest entry and [6] its reciprocal;
-  ;; [8] to [11] are where the residual routines leave their results.
+  ;; [8] to [11] are where the residual routines leave their results; [12] and [13] the two terms
+  ;; of the distance to the truncated matrix's step, in the step's norm and in the residual
+  ;; outside the range, in the caller's units.
 
   (declare analyze-with-limit (csc:Matrix * UFix -> KeptRows))
   (define (analyze-with-limit matrix maximum-entries)
@@ -479,8 +491,9 @@
     ;; What a step works in.
     (let d = (- m r))
     (let uses = (arr:make r (the UFix 0)))
-    (let marks = (arr:make 3 (the UFix 0)))
+    (let marks = (arr:make 5 (the UFix 0)))
     (let system = (left-out-system! s number r uses marks))
+    (when (== (arr:aref marks 0) 1) (arr:set! marks 4 1))
     (let kept-list = (arr:make r (the UFix 0)))
     (for ((i 0 (+ i 1))) :while (< i m)
       (when (== (arr:aref flags i) 1)
@@ -492,7 +505,7 @@
     (for ((j 0 (+ j 1))) :while (< j n)
       (let extent = (- (arr:aref column-starts (+ j 1)) (arr:aref column-starts j)))
       (when (> extent (arr:aref longest 1)) (arr:set! longest 1 extent)))
-    (let figures = (arr:make 12 0.0d0))
+    (let figures = (arr:make 14 0.0d0))
     (arr:set! figures 0 -1.0d0)
     (arr:set! figures 1 -1.0d0)
     (cell:write! (.step s)
@@ -501,6 +514,9 @@
                                     (arr:make r 0.0d0) (arr:make r 0.0d0) (arr:make r 0.0d0)
                                     (arr:make r 0.0d0) (arr:make r 0.0d0) (arr:make r 0.0d0)
                                     (arr:make d 0.0d0) (arr:make d 0.0d0) (arr:make d 0.0d0)
+                                    (arr:make d 0.0d0) (arr:make d 0.0d0) (arr:make d 0.0d0) (arr:make d 0.0d0)
+                                    (arr:make r 0.0d0)
+                                    (arr:make (+ (* small-limit small-limit) (* 3 small-limit)) 0.0d0)
                                     (arr:make (+ n r) 0.0d0) (arr:make (+ n r) 0.0d0)
                                     (arr:make (+ n r) 0.0d0) (arr:make (+ n r) 0.0d0)
                                     figures)))
@@ -877,6 +893,101 @@
                                (arr:aref source (arr:aref numbers (arr:aref vector-rows e)))))))
       (arr:set! target p (cell:read sum))))
 
+  (declare system-iteration-limit UFix)
+  (define system-iteration-limit
+    "The most preconditioned iterations one solve of the rows left out's system makes with a factor of earlier vectors before the factor is made again: 8."
+    8)
+
+  (declare refactor-system! (KeptStorage * StepStorage * LeftOutSystem -> Boolean))
+  (define (refactor-system! s ws held)
+    "Fill I + W W^T from the kept vectors as they stand and factor it again, on the analysis that stands; the vectors hold the rows they held when it was analyzed. True when the factor stands."
+    (let vector-values = (cell:read (.vector-values s)))
+    (let places = (.places held))
+    (for ((e 0 (+ e 1))) :while (< e (arr:length places))
+      (arr:set! (.values held) (arr:aref places e) (- 0.0d0 (arr:aref vector-values e))))
+    (gram:refill! (.plan held) (.values held) (.product held))
+    (let marks = (.marks ws))
+    (arr:set! marks 4 (+ (arr:aref marks 4) 1))
+    (arr:set! marks 0 (if (== (ldlt:factor! (.symbolic held) (.product held) -1.0d0) ldlt:FactorSuccess) 1 0))
+    (== (arr:aref marks 0) 1))
+
+  (declare preconditioned! (KeptStorage * StepStorage * LeftOutSystem -> Boolean))
+  (define (preconditioned! s ws held)
+    "Solve (I + W W^T) h = g for the kept vectors as they stand, g in the out values and h into the out solved, by conjugate gradients preconditioned with the standing factor, which is of earlier vectors. True when the residual came under 2^-40 of g within system-iteration-limit iterations."
+    (let d = (arr:aref (.state s) 1))
+    (let starts = (.vector-starts s))
+    (let numbers = (.numbers ws))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (let g = (.out-values ws))
+    (let h = (.out-solved ws))
+    (let defect = (.pcg-defect ws))
+    (let solved = (.pcg-solved ws))
+    (let direction = (.pcg-direction ws))
+    (let image = (.pcg-image ws))
+    (let work = (.kept-work ws))
+    (let marks = (.marks ws))
+    (let factor = (ldlt:symbolic-factor (.symbolic held)))
+    (let size = (cell:new 0.0d0))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (arr:set! h p 0.0d0)
+      (arr:set! defect p (arr:aref g p))
+      (cell:write! size (+ (cell:read size) (* (arr:aref g p) (arr:aref g p)))))
+    (when (== (cell:read size) 0.0d0) (return True))
+    (unless (inline (math:finite? (cell:read size))) (return False))
+    ;; 2^-80 of the squared size: a residual of 2^-40 of the right-hand side.
+    (let enough = (* 8.271806125530277d-25 (cell:read size)))
+    (unless (== (ldlt:solve! factor defect solved) ldlt:SolveSuccess) (return False))
+    (let rho = (cell:new 0.0d0))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (arr:set! direction p (arr:aref solved p))
+      (cell:write! rho (+ (cell:read rho) (* (arr:aref defect p) (arr:aref solved p)))))
+    (for ((k 0 (+ k 1))) :while (< k system-iteration-limit)
+      ;; image = direction + W (W^T direction); W's row p is minus the kept vector's entries.
+      (for ((p 0 (+ p 1))) :while (< p d)
+        (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+          (let at = (arr:aref numbers (arr:aref vector-rows e)))
+          (arr:set! work at (- (arr:aref work at) (* (arr:aref vector-values e) (arr:aref direction p))))))
+      (let curvature = (cell:new 0.0d0))
+      (for ((p 0 (+ p 1))) :while (< p d)
+        (let sum = (cell:new (arr:aref direction p)))
+        (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+          (cell:write! sum (- (cell:read sum)
+                              (* (arr:aref vector-values e) (arr:aref work (arr:aref numbers (arr:aref vector-rows e)))))))
+        (arr:set! image p (cell:read sum))
+        (cell:write! curvature (+ (cell:read curvature) (* (arr:aref direction p) (cell:read sum)))))
+      (for ((p 0 (+ p 1))) :while (< p d)
+        (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+          (arr:set! work (arr:aref numbers (arr:aref vector-rows e)) 0.0d0)))
+      (unless (> (cell:read curvature) 0.0d0) (return False))
+      (let alpha = (/ (cell:read rho) (cell:read curvature)))
+      (let left = (cell:new 0.0d0))
+      (for ((p 0 (+ p 1))) :while (< p d)
+        (arr:set! h p (+ (arr:aref h p) (* alpha (arr:aref direction p))))
+        (let v = (- (arr:aref defect p) (* alpha (arr:aref image p))))
+        (arr:set! defect p v)
+        (cell:write! left (+ (cell:read left) (* v v))))
+      (arr:set! marks 3 (+ (arr:aref marks 3) 1))
+      (unless (inline (math:finite? (cell:read left))) (return False))
+      (when (<= (cell:read left) enough) (return True))
+      (unless (== (ldlt:solve! factor defect solved) ldlt:SolveSuccess) (return False))
+      (let next = (cell:new 0.0d0))
+      (for ((p 0 (+ p 1))) :while (< p d)
+        (cell:write! next (+ (cell:read next) (* (arr:aref defect p) (arr:aref solved p)))))
+      (let beta = (/ (cell:read next) (cell:read rho)))
+      (for ((p 0 (+ p 1))) :while (< p d)
+        (arr:set! direction p (+ (arr:aref solved p) (* beta (arr:aref direction p)))))
+      (cell:write! rho (cell:read next)))
+    False)
+
+  (declare left-out-solve! (KeptStorage * StepStorage * LeftOutSystem -> Boolean))
+  (define (left-out-solve! s ws held)
+    "Solve (I + W W^T) h = g, g in the out values and h into the out solved. With the factor of the vectors as they stand it is one solve. With a factor of earlier vectors it is the preconditioned iteration, and where that does not converge in its few steps the factor is made again and it is one solve. False when a solve or the factorization refuses."
+    (when (== (arr:aref (.marks ws) 0) 4)
+      (when (preconditioned! s ws held) (return True))
+      (unless (refactor-system! s ws held) (return False)))
+    (== (ldlt:solve! (ldlt:symbolic-factor (.symbolic held)) (.out-values ws) (.out-solved ws)) ldlt:SolveSuccess))
+
   (declare project! (KeptStorage * StepStorage * arr:LispArray F64 * arr:LispArray F64 -> Boolean))
   (define (project! s ws source target)
     "target = (I + W^T W)^-1 source, as source - W^T (I + W W^T)^-1 W source; the two arrays are distinct. False when the system's solve refuses."
@@ -888,7 +999,7 @@
       ((None) True)
       ((Some held)
        (left-out-product! s ws source (.out-values ws))
-       (if (== (ldlt:solve! (ldlt:symbolic-factor (.symbolic held)) (.out-values ws) (.out-solved ws)) ldlt:SolveSuccess)
+       (if (left-out-solve! s ws held)
            (progn
              (let starts = (.vector-starts s))
              (let numbers = (.numbers ws))
@@ -1099,6 +1210,7 @@
     (let figures = (.figures ws))
     (let marks = (.marks ws))
     (when (== (arr:aref marks 0) 0) (return StepFactorRefused))
+    (arr:set! marks 3 0)
     ;; The solve's factor, unless it already stands for this certificate. tau and the gap bound
     ;; are the ones the standing certificate was issued on, in the divided matrix's units.
     (let tau = (arr:aref (.scale s) 4))
@@ -1141,7 +1253,8 @@
       (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
         (let k = (arr:aref numbers (arr:aref vector-rows e)))
         (arr:set! z k (- (arr:aref z k) (* (arr:aref vector-values e) own)))))
-    (unless (project! s ws z y) (return StepBoundNotReached))
+    (unless (project! s ws z y)
+      (return (if (== (arr:aref marks 0) 0) StepFactorRefused StepBoundNotReached)))
     (system-residual! s ws y)
     (let system-bound = (cell:new (arr:aref figures 9)))
     (unless (inline (math:finite? (cell:read system-bound))) (return StepBoundNotReached))
@@ -1221,6 +1334,9 @@
     (unless (< (* margin ratio) 1.0d0) (return StepBoundNotReached))
     (let truncation = (/ (* margin (* (* 2.0d0 gap) (+ (/ (* 2.0d0 reach) tau) (/ (/ outside tau) tau))))
                          (- 1.0d0 (* margin ratio))))
+    ;; The same in its two terms, each rounded upward by itself: they add to a little more.
+    (let norm-term = (/ (* margin (* (* 2.0d0 gap) (/ (* 2.0d0 reach) tau))) (- 1.0d0 (* margin ratio))))
+    (let outside-term = (/ (* margin (* (* 2.0d0 gap) (/ (/ outside tau) tau))) (- 1.0d0 (* margin ratio))))
     (let whole = (* margin (+ solve-bound truncation)))
     (unless (inline (math:finite? whole)) (return StepBoundNotReached))
     ;; Back to the caller's units, and against the residual: nothing is written unless all of it can be.
@@ -1234,6 +1350,8 @@
       (arr:set! out j (arr:aref change j)))
     (arr:set! figures 0 (inline (restored (inline (unscaled solve-bound by-residual by-matrix)) 1.0d0)))
     (arr:set! figures 1 (inline (restored (inline (unscaled whole by-residual by-matrix)) 1.0d0)))
+    (arr:set! figures 12 (inline (restored (inline (unscaled (* margin norm-term) by-residual by-matrix)) 1.0d0)))
+    (arr:set! figures 13 (inline (restored (inline (unscaled (* margin outside-term) by-residual by-matrix)) 1.0d0)))
     (arr:set! marks 1 (cell:read corrections))
     (arr:set! st 5 1)
     StepTaken)
@@ -1260,6 +1378,32 @@
   (define (step-bound kept)
     "For the standing step x: an upper bound on the 2-norm of its distance from the step of the matrix truncated at the kept count, the minimum-norm least squares step a singular value decomposition cut at the certified floor gives. It includes the solve's bound. -1 when no step stands."
     (step-figure kept 1 5))
+
+  (declare step-norm-term (KeptRows -> F64))
+  (define (step-norm-term kept)
+    "Of the standing step's distance to the truncated matrix's step, the term in the step's own norm, 4 g X / t over (1 - 4 g / t) with g the gap bound, t the bound proved and X a bound on the norm of the exact step for B. step-bound is at most step-solve-bound plus this plus step-outside-term. -1 when no step stands."
+    (step-figure kept 12 5))
+
+  (declare step-outside-term (KeptRows -> F64))
+  (define (step-outside-term kept)
+    "Of the same distance, the term in the residual outside the range, 2 g rho / t^2 over (1 - 4 g / t). -1 when no step stands."
+    (step-figure kept 13 5))
+
+  (declare system-iterations (KeptRows -> UFix))
+  (define (system-iterations kept)
+    "Preconditioned iterations the standing step made on the system of the rows left out, over all its solves; 0 where the factor was of the vectors as they stood, and when no step stands."
+    (let s = (storage kept))
+    (match (cell:read (.step s))
+      ((Some ws) (if (== (arr:aref (.state s) 5) 1) (arr:aref (.marks ws) 3) 0))
+      ((None) 0)))
+
+  (declare system-factor-count (KeptRows -> UFix))
+  (define (system-factor-count kept)
+    "Factorizations of the system of the rows left out since the standing kept set was found, the search's own included; 0 when no set stands."
+    (let s = (storage kept))
+    (match (cell:read (.step s))
+      ((Some ws) (if (== (arr:aref (.state s) 0) 1) (arr:aref (.marks ws) 4) 0))
+      ((None) 0)))
 
   (declare step-corrections (KeptRows -> UFix))
   (define (step-corrections kept)
@@ -1297,9 +1441,9 @@
     RefreshBadTarget
     "The gap bound aimed at was not positive and finite; nothing changed."
     RefreshNoShift
-    "No certificate has been issued for this kept set, so there is nothing to take the solve's shifts from; the bounds stand for the values given and no vector was replaced."
+    "A vector needed the kept rows' solve, and no certificate has been issued for this kept set to take its shift from; the bounds stand for the values given, and the vectors that could be replaced without it were."
     RefreshFactorRefused
-    "The kept rows' solve could not be factored; the bounds stand for the values given and no vector was replaced."
+    "A vector needed the kept rows' solve, and it could not be factored; the bounds stand for the values given, and the vectors that could be replaced without it were."
     RefreshNonFinite
     "A bound was not finite; the vectors stand, the bounds do not.")
 
@@ -1341,6 +1485,137 @@
       (arr:set! sums j 0.0d0))
     (arr:set! (.figures ws) 8 (math:sqrt (cell:read total))))
 
+  (declare small-limit UFix)
+  (define small-limit
+    "The most rows a kept vector may hold for its multipliers to be found on those rows alone: 16."
+    16)
+
+  (declare small-solve! (arr:LispArray F64 * UFix * UFix -> Void))
+  (define (small-solve! small c target)
+    "With the lower triangular factor L of a c-by-c matrix in the first block of small, row k at k * small-limit, and a right-hand side after it: write the solution of L L^T x = b at target."
+    (let at-b = (* small-limit small-limit))
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let sum = (cell:new (arr:aref small (+ at-b k))))
+      (for ((q 0 (+ q 1))) :while (< q k)
+        (cell:write! sum (- (cell:read sum) (* (arr:aref small (+ (* k small-limit) q)) (arr:aref small (+ target q))))))
+      (arr:set! small (+ target k) (/ (cell:read sum) (arr:aref small (+ (* k small-limit) k)))))
+    (for ((back 0 (+ back 1))) :while (< back c)
+      (let k = (- (- c 1) back))
+      (let sum = (cell:new (arr:aref small (+ target k))))
+      (for ((q (+ k 1) (+ q 1))) :while (< q c)
+        (cell:write! sum (- (cell:read sum) (* (arr:aref small (+ (* q small-limit) k)) (arr:aref small (+ target q))))))
+      (arr:set! small (+ target k) (/ (cell:read sum) (arr:aref small (+ (* k small-limit) k))))))
+
+  (declare refresh-small! (KeptStorage * StepStorage * UFix * F64 -> Boolean))
+  (define (refresh-small! s ws position enough)
+    "Find the multipliers of the row left out at a position against the kept rows its vector already holds, by the normal equations of those few rows and one correction, and leave them in the best iterate's second block with zeros at every other kept row. True when the vector holds from one to small-limit rows, their normal matrix factors, and the residual as computed is at most enough, or at most 2^-45 of the row's own length, which is as far as rounding lets it go. Nothing is proved by it."
+    (let n = (.columns s))
+    (let r = (- (.rows s) (arr:aref (.state s) 1)))
+    (let from = (arr:aref (.vector-starts s) position))
+    (let c = (- (arr:aref (.vector-starts s) (+ position 1)) from))
+    (unless (and (> c 0) (<= c small-limit)) (return False))
+    (let held = (cell:read (.vector-rows s)))
+    (let row = (arr:aref (rows:left-out-rows (.analysis s)) position))
+    (let starts = (.row-starts s))
+    (let columns = (.row-columns s))
+    (let positions = (.row-positions s))
+    (let entries = (.entries s))
+    (let sums = (.sums s))
+    (let small = (.small ws))
+    (let at-b = (* small-limit small-limit))
+    (let at-w = (+ at-b small-limit))
+    (let at-d = (+ at-w small-limit))
+    ;; The right-hand side J_K a, with a scattered over the columns and gathered by each row.
+    (let own = (cell:new 0.0d0))
+    (for ((q (arr:aref starts row) (+ q 1))) :while (< q (arr:aref starts (+ row 1)))
+      (let a = (arr:aref entries (arr:aref positions q)))
+      (cell:write! own (+ (cell:read own) (* a a)))
+      (arr:set! sums (arr:aref columns q) a))
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let i = (arr:aref held (+ from k)))
+      (let sum = (cell:new 0.0d0))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (cell:write! sum (+ (cell:read sum) (* (arr:aref entries (arr:aref positions q)) (arr:aref sums (arr:aref columns q))))))
+      (arr:set! small (+ at-b k) (cell:read sum)))
+    (for ((q (arr:aref starts row) (+ q 1))) :while (< q (arr:aref starts (+ row 1)))
+      (arr:set! sums (arr:aref columns q) 0.0d0))
+    ;; The normal matrix J_K J_K^T, its lower triangle.
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let i = (arr:aref held (+ from k)))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (arr:set! sums (arr:aref columns q) (arr:aref entries (arr:aref positions q))))
+      (for ((l k (+ l 1))) :while (< l c)
+        (let other = (arr:aref held (+ from l)))
+        (let sum = (cell:new 0.0d0))
+        (for ((q (arr:aref starts other) (+ q 1))) :while (< q (arr:aref starts (+ other 1)))
+          (cell:write! sum (+ (cell:read sum) (* (arr:aref entries (arr:aref positions q)) (arr:aref sums (arr:aref columns q))))))
+        (arr:set! small (+ (* l small-limit) k) (cell:read sum)))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (arr:set! sums (arr:aref columns q) 0.0d0)))
+    ;; Its factor, in place.
+    (for ((j 0 (+ j 1))) :while (< j c)
+      (let diagonal = (cell:new (arr:aref small (+ (* j small-limit) j))))
+      (for ((q 0 (+ q 1))) :while (< q j)
+        (let l = (arr:aref small (+ (* j small-limit) q)))
+        (cell:write! diagonal (- (cell:read diagonal) (* l l))))
+      (unless (and (> (cell:read diagonal) 0.0d0) (inline (math:finite? (cell:read diagonal)))) (return False))
+      (let pivot = (math:sqrt (cell:read diagonal)))
+      (arr:set! small (+ (* j small-limit) j) pivot)
+      (for ((i (+ j 1) (+ i 1))) :while (< i c)
+        (let sum = (cell:new (arr:aref small (+ (* i small-limit) j))))
+        (for ((q 0 (+ q 1))) :while (< q j)
+          (cell:write! sum (- (cell:read sum)
+                              (* (arr:aref small (+ (* i small-limit) q)) (arr:aref small (+ (* j small-limit) q))))))
+        (arr:set! small (+ (* i small-limit) j) (/ (cell:read sum) pivot))))
+    (small-solve! small c at-w)
+    ;; One correction: the residual a - J_K^T w over the columns, gathered by each row, solved for.
+    (for ((q (arr:aref starts row) (+ q 1))) :while (< q (arr:aref starts (+ row 1)))
+      (arr:set! sums (arr:aref columns q) (arr:aref entries (arr:aref positions q))))
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let i = (arr:aref held (+ from k)))
+      (let w = (arr:aref small (+ at-w k)))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (let j = (arr:aref columns q))
+        (arr:set! sums j (- (arr:aref sums j) (* w (arr:aref entries (arr:aref positions q)))))))
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let i = (arr:aref held (+ from k)))
+      (let sum = (cell:new 0.0d0))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (cell:write! sum (+ (cell:read sum) (* (arr:aref entries (arr:aref positions q)) (arr:aref sums (arr:aref columns q))))))
+      (arr:set! small (+ at-b k) (cell:read sum)))
+    (small-solve! small c at-d)
+    ;; The corrected multipliers, and the residual they leave: each column is counted once and
+    ;; cleared as it is.
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let i = (arr:aref held (+ from k)))
+      (let change = (arr:aref small (+ at-d k)))
+      (arr:set! small (+ at-w k) (+ (arr:aref small (+ at-w k)) change))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (let j = (arr:aref columns q))
+        (arr:set! sums j (- (arr:aref sums j) (* change (arr:aref entries (arr:aref positions q)))))))
+    (let total = (cell:new 0.0d0))
+    (for ((q (arr:aref starts row) (+ q 1))) :while (< q (arr:aref starts (+ row 1)))
+      (let j = (arr:aref columns q))
+      (cell:write! total (+ (cell:read total) (* (arr:aref sums j) (arr:aref sums j))))
+      (arr:set! sums j 0.0d0))
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (let i = (arr:aref held (+ from k)))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (let j = (arr:aref columns q))
+        (cell:write! total (+ (cell:read total) (* (arr:aref sums j) (arr:aref sums j))))
+        (arr:set! sums j 0.0d0)))
+    (let rounding-level = (* 2.842170943040401d-14 (math:sqrt (cell:read own))))
+    (unless (and (inline (math:finite? (cell:read total)))
+                 (<= (math:sqrt (cell:read total)) (if (> enough rounding-level) enough rounding-level)))
+      (return False))
+    (let best = (.best ws))
+    (let numbers = (.numbers ws))
+    (for ((k 0 (+ k 1))) :while (< k r)
+      (arr:set! best (+ n k) 0.0d0))
+    (for ((k 0 (+ k 1))) :while (< k c)
+      (arr:set! best (+ n (arr:aref numbers (arr:aref held (+ from k)))) (arr:aref small (+ at-w k))))
+    True)
+
   (declare refresh-solve! (KeptStorage * StepStorage * ldlt:NumericFactor * F64 * UFix * F64 -> Boolean))
   (define (refresh-solve! s ws factor tau row enough)
     "Leave in the best iterate's second block the multipliers of a row against the kept rows for the values held, w = (J_S J_S^T)^-1 J_S a, by the factor given and corrections while the residual is above enough and at least halves. False when a solve refuses or a residual is not finite."
@@ -1380,13 +1655,19 @@
         (cell:write! going False)))
     True)
 
-  (declare refresh! (KeptRows * csc:Matrix * F64 -> RefreshStatus))
-  (define (refresh! kept matrix gap-target)
-    "For a matrix of the analyzed pattern with other values: prove every kept vector's bound against them, as reprove! does, and replace each vector whose bound is above the share of gap-target a vector may have, gap-target over twice the root of the number left out, by the row's multipliers against the kept rows for these values. The kept set does not change, and no certificate stands afterwards. Nothing is proved by the solves that find the multipliers: each new vector's bound is proved for the vector as stored. Another pattern or shape raises the typed error of the Gram refill. See docs/rank-deficient.md."
+  (declare default-refresh-fraction F64)
+  (define default-refresh-fraction
+    "The fraction of its share a replaced vector's residual is brought under by refresh!: a sixteenth."
+    0.0625d0)
+
+  (declare refresh-to! (KeptRows * csc:Matrix * F64 * F64 -> RefreshStatus))
+  (define (refresh-to! kept matrix gap-target fraction)
+    "For a matrix of the analyzed pattern with other values: prove every kept vector's bound against them, as reprove! does, and replace each vector whose bound is above the share of gap-target a vector may have, gap-target over twice the root of the number left out, by the row's multipliers against the kept rows for these values, corrected until their residual is under fraction of the share; a fraction of zero corrects until a correction no longer halves it. The kept set does not change, and no certificate stands afterwards. Nothing is proved by the solves that find the multipliers: each new vector's bound is proved for the vector as stored. Another pattern or shape raises the typed error of the Gram refill. See docs/rank-deficient.md."
     (let s = (storage kept))
     (let st = (.state s))
     (unless (== (arr:aref st 0) 1) (return RefreshNothingKept))
     (unless (and (> gap-target 0.0d0) (inline (math:finite? gap-target))) (return RefreshBadTarget))
+    (unless (and (>= fraction 0.0d0) (<= fraction 1.0d0)) (return RefreshBadTarget))
     (let ws = (match (cell:read (.step s)) ((Some held) held) ((None) (return RefreshNothingKept))))
     (let plan = (match (cell:read (.plan s)) ((Some held) held) ((None) (return RefreshNothingKept))))
     (let symbolic = (match (cell:read (.symbolic s)) ((Some held) held) ((None) (return RefreshNothingKept))))
@@ -1412,20 +1693,16 @@
     (for ((p 0 (+ p 1))) :while (< p d)
       (when (> (arr:aref bounds p) share) (cell:write! stale (+ (cell:read stale) 1))))
     (when (== (cell:read stale) 0) (return Refreshed))
-    ;; The shift of the solve is a bound a certificate proved at an earlier call. It is a shift
-    ;; and nothing more: no bound of this call rests on it.
+    ;; A vector that keeps its rows is found on those rows alone. One that does not is solved for
+    ;; on all the kept rows, and the factor that needs is made at the first such vector. Its shift
+    ;; is a bound a certificate proved at an earlier call: a shift and nothing more, no bound of
+    ;; this call rests on it. made: 0 not tried, 1 it stands, 2 it cannot be had; blocked: 1 for no
+    ;; shift, 2 for a factorization refused.
     (let tau = (arr:aref (.scale s) 4))
-    (unless (> tau 0.0d0) (return RefreshNoShift))
-    (let positions = (cell:read (.kept-positions s)))
-    (let values = (cell:read (.kept-values s)))
-    (for ((q 0 (+ q 1))) :while (< q (arr:length positions))
-      (arr:set! values q (arr:aref (.entries s) (arr:aref positions q))))
-    (let augmented = (cell:read (.augmented s)))
-    (aug:refill! plan values tau (* tau solve-shift) augmented)
-    (unless (== (ldlt:factor-signed! symbolic augmented 0.0d0) ldlt:SignedSuccess) (return RefreshFactorRefused))
     (let factor = (ldlt:symbolic-factor symbolic))
-    (unless (and (== (ldlt:positive-pivot-count factor) n) (== (ldlt:negative-pivot-count factor) r))
-      (return RefreshFactorRefused))
+    (let made = (cell:new (the UFix 0)))
+    (let blocked = (cell:new (the UFix 0)))
+    (let reach = (* fraction share))
     ;; The vectors are written afresh into the spare arrays, a replaced one from its solve and
     ;; the others as they stand, and the arrays are then exchanged.
     (let left = (rows:left-out-rows (.analysis s)))
@@ -1443,9 +1720,27 @@
       (let old-values = (cell:read (.vector-values s)))
       (let from = (arr:aref starts p))
       (let to = (arr:aref starts (+ p 1)))
-      ;; A residual a sixteenth of a vector's share is as good as the vector needs.
-      (let solved = (and (> (arr:aref bounds p) share)
-                         (refresh-solve! s ws factor tau (arr:aref left p) (* 0.0625d0 share))))
+      (let out-of-date = (> (arr:aref bounds p) share))
+      (let on-its-rows = (and out-of-date (refresh-small! s ws p reach)))
+      (when (and (and out-of-date (not on-its-rows)) (== (cell:read made) 0))
+        (unless (> tau 0.0d0)
+          (cell:write! made 2)
+          (cell:write! blocked 1))
+        (when (> tau 0.0d0)
+          (let positions = (cell:read (.kept-positions s)))
+          (let values = (cell:read (.kept-values s)))
+          (for ((q 0 (+ q 1))) :while (< q (arr:length positions))
+            (arr:set! values q (arr:aref (.entries s) (arr:aref positions q))))
+          (let augmented = (cell:read (.augmented s)))
+          (aug:refill! plan values tau (* tau solve-shift) augmented)
+          (let stands = (and (== (ldlt:factor-signed! symbolic augmented 0.0d0) ldlt:SignedSuccess)
+                             (and (== (ldlt:positive-pivot-count factor) n) (== (ldlt:negative-pivot-count factor) r))))
+          (cell:write! made (if stands 1 2))
+          (unless stands (cell:write! blocked 2))))
+      ;; A residual the given fraction of a vector's share is as good as the caller needs.
+      (let solved = (or on-its-rows
+                        (and (and out-of-date (== (cell:read made) 1))
+                             (refresh-solve! s ws factor tau (arr:aref left p) (* fraction share)))))
       ;; The largest multiplier, whether all are finite, and how many reach the drop.
       (let largest = (cell:new 0.0d0))
       (let usable = (cell:new solved))
@@ -1499,7 +1794,10 @@
       (arr:set! fresh-starts (+ p 1) (cell:read filled)))
     ;; The factor just used is of an earlier shift, and is not marked as the solve's: a step
     ;; makes its own.
-    (when (== (cell:read replaced) 0) (return Refreshed))
+    (let verdict = (cond ((== (cell:read blocked) 1) RefreshNoShift)
+                         ((== (cell:read blocked) 2) RefreshFactorRefused)
+                         (True Refreshed)))
+    (when (== (cell:read replaced) 0) (return verdict))
     (let spare-rows = (cell:read (.spare-rows s)))
     (let spare-values = (cell:read (.spare-values s)))
     (cell:write! (.spare-rows s) (cell:read (.vector-rows s)))
@@ -1509,29 +1807,36 @@
     (for ((p 0 (+ p 1))) :while (<= p d)
       (arr:set! starts p (arr:aref fresh-starts p)))
     (arr:set! marks 2 (cell:read replaced))
-    ;; The system of the rows left out: refilled and factored again where no vector changed its
-    ;; rows, analyzed again where one did.
+    ;; The system of the rows left out. Where no vector changed its rows its factor is kept, as
+    ;; the factor of earlier vectors, and preconditions the solves from here on; where one did it
+    ;; is analyzed again.
     (let refilled =
       (match (cell:read (.system ws))
         ((Some held)
          (if (or (cell:read reshaped) (/= (arr:length (.places held)) (cell:read filled)))
              False
              (progn
-               (for ((e 0 (+ e 1))) :while (< e (cell:read filled))
-                 (arr:set! (.values held) (arr:aref (.places held) e) (- 0.0d0 (arr:aref spare-values e))))
-               (gram:refill! (.plan held) (.values held) (.product held))
-               (arr:set! marks 0 (if (== (ldlt:factor! (.symbolic held) (.product held) -1.0d0) ldlt:FactorSuccess) 1 0))
+               ;; A factor that was refused is tried again for these vectors.
+               (if (== (arr:aref marks 0) 0)
+                   (refactor-system! s ws held)
+                   (progn (arr:set! marks 0 4) True))
                True)))
         ((None) False)))
     (unless refilled
       (let uses = (.uses ws))
       (for ((k 0 (+ k 1))) :while (< k r)
         (arr:set! uses k 0))
-      (cell:write! (.system ws) (left-out-system! s (.numbers ws) r uses marks)))
+      (cell:write! (.system ws) (left-out-system! s (.numbers ws) r uses marks))
+      (when (== (arr:aref marks 0) 1) (arr:set! marks 4 (+ (arr:aref marks 4) 1))))
     (arr:set! st 2 0)
     (unless (prove-bounds! s) (return RefreshNonFinite))
     (arr:set! st 2 1)
-    Refreshed)
+    verdict)
+
+  (declare refresh! (KeptRows * csc:Matrix * F64 -> RefreshStatus))
+  (define (refresh! kept matrix gap-target)
+    "refresh-to! with a replaced vector's residual brought under default-refresh-fraction of its share, a sixteenth."
+    (refresh-to! kept matrix gap-target default-refresh-fraction))
 
   (declare refreshed-count (KeptRows -> UFix))
   (define (refreshed-count kept)

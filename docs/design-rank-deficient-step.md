@@ -554,6 +554,24 @@ In the fifth, on the refresh, which the consumer asked for before the bases:
   that system is to be solved by conjugate gradients on `I + Wᵀ W`, as a batch of its
   own, and the solves are left as they are.
 
+In the sixth, after the refresh was measured along the consumer's drags:
+
+- **The system of the rows left out keeps its factor.** Plain conjugate gradients on it
+  were measured first and refused: 3 iterations on one wheel, 12 on the other, and 56 to
+  58 on the lattice of 21, where the sparse factor costs a hundredth of that and no row
+  ever changes. So the factor stays, and where the vectors have changed since it was
+  made it preconditions the iteration; it is made again when a solve does not converge
+  in eight steps.
+- **A vector that keeps its rows is refreshed on those rows alone.** Found while
+  measuring: stopped at a fraction of its share, a solve on all the kept rows leaves a
+  vector two hundred entries of noise where the search kept four.
+- **A redundant row need not be a combination of a few rows.** Where the kept rows span
+  every column, each row left out is a combination of them all, and of its own few only
+  to the accuracy the values happen to have. Away from a solution that is not within a
+  share of a floor of 2 × 10⁻⁸: such vectors are long, and stay so.
+- **How far a replaced vector is corrected is the caller's argument**, and the step's
+  bound is readable in its terms, so that a caller can see what tightening would buy.
+
 **Built so far:** the search with kept vectors, the reproof, the refresh, the certificate,
 the bounds on the largest singular value, and the step with its two bounds, as
 [kept rows, the certificate and the step](rank-deficient.md). The option of the kept

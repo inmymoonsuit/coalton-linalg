@@ -281,6 +281,18 @@ step. Nothing is proved by the solves that find the multipliers; the bound of ea
 vector is. [The contract](docs/rank-deficient.md#refreshing-the-kept-vectors) says what
 it does and [the record](docs/batch18c.md) has the times along a consumer's drags.
 
+### Batch 18d: a refresh on a vector's own rows, and a factor kept
+
+**Completed.** Two costs of Batch 18c's refresh removed where they were not needed. A
+kept vector that keeps its rows is found again on those few rows alone, in microseconds,
+and only one that needs other rows is solved for on all the kept rows. The system of
+the rows left out is no longer factored again at a refresh: its factor stays and
+preconditions the solves, and is made again only when an iteration does not converge in
+eight steps. On a consumer's drag where one vector changes a step, an iteration went
+from 12 to 15 ms to under 2. The refresh's stop target became an argument, and the
+step's bound can be read in its terms. [The record](docs/batch18d.md) has the times and
+the terms.
+
 ### Next
 
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
@@ -291,9 +303,9 @@ the library, agreed with it in advance, plan before code:
    that no singular value lies in a band about the floor, or a refusal by name. Built on
    [dependent rows](docs/dependent-rows.md). **[The design](docs/design-rank-deficient-step.md)
    is reviewed and measured. The certificate and the kept vectors are Batch 18a, the
-   step with its bounds Batch 18b and the refresh of kept vectors Batch 18c. Measured
-   and open: the system of the rows left out is factored again at every refresh, ten
-   milliseconds where it is dense; solving it by conjugate gradients would remove that.
+   step with its bounds Batch 18b and the refresh of kept vectors Batches 18c and 18d.
+   Measured and open: where every redundant row needs most of the kept rows to be
+   reproduced, a refresh is one solve a vector, tens of milliseconds for four hundred.
    The kept rows alone, as an option, are not built; the consumer will not call it.**
    The same note covers
    certified bases: the supports of left null vectors, and a right null-space basis with

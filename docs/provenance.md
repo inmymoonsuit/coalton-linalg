@@ -94,6 +94,18 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 18d: a refresh on a vector's own rows, and a factor kept
+
+No source was opened. Conjugate gradients with a preconditioner is the classical
+iteration, written here from the plain one this library already has in Batch 13, whose
+section names its sources, with the preconditioner's solve put where the residual is
+read; using a factorization of a nearby matrix as the preconditioner is as old as the
+method. The least squares fit on a vector's own rows is the normal equations of a
+handful of rows with a Cholesky factor in place and one step of refinement. That
+neither needs a proof, because the product bound proves the vector and the proved
+residual the system's solve, is this design's own. The reference values in the tests
+are exact, in rational arithmetic.
+
 ## Batch 18c: kept vectors refreshed
 
 No source was opened. The multipliers of a row against the kept rows are a least squares

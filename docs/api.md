@@ -262,6 +262,8 @@ A search withdraws the earlier set and its bounds. After the analysis only
 | `RefreshStatus` | Outcome type of refresh! |
 | `Refreshed`, `RefreshNothingKept`, `RefreshBadTarget`, `RefreshNoShift`, `RefreshFactorRefused`, `RefreshNonFinite` | RefreshStatus values |
 | `refresh!` | KeptRows * coalton-linalg/sparse/csc:Matrix * F64 -> RefreshStatus; reprove!, then each vector above its share of the gap target replaced from the values given |
+| `refresh-to!` | KeptRows * coalton-linalg/sparse/csc:Matrix * F64 * F64 -> RefreshStatus; refresh! with the fraction of its share a replaced vector is corrected to, from 0 to 1 |
+| `default-refresh-fraction` | F64; 0.0625 |
 | `refreshed-count` | KeptRows -> UFix; vectors the latest refresh! replaced |
 | `residual-bound` | KeptRows * UFix -> F64; proved bound on the 2-norm of Jᵀ v for the kept vector, otherwise -1 |
 | `gap-bound` | KeptRows -> F64; upper bound on the singular value after the kept count, otherwise -1 |
@@ -276,7 +278,11 @@ A search withdraws the earlier set and its bounds. After the analysis only
 | `step!` | KeptRows * V * V -> StepStatus; the step −B⁺ r against a residual, for the certified matrix |
 | `step-taken?` | KeptRows -> Boolean |
 | `step-solve-bound`, `step-bound` | KeptRows -> F64; proved bounds on the standing step's distance from the exact step for B, and from the truncated matrix's step; otherwise -1 |
+| `step-norm-term`, `step-outside-term` | KeptRows -> F64; the two terms step-bound adds to step-solve-bound, in the step's norm and in the residual outside the range; otherwise -1 |
 | `step-corrections` | KeptRows -> UFix; corrections the standing step's refinement made |
+| `system-iterations` | KeptRows -> UFix; preconditioned iterations the standing step made on the system of the rows left out |
+| `system-factor-count` | KeptRows -> UFix; factorizations of that system since the search, the search's included |
+| `system-iteration-limit` | UFix; 8 |
 | `correction-limit` | UFix; 8 |
 | `solve-growth`, `solve-backward-bound`, `predicted-rate` | KeptRows -> F64; diagnostics of the factor the steps solve with, otherwise -1 |
 

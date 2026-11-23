@@ -1,10 +1,11 @@
 # Kept rows and the certificate
 
 State: implemented in Batches 18a, the kept rows and the certificate, 18b, the step, and
-18c, the refresh of kept vectors. The package is `coalton-linalg/sparse/rank-deficient`.
-[The design](design-rank-deficient-step.md) has the mathematics and the measurements
-that shaped it. The batch records, [18a](batch18a.md), [18b](batch18b.md) and
-[18c](batch18c.md), have the evidence.
+18c and 18d, the refresh of kept vectors. The package is
+`coalton-linalg/sparse/rank-deficient`. [The design](design-rank-deficient-step.md) has
+the mathematics and the measurements that shaped it. The batch records,
+[18a](batch18a.md), [18b](batch18b.md), [18c](batch18c.md) and [18d](batch18d.md), have
+the evidence.
 
 ## What it is for
 
@@ -39,6 +40,9 @@ from it.
 - `refresh!(kept, matrix, gap-target) -> RefreshStatus`: `reprove!`, and then every kept
   vector whose bound is above its share of the target replaced by the row's multipliers
   for these values. `refreshed-count(kept)` is how many the latest call replaced.
+  `refresh-to!(kept, matrix, gap-target, fraction)` is the same with the fraction of its
+  share a replaced vector is corrected to; `refresh!` uses `default-refresh-fraction`, a
+  sixteenth.
 - `certify!(kept, lower-floor, upper-floor) -> CertificateStatus`: that the gap bound is
   below the lower floor and every singular value of the kept rows above the upper, both
   floors in the matrix's own units.
@@ -51,7 +55,10 @@ from it.
 - `step!(kept, r, out) -> StepStatus`: the step against a residual, for the matrix the
   standing certificate is of. Nothing is allocated.
 - `step-solve-bound(kept)`, `step-bound(kept)`: the two bounds of the standing step, −1
-  when none stands. `step-taken?`, `step-corrections`, `correction-limit`.
+  when none stands; `step-norm-term`, `step-outside-term`: the two terms that the second
+  adds to the first. `step-taken?`, `step-corrections`, `correction-limit`.
+- `system-iterations`, `system-factor-count`, `system-iteration-limit`: what the system
+  of the rows left out cost the standing step, and since the search.
 - `solve-growth`, `solve-backward-bound`, `predicted-rate`: diagnostics of the factor the
   steps solve with, −1 when there is none.
 - `largest-singular-bounds!(matrix, steps, work-columns, work-rows, out)`: a lower and an
@@ -190,18 +197,35 @@ that no longer serves**, from the current values:
    once the certificate had already refused. Half the floor is what the measurements here
    use, which replaces a vector at about an eightieth of the floor when 400 rows are left
    out.
-3. For each such row a, its multipliers against the kept rows are recomputed,
-   `w = (J_S J_Sᵀ)⁻¹ J_S aᵀ`, by the kept rows' augmented matrix: one factorization for the
-   call, and for each vector a solve and corrections until its residual is a sixteenth of
-   its share.
+3. For each such row a, its multipliers are found again, by one of two routes.
+   **On the rows its vector already holds**, where there are at most 16 of them: the least
+   squares multipliers against those rows alone, by their normal equations and one
+   correction. This serves whenever the row is still a combination of the same rows, and
+   costs microseconds. **On all the kept rows** otherwise, `w = (J_S J_Sᵀ)⁻¹ J_S aᵀ` by
+   their augmented matrix: one factorization, made at the first vector that needs it, and
+   for each a solve and corrections.
+   Either is taken when its residual is under `fraction` of the vector's share, a
+   sixteenth unless `refresh-to!` is given another. A fraction of zero takes the first
+   route only at rounding, and corrects the second until a correction no longer halves
+   the residual.
 4. The new vector is stored as a search stores one, with the search's own drop tolerance,
    and **its bound is proved for the vector as stored and these values**.
 
 **Nothing is proved by the solves, and nothing needs to be.** A solve that went badly
 gives a vector with a wide bound, and the certificate refuses; it cannot give a false
-one. For that reason the solve's shift is taken from the bound a certificate proved at
-an *earlier* call: it is a shift and nothing more, no bound of this call rests on it,
-and the next step makes its own factor from the bound proved at its own call.
+one. For that reason the second route's shift is taken from the bound a certificate
+proved at an *earlier* call: it is a shift and nothing more, no bound of this call rests
+on it, and the next step makes its own factor from the bound proved at its own call.
+The first route needs no shift, and so no certificate to have been issued.
+
+**How far to correct is a trade the caller makes.** The first route leaves a residual
+near rounding where the row is exactly a combination of its rows, and just under the
+fraction where it is only nearly one. The second usually overshoots the fraction by
+decades. A smaller fraction buys a smaller gap bound, and with it a smaller bound on
+the step, for more corrections. **A row that is not, at these values, a combination of
+a few kept rows to within its share takes whatever rows the second route gives it,
+which can be most of them**: such vectors are long, and the system of the rows left out
+is then dense.
 
 The kept set does not change. A row that has left the span of the kept rows gets the
 best combination there is, its bound is then its distance from the span, and the
@@ -212,21 +236,31 @@ search again. No certificate and no step stand after a refresh.
 | --- | --- |
 | Refreshed | Every bound stands for the values given; `refreshed-count` vectors were replaced, possibly none |
 | RefreshNothingKept | No kept set stands |
-| RefreshBadTarget | The target was not positive and finite; nothing changed |
-| RefreshNoShift | No certificate has been issued for this kept set, so there is no shift to solve with; the bounds stand and no vector was replaced |
-| RefreshFactorRefused | The kept rows' solve could not be factored; the bounds stand and no vector was replaced |
+| RefreshBadTarget | The target was not positive and finite, or the fraction not from 0 to 1; nothing changed |
+| RefreshNoShift | A vector needed the second route, and no certificate has been issued for this kept set to take its shift from; the bounds stand, and the vectors the first route served were replaced |
+| RefreshFactorRefused | A vector needed the second route, and the kept rows' solve could not be factored; the bounds stand, and the vectors the first route served were replaced |
 | RefreshNonFinite | A bound was not finite; the vectors stand, the bounds do not |
 
 A vector whose solve refuses, or whose multipliers are not finite, is left as it was.
 Another pattern or shape raises the typed error of the Gram refill.
 
-**What it costs.** The system of the rows left out is filled and factored again whenever
-a vector was replaced, without a new analysis unless a vector changed the rows it holds.
-Where no vector changes its rows and the arrays have reached their size, a refresh
-allocates nothing. [The record](batch18c.md#what-it-costs) has the times along a
-consumer's drags: 0.13 to 0.18 ms for each vector replaced, and, where the rows left out
-are coupled through one dense system of order 400, ten milliseconds for that system
-whatever the number replaced.
+**The system of the rows left out is not factored again by a refresh.** Where no vector
+changed the rows it holds, the factor the search made stays, now a factor of earlier
+vectors, and the step's solves of that system become conjugate gradients on the current
+system preconditioned by it. With a factor of the vectors as they stand a solve is one
+solve, exactly as before a refresh; with an earlier one it is a few iterations. A solve
+makes at most `system-iteration-limit` iterations, 8, to a residual of 2⁻⁴⁰ of its
+right-hand side; **if it has not converged by then the factor is made again**, from the
+vectors as they stand, and the solve is one solve. Where a vector did change its rows
+the system is analyzed and factored again by the refresh. `system-iterations` is the
+iterations of the standing step and `system-factor-count` the factorizations since the
+search. Nothing here is proved or needs to be: what the step returns for this system is
+[a proved residual](#how-it-is-computed).
+
+**What it costs.** Where no vector changes its rows and the arrays have reached their
+size, a refresh allocates nothing. [The record](batch18d.md#what-it-costs) has the times
+along a consumer's drags: under a tenth of a millisecond where one vector keeps its rows,
+and 0.16 to 0.30 ms for each vector that needs the second route.
 
 ## The step
 
@@ -247,6 +281,8 @@ and differs from the matrix by at most the gap bound. Two bounds stand after a s
 - `step-bound`: on the distance from out to **the step of the matrix truncated at the kept
   count**, `−J_r⁺ r` with `J_r` the nearest matrix of rank r, which is what a singular
   value decomposition cut at the certified floor gives. It includes the first.
+- `step-norm-term` and `step-outside-term`: what the second adds to the first, in its two
+  terms, so that a caller can see which one a wide bound comes from.
 
 With γ the gap bound, τ the bound the certificate proved, x the exact step for B and
 `x*` the truncated one, the second adds to the first
@@ -254,7 +290,9 @@ With γ the gap bound, τ the bound the certificate proved, x the exact step for
     ‖x − x*‖₂  ≤  2γ ( 2 X / τ + ρ / τ² ) / (1 − 4γ/τ) ,
 
 where X bounds `‖x‖₂` and ρ bounds the residual outside the range, `‖r − J x‖₂ + γ X`;
-[the design](design-rank-deficient-step.md#how-far-x-is-from-x) derives it. Each quantity
+[the design](design-rank-deficient-step.md#how-far-x-is-from-x) derives it. The term in
+X is `step-norm-term` and the term in ρ `step-outside-term`; the second carries the
+square of 1/τ and is the larger wherever the residual is far from the range. Each quantity
 in it is proved: the norms from computed vectors with their rounding allowed for, γ and τ
 by the certificate. **Where `4γ/τ` is not below 1 the inequality has no solution and the
 call is `StepBoundNotReached`.** A certificate holds whenever γ is below τ, so vectors
