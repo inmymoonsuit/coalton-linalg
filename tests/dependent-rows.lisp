@@ -670,6 +670,17 @@ rows left out, asking for as many negative pivots as rows kept. NIL when it does
       (multiple-value-bind (bound exact) (try "exact" 2 2 '((0 0 3) (1 1 4)) '(1d0 1d0))
         (assert (= exact 25))
         (assert (<= 5d0 bound (* 5d0 (+ 1d0 1d-13))) () "A product without rounding is bounded by ~S." bound))
+      ;; The same product with its factors at the ends of the range, where a square of either
+      ;; cannot be held: the bound is still within its margin of the norm, 5 times the scales.
+      (loop :for (label matrix-power vector-power) :in '(("large" 600 0) ("small" -600 0) ("large vector" 0 600)
+                                                          ("small vector" 0 -600) ("opposite" 900 -900)
+                                                          ("both small" -500 -500) ("both large" 500 500))
+            :do (let ((norm (scale-float 5d0 (+ matrix-power vector-power))))
+                  (multiple-value-bind (bound exact)
+                      (try label 2 2 (list (list 0 0 (scale-float 3d0 matrix-power)) (list 1 1 (scale-float 4d0 matrix-power)))
+                           (list (scale-float 1d0 vector-power) (scale-float 1d0 vector-power)))
+                    (assert (= exact (expt (rational norm) 2)))
+                    (assert (<= norm bound (* norm (+ 1d0 1d-13))) () "~A: a norm of ~S is bounded by ~S." label norm bound))))
       (try "empty" 2 0 '() '(1d0 2d0))
       ;; One entry of 1 and sixty of 1e-8, each in its own column: every square after the first
       ;; is below half a unit in the last place of the running sum and is rounded away, so the
@@ -689,11 +700,15 @@ rows left out, asking for as many negative pivots as rows kept. NIL when it does
                 (v (loop :repeat m :collect (/ (- (random 2001 state) 1000) 7d0))))
             (try (format nil "seeded ~Dx~D #~D" m n repeat) m n entries v)))))
     (assert (> rounding-mattered 10) () "Only ~D cases had a plain norm below the exact one." rounding-mattered)
-    ;; Overflow, and an overflow of both signs in one column: infinity, never a number that is not one.
+    ;; A product too large to hold: infinity, never a number that is not one. Two such products
+    ;; of opposite sign in one column have an exact sum of zero, and the bound is finite: what it
+    ;; allows for is the rounding of the two, sixteen digits below their size.
     (let ((infinity sb-ext:double-float-positive-infinity))
       (assert (= infinity (rows:transpose-product-bound (csc-from-entries 1 1 '((0 0 1d300))) (doubles 1d10))))
-      (assert (= infinity (rows:transpose-product-bound (csc-from-entries 2 1 '((0 0 1d300) (1 0 -1d300)))
-                                                        (doubles 1d10 1d10)))))
+      (let ((bound (rows:transpose-product-bound (csc-from-entries 2 1 '((0 0 1d300) (1 0 -1d300))) (doubles 1d10 1d10))))
+        (assert (< 0d0 bound 1d296) () "Two products of 1e310 that cancel are bounded by ~S." bound))
+      ;; A vector that is not finite gives infinity.
+      (assert (= infinity (rows:transpose-product-bound (csc-from-entries 1 1 '((0 0 1))) (doubles infinity)))))
     (assert (= 92 (dr-caller:bound-code (csc-from-entries 2 2 '((0 0 1) (1 1 1))) (doubles 1d0))))
     (format t "PRODUCT-BOUND-PASS cases=~D rounding-mattered=~D worst=~,3F~%" cases rounding-mattered
             (float worst 1d0))))
@@ -709,7 +724,7 @@ rows left out, asking for as many negative pivots as rows kept. NIL when it does
     (assert (= 0 (dr-caller:kept-values-code analysis values)))
     (assert (= -1d0 (rows:residual-bound analysis 0)))
     ;; A threshold that cannot be used leaves no set, whatever stood before.
-    (dolist (threshold (list -1d0 nan sb-ext:double-float-positive-infinity 1d200))
+    (dolist (threshold (list -1d0 nan sb-ext:double-float-positive-infinity))
       (assert (= 0 (dr-caller:observe-rows analysis matrix 1d-6)))
       (assert (rows:rows-found? analysis))
       (assert (= 2 (dr-caller:observe-rows analysis matrix threshold)) () "Threshold ~S was accepted." threshold)
@@ -717,27 +732,63 @@ rows left out, asking for as many negative pivots as rows kept. NIL when it does
                    (= 0 (rows:left-out-count analysis)) (= -1d0 (rows:gap-bound analysis))))
       (assert (= 1 (dr-caller:observe-null analysis 0 out)))
       (assert (= 0 (dr-caller:kept-values-code analysis values))))
-    ;; The search compares squares. A positive threshold whose square is too small to be a normal
-    ;; number is refused; the smallest whose square is one is taken.
+    ;; The search is made on the matrix divided by the power of two at its largest entry, 4 here,
+    ;; and compares squares. A positive threshold so small beside that entry that its square is
+    ;; not a normal number is refused, and the smallest whose square is one is taken. A threshold
+    ;; beyond every row, 1e200, whose own square is not finite, leaves every row out.
     (assert (= 0 (dr-caller:observe-rows analysis matrix 1d-6)))
     (assert (= 2 (dr-caller:observe-rows analysis matrix 1d-160)) () "A threshold whose square underflows was accepted.")
     (assert (and (not (rows:rows-found? analysis)) (= 0 (rows:left-out-count analysis))))
-    (assert (= 0 (dr-caller:observe-rows analysis matrix 1.5d-154)) () "A threshold whose square is normal was refused.")
-    ;; The same rows 2^600 times smaller have squares that underflow to zero. Under a threshold of
-    ;; zero that is refused, since every row would be left out as dependent; under a threshold
-    ;; whose square can be held every row is shorter than the threshold, and is rightly left out.
-    (let ((small (csc-from-entries 4 3 (mapcar (lambda (entry)
-                                                 (list (first entry) (second entry)
-                                                       (scale-float (coerce (third entry) 'double-float) -600)))
-                                               entries))))
-      (assert (= 0 (dr-caller:observe-rows analysis matrix 1d-6)))
-      (assert (= 1 (dr-caller:observe-rows analysis small 0d0)) ()
-              "Rows whose squares underflow were searched under a threshold of zero: ~D left out."
-              (rows:left-out-count analysis))
-      (assert (and (not (rows:rows-found? analysis)) (= 0 (rows:left-out-count analysis))))
-      (assert (= 0 (dr-caller:observe-rows analysis small 1d-150)))
+    (assert (= 0 (dr-caller:observe-rows analysis matrix 1d-153)) () "A threshold whose square is normal was refused.")
+    (assert (= 0 (dr-caller:observe-rows analysis matrix 1d200)) () "A threshold beyond every row was refused.")
+    (assert (= 4 (rows:left-out-count analysis)) () "A threshold beyond every row left out ~D of 4."
+            (rows:left-out-count analysis))
+    ;; The same rows at other scales are searched as the rows themselves: under a threshold of
+    ;; zero and under one scaled with them, the rows left out, the vector of the first and the
+    ;; values handed back are those of the matrix as given, the values scaled.
+    (flet ((scaled (power)
+             (csc-from-entries 4 3 (mapcar (lambda (entry)
+                                             (list (first entry) (second entry)
+                                                   (scale-float (coerce (third entry) 'double-float) power)))
+                                           entries)))
+           (answer (source threshold power)
+             (let ((kept (zeros 9)) (vector (zeros 4)))
+               (assert (= 0 (dr-caller:observe-rows analysis source threshold)) ()
+                       "At 2^~D the search under ~S gave ~D." power threshold
+                       (dr-caller:observe-rows analysis source threshold))
+               (assert (= 1 (dr-caller:kept-values-code analysis kept)))
+               (when (plusp (rows:left-out-count analysis)) (assert (= 0 (dr-caller:observe-null analysis 0 vector))))
+               (list (rows:left-out-count analysis)
+                     (subseq (rows:left-out-rows analysis) 0 (rows:left-out-count analysis))
+                     vector (map 'vector (lambda (value) (scale-float value (- power))) kept)))))
+      (let ((exact (answer matrix 0d0 0)) (near (answer matrix 1d-6 0)))
+        (assert (plusp (first near)) () "The fixture leaves no row out.")
+        (dolist (power '(-1000 -600 600 1000))
+          (assert (equalp exact (answer (scaled power) 0d0 power)) () "At 2^~D the search under zero differs." power)
+          (assert (equalp near (answer (scaled power) (scale-float 1d-6 power) power)) ()
+                  "At 2^~D the search under a scaled threshold differs." power)))
+      ;; Rows 2^600 times smaller under a threshold that is not: every row is shorter than it.
+      (assert (= 0 (dr-caller:observe-rows analysis (scaled -600) 1d-150)))
       (assert (= 4 (rows:left-out-count analysis)) () "Rows shorter than the threshold were kept: ~D left out."
               (rows:left-out-count analysis)))
+    ;; One row 2^600 times smaller than the others: its square cannot be held beside theirs.
+    ;; Under a threshold of zero that is refused by name, since the row would be left out as
+    ;; dependent; under a threshold whose square can be held the row is shorter than the
+    ;; threshold, and is rightly left out.
+    (let ((mixed (csc-from-entries 4 3 (mapcar (lambda (entry)
+                                                 (list (first entry) (second entry)
+                                                       (if (= 3 (first entry))
+                                                           (scale-float (coerce (third entry) 'double-float) -600)
+                                                           (third entry))))
+                                               entries))))
+      (assert (= 0 (dr-caller:observe-rows analysis matrix 1d-6)))
+      (assert (= 3 (dr-caller:observe-rows analysis mixed 0d0)) ()
+              "A row whose square underflows was searched under a threshold of zero: code ~D, ~D left out."
+              (dr-caller:observe-rows analysis mixed 0d0) (rows:left-out-count analysis))
+      (assert (and (not (rows:rows-found? analysis)) (= 0 (rows:left-out-count analysis))))
+      (assert (= 0 (dr-caller:observe-rows analysis mixed 1d-100)))
+      (assert (find 3 (subseq (rows:left-out-rows analysis) 0 (rows:left-out-count analysis))) ()
+              "The row shorter than the threshold was kept."))
     ;; A matrix of another pattern or shape is a typed error, and leaves no set.
     (assert (= 0 (dr-caller:observe-rows analysis matrix 1d-6)))
     (assert (= 91 (dr-caller:observe-rows analysis (csc-from-entries 4 3 (cons '(3 2 1) entries)) 1d-6)))
@@ -774,12 +825,13 @@ rows left out, asking for as many negative pivots as rows kept. NIL when it does
       (assert (= 2 (rows:left-out-count analysis)))
       (assert (= 0 (dr-caller:observe-null analysis 0 again)))
       (assert (same-bits-p first-vector again) () "The same values gave another vector after other values."))
-    ;; A row whose square, 1e-320, is too small to hold, under a threshold of zero. Before that was
-    ;; refused for itself this case reached the factorization, whose first multiplier overflowed.
+    ;; A row of 1e-160 beside one of 1e150, under a threshold of zero: its square cannot be held
+    ;; beside the other's. Before that was refused for itself, as an underflow, this case reached
+    ;; the factorization, whose first multiplier overflowed.
     (let* ((tiny (csc-from-entries 2 1 '((0 0 1d-160) (1 0 1d150))))
            (small (rows:analyze tiny)))
-      (assert (= 1 (dr-caller:observe-rows small tiny 0d0)) ()
-              "The overflow case gave ~D with ~D rows left out." (dr-caller:observe-rows small tiny 0d0)
+      (assert (= 3 (dr-caller:observe-rows small tiny 0d0)) ()
+              "The row too small to square gave ~D with ~D rows left out." (dr-caller:observe-rows small tiny 0d0)
               (rows:left-out-count small))
       (assert (not (rows:rows-found? small))))
     ;; A budget too small for the product or the factor is the analyses' typed error.

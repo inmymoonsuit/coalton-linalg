@@ -34,7 +34,7 @@ that chose badly is seen to have.
   analysis](spd-ldlt.md); the budget applies to each.
 - `find-dependent-rows!(analysis, matrix, threshold) -> RowStatus`. The matrix must have
   the analyzed pattern; another pattern or shape raises the typed error of
-  `refill-csc!`, as does a product that is not finite. The threshold is a distance, in the
+  `refill-csc!`, and a value that is not finite that of `refill!`. The threshold is a distance, in the
   units of the entries: a row is left out when its squared distance from the span of the
   rows kept before it, as computed, is at most the threshold squared.
 - `rows-found?(analysis)`, `kept-count(analysis)`, `left-out-count(analysis)`.
@@ -50,7 +50,8 @@ that chose badly is seen to have.
 - `kept-values!(analysis, out) -> Boolean`: the matrix's values as the latest search read
   them, in its stored order, with zeros for the entries of the rows left out. It is what
   [the proof below](#proving-the-kept-rows-independent) is given.
-- `transpose-product-bound(matrix, v) -> F64`: the bound by itself, for any stored matrix
+- `transpose-product-bound(matrix, v) -> F64`: the bound by itself, formed on the matrix and
+  the vector each divided by the power of two at its largest entry, for any stored matrix
   and any vector as long as it has rows. A caller that zeroes small multipliers and wants
   to know what the reduced combination leaves asks this.
 - `row-count`, `column-count`, `refinement-step-limit`, `default-analysis-entry-limit`.
@@ -58,8 +59,9 @@ that chose badly is seen to have.
 | RowStatus | Meaning |
 | --- | --- |
 | RowsFound | A kept set stands |
-| RowsNonFinite | An intermediate result of the factorization was not finite, or under a threshold of zero the square of a row holding a nonzero entry was too small to be a normal number; no set stands |
-| RowsBadThreshold | The threshold was negative or not a number, or its square was not finite, or it was positive with a square too small to be a normal number; no set stands |
+| RowsNonFinite | An intermediate result of the factorization was not finite; no set stands |
+| RowsUnderflow | Under a threshold of zero, a row holding a nonzero entry is so small beside the matrix's largest entry that its square cannot be held; no set stands |
+| RowsBadThreshold | The threshold was negative or not finite, or positive and so small beside the matrix's largest entry that its square cannot be held; no set stands |
 
 | NullStatus | Meaning |
 | --- | --- |
@@ -232,24 +234,29 @@ the caller's matrix has changed since. The operator and the solve the refinement
 are made once, at analysis, over that storage. The kept set is recorded as the rows left
 out, which are few, and a flag for each row.
 
-**The search reaches half the exponent range of the matrix**, because it compares squares:
-those of the rows, in `A Aᵀ`, with that of the threshold. A product too large to hold is
-the Gram refill's typed error. At the small end nothing used to be said, and a matrix of
-entries near 10⁻¹⁸⁰ came back with every row left out, its squares having become zero.
-That is refused now, by the two statuses above:
+**The size of the matrix does not limit the search.** It compares squares, those of the
+rows in `A Aᵀ` with that of the threshold, and a square leaves the range at half the
+exponent of what is squared. So the search is made on the matrix divided by the power of
+two at its largest entry, with the threshold divided by the same power. The division is
+exact. The multipliers of the factorization are those of the undivided matrix, so the rows
+left out, the vectors and the values handed back are the same at every scale, bit for
+bit; a bound is formed on the divided matrix and multiplied back when it is read, raised
+by the smallest positive number where the product falls below the normal range and could
+have been rounded down. [The scale-sweep roster](rosters.md#what-is-declared) holds this
+from 2^-1000 to 2^1020.
 
-- A positive threshold whose square is below the least normal number, about 1.5 × 10⁻¹⁵⁴
-  for the threshold itself, is `RowsBadThreshold`: squared, it is zero or has lost its
-  digits, and would be compared as another threshold.
-- Under a threshold that can be held, a row whose square underflowed is shorter than the
-  threshold and is left out, as the contract says.
-- Under a threshold of zero there is no such statement to fall back on, and a row holding
-  a nonzero entry whose square is below the least normal number is `RowsNonFinite`. The
-  name is the nearest of the two there are; what it reports here is a square too small,
-  not one that is not finite.
+What a square cannot hold is now a matter of sizes inside one matrix, and is refused by
+name:
 
-A caller whose entries are that small scales them first, as for any other reason, and
-[the scale-sweep roster](rosters.md#what-is-declared) holds the range measured.
+- A positive threshold more than about 2^511 times smaller than the matrix's largest
+  entry is `RowsBadThreshold`: squared, it is zero or has lost its digits, and would be
+  compared as another threshold. A threshold beyond every row, whose own square may not be
+  finite, is taken, and leaves every row out.
+- Under a threshold that can be held, a row too small to square beside the largest entry
+  is shorter than the threshold and is left out, as the contract says.
+- Under a threshold of zero there is no such statement to fall back on, and such a row,
+  if it holds a nonzero entry, is `RowsUnderflow`. The search would otherwise leave it out
+  as dependent.
 
 The threshold is absolute. A caller with rows of very different sizes scales them first,
 by [`equilibrate!`](scaling.md) or its own normalization, and should know that scaling

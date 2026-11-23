@@ -48,9 +48,14 @@ or a CAD application. Add a new mathematical module when a concrete use needs it
 do not create empty packages or speculative backend abstractions.
 
 The independently derived algorithms and tests have a clean-room provenance
-requirement. Consult language documentation and mathematical prose, not other
-numerical-library implementations or algorithm code listings. Record any permitted
-new source and its license before adopting code. See [provenance](docs/provenance.md).
+requirement. A published description of a method, a textbook and its pseudocode may
+be read as references for what the method is. The implementation is then written from
+the mathematics, in a structure that follows from this library's own contracts:
+caller-owned arrays, named refusals, every check before the first write. It is never a
+listing taken statement by statement or with its names kept. Code is never copied, and
+other numerical-library implementations and listings in a real programming language are
+not consulted. Each batch's entry in [provenance](docs/provenance.md) says what was
+read. Record any permitted new source and its license before adopting code.
 
 Generated logs, factor artifacts, compiled caches, and local configuration are not
 source. Keep them under ignored locations. A concise evidence record should state

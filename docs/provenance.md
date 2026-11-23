@@ -83,6 +83,34 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## The clean-room question, decided
+
+Several sections below, written from Batch 3d onward, say that whether following a published
+method closely from its description meets this repository's clean-room rule was an open
+decision of the maintainer's. **He decided it on 2026-11-22: an implementation written
+clean-room from a published method's description is acceptable, and textbook references
+and pseudocode may be read as references.** What is unchanged: code is never copied, in
+any form; no numerical-library implementation and no listing in a real programming
+language is consulted; and each batch names what was read. Every batch before this
+ruling was written without opening a pseudocode box, as its section says.
+
+## Batch 16: the range of conjugate gradients and of dependent rows
+
+Both changes are one idea applied twice: divide the data by a power of two before a method
+squares it, and multiply back what has units. Its sources are prose in Higham, *Accuracy
+and Stability of Numerical Algorithms*, second edition: section 27.8, on intermediate
+quantities that overflow or underflow in the computation of representable ones, which
+notes that for about half of all machine numbers the square leaves the range and that
+scaling by a power of the machine base adds no rounding error; and section 9.8, which
+states Bauer's result that when rows and columns are scaled by powers of the base the
+rounding errors of an elimination scale exactly as the matrix does. That conjugate
+gradients do not depend on the length of a search direction follows from the iteration as
+the contract page gives it: the step length is the ratio that the direction's length
+cancels from. No listing or pseudocode was read for either, and no implementation. The
+structure is this library's own: one power of two for a whole call, chosen from the first
+residual or from the matrix's largest entry, held in the workspace, with the division
+done in the pass that already copies the data.
+
 ## Batch 14: an outside audit
 
 The changes of this batch were written by Robert Smith and contributed to this

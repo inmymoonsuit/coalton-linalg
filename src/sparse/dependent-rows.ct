@@ -9,7 +9,7 @@
                     (#:fp #:coalton-linalg/internal/float)
                     (#:err #:coalton-linalg/errors))
   (:export #:RowAnalysis #:analyze #:analyze-with-limit #:default-analysis-entry-limit
-           #:RowStatus #:RowsFound #:RowsNonFinite #:RowsBadThreshold
+           #:RowStatus #:RowsFound #:RowsNonFinite #:RowsUnderflow #:RowsBadThreshold
            #:find-dependent-rows! #:rows-found? #:row-count #:column-count
            #:kept-count #:left-out-count #:left-out-rows #:kept-values!
            #:NullStatus #:NullFound #:NullNoRows #:NullBadPosition #:NullBadSize #:NullNonFinite
@@ -25,7 +25,9 @@
     (columns UFix)
     (pointers (arr:LispArray UFix))
     (indices (arr:LispArray UFix))
+    (source (arr:LispArray F64))
     (entries (arr:LispArray F64))
+    (scale (arr:LispArray F64))
     (plan gram:GramPlan)
     (product (arr:LispArray F64))
     (symbolic ldlt:Symbolic)
@@ -57,9 +59,11 @@
     RowsFound
     "A kept set stands; read the counts and the rows left out."
     RowsNonFinite
-    "An intermediate result was not finite, or with a threshold of zero the square of a row was too small to hold; no set stands."
+    "An intermediate result of the factorization was not finite; no set stands."
+    RowsUnderflow
+    "Under a threshold of zero, a row holding a nonzero entry is so small beside the matrix's largest entry that its square cannot be held; no set stands."
     RowsBadThreshold
-    "The threshold was negative or not a number, or its square was not finite or was too small to hold; no set stands.")
+    "The threshold was negative or not finite, or positive and so small beside the matrix's largest entry that its square cannot be held; no set stands.")
 
   (derive Eq)
   (repr :enum)
@@ -110,9 +114,9 @@
       (arr:set! out j (cell:read sum))))
 
   (declare product-bound! (UFix * arr:LispArray UFix * arr:LispArray UFix * arr:LispArray F64
-                           * arr:LispArray F64 * arr:LispArray F64 * UFix -> Void))
-  (define (product-bound! n pointers indices entries v target slot)
-    "Write into target[slot] an upper bound on the 2-norm of A^T v that holds for the exact product, or infinity. See docs/dependent-rows.md."
+                           * arr:LispArray F64 * arr:LispArray F64 * UFix * F64 * F64 -> Void))
+  (define (product-bound! n pointers indices entries v target slot entry-scale vector-scale)
+    "Write into target[slot] an upper bound on the 2-norm of (entry-scale A)^T (vector-scale v) that holds for the exact product, or infinity. The two scales are powers of two, so each scaled factor is exact. See docs/dependent-rows.md."
     (let total = (cell:new 0.0d0))
     (for ((j 0 (+ j 1))) :while (< j n)
       (let start = (arr:aref pointers j))
@@ -120,7 +124,7 @@
       (let sum = (cell:new 0.0d0))
       (let magnitude = (cell:new 0.0d0))
       (for ((q start (+ q 1))) :while (< q end)
-        (let p = (* (arr:aref entries q) (arr:aref v (arr:aref indices q))))
+        (let p = (* (* (arr:aref entries q) entry-scale) (* (arr:aref v (arr:aref indices q)) vector-scale)))
         (cell:write! sum (+ (cell:read sum) p))
         (cell:write! magnitude (+ (cell:read magnitude) (abs p))))
       ;; The exact entry is within gamma(c) of the sum of the rounded products' magnitudes, c the
@@ -146,10 +150,34 @@
     "An upper bound on the 2-norm of A^T v that holds for the exact product of the stored values, the rounding of its own computation included; infinity when no finite bound was reached. See docs/dependent-rows.md."
     (unless (== (arr:length v) (csc:row-count matrix))
       (throw (err:InvalidDimensions "The vector's length differs from the matrix's row count.")))
-    (let target = (arr:make 1 0.0d0))
+    ;; The bound squares its products, and a square leaves the range at half the exponent of what
+    ;; is squared. So it is formed on the matrix and the vector each divided by the power of two
+    ;; at its largest entry, exactly, and multiplied back.
+    (let entries = (csc:entries matrix))
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length entries))
+      (let a = (abs (arr:aref entries q)))
+      (when (> a (cell:read largest)) (cell:write! largest a)))
+    (let longest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length v))
+      (let a = (abs (arr:aref v i)))
+      (when (> a (cell:read longest)) (cell:write! longest a)))
+    ;; An entry that is not finite stays so when divided, and the bound comes out infinite.
+    ;; The bound, then each power of two with its reciprocal.
+    (let target = (arr:make 5 0.0d0))
+    (fp:binade! (cell:read largest) target 1)
+    (fp:binade! (cell:read longest) target 3)
     (product-bound! (csc:column-count matrix) (csc:column-pointers matrix) (csc:row-indices matrix)
-                    (csc:entries matrix) v target 0)
-    (arr:aref target 0))
+                    entries v target 0 (arr:aref target 2) (arr:aref target 4))
+    (let first = (arr:aref target 1))
+    (let second = (arr:aref target 3))
+    (let together = (* first second))
+    ;; The two powers multiplied first, which is exact, unless that product leaves the range
+    ;; while the bound itself need not: then one after the other, each step toward the result.
+    (let restored = (if (or (== together 0.0d0) (not (inline (math:finite? together))))
+                        (* (* (arr:aref target 0) first) second)
+                        (* (arr:aref target 0) together)))
+    (if (< restored fp:least-normal) (+ restored smallest-positive) restored))
 
   (declare analyze (csc:Matrix -> RowAnalysis))
   (define (analyze matrix)
@@ -168,6 +196,7 @@
     (let factor = (ldlt:symbolic-factor symbolic))
     (let pointers = (arr:copy (csc:column-pointers matrix)))
     (let indices = (arr:copy (csc:row-indices matrix)))
+    (let source = (arr:make (arr:length indices) 0.0d0))
     (let entries = (arr:make (arr:length indices) 0.0d0))
     (let kept = (arr:make m (the UFix 0)))
     (let combination = (arr:make m 0.0d0))
@@ -208,7 +237,7 @@
           (arr:set! out i (arr:aref r i)))
         True))
     (MkRowAnalysis
-     (RowAnalysisStorage m n pointers indices entries plan
+     (RowAnalysisStorage m n pointers indices source entries (arr:make 2 1.0d0) plan
                          (arr:make (gram:entry-count plan) 0.0d0) symbolic
                          (arr:make m (the UFix 0)) kept (arr:make m -1.0d0)
                          (arr:make 2 (the UFix 0))
@@ -253,14 +282,36 @@
     (let st = (.state s))
     (arr:set! st 0 0)
     (arr:set! st 1 0)
-    (let floor = (* threshold threshold))
-    ;; The search compares squares. A positive threshold whose square is below the least normal
-    ;; number has become zero or lost its digits, and would be compared as another threshold.
-    (unless (and (>= threshold 0.0d0) (inline (math:finite? floor))
-                 (or (== threshold 0.0d0) (>= floor fp:least-normal)))
-      (return RowsBadThreshold))
-    (gram:refill-csc! (.plan s) matrix (.product s))
-    (let source = (csc:entries matrix))
+    (unless (and (>= threshold 0.0d0) (inline (math:finite? threshold))) (return RowsBadThreshold))
+    (gram:check-csc! (.plan s) matrix)
+    ;; The search compares squares, of the rows in A A^T and of the threshold, and a square
+    ;; leaves the range at half the exponent of what is squared. So the search is made on the
+    ;; matrix divided by the power of two at its largest entry, the threshold divided with it.
+    ;; The division is exact, the multipliers of the factorization are those of the undivided
+    ;; matrix, and every answer but a bound is the same; a bound is multiplied back when read.
+    (let values = (csc:entries matrix))
+    (let source = (.source s))
+    (let entries = (.entries s))
+    (let scale = (.scale s))
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (let a = (arr:aref values q))
+      (arr:set! source q a)
+      (when (> (abs a) (cell:read largest)) (cell:write! largest (abs a))))
+    ;; A value that is not finite stays so when divided, and the refill below refuses it by its
+    ;; typed error.
+    (fp:binade! (cell:read largest) scale 0)
+    (let down = (arr:aref scale 1))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (arr:set! entries q (* (arr:aref source q) down)))
+    (gram:refill! (.plan s) entries (.product s))
+    (let reach = (* threshold down))
+    (let squared = (* reach reach))
+    ;; A threshold beyond every row, once divided, leaves every row out, as it should.
+    (let floor = (if (inline (math:finite? squared)) squared fp:greatest))
+    ;; A positive threshold whose square is below the least normal number has become zero or
+    ;; lost its digits, and would be compared as another threshold.
+    (unless (or (== threshold 0.0d0) (>= floor fp:least-normal)) (return RowsBadThreshold))
     ;; Under a positive threshold a row whose square underflowed is shorter than the threshold
     ;; and is rightly left out. Under a threshold of zero nothing says so: the row would be
     ;; left out as dependent because its square could not be held.
@@ -269,10 +320,7 @@
       (for ((q 0 (+ q 1))) :while (< q (arr:length source))
         (unless (or (== (arr:aref source q) 0.0d0)
                     (>= (arr:aref (.product s) (arr:aref diagonals (arr:aref (.indices s) q))) fp:least-normal))
-          (return RowsNonFinite))))
-    (let entries = (.entries s))
-    (for ((q 0 (+ q 1))) :while (< q (arr:length entries))
-      (arr:set! entries q (arr:aref source q)))
+          (return RowsUnderflow))))
     ;; The value count, the shift and the floor are this module's own and were checked above,
     ;; so the one refusal left is a result that was not finite.
     (unless (== (ldlt:factor-skipping! (.symbolic s) (.product s) 0.0d0 floor) ldlt:SkipSuccess)
@@ -300,7 +348,7 @@
   (define (kept-values! analysis out)
     "Write the matrix's values as the latest search read them, in its stored order, with zeros for the entries of the rows left out, and return True; return False with out untouched when no kept set stands."
     (let s = (analysis-storage analysis))
-    (let entries = (.entries s))
+    (let entries = (.source s))
     (unless (== (arr:length out) (arr:length entries))
       (throw (err:InvalidDimensions "The output's length differs from the matrix's entry count.")))
     (unless (== (arr:aref (.state s) 0) 1) (return False))
@@ -337,7 +385,7 @@
       (arr:set! v i (- 0.0d0 (arr:aref x i))))
     (arr:set! v k 1.0d0)
     (let bounds = (.bounds s))
-    (product-bound! (.columns s) (.pointers s) (.indices s) (.entries s) v bounds position)
+    (product-bound! (.columns s) (.pointers s) (.indices s) (.entries s) v bounds position 1.0d0 1.0d0)
     (unless (inline (math:finite? (arr:aref bounds position)))
       (arr:set! bounds position -1.0d0)
       (return NullNonFinite))
@@ -345,12 +393,20 @@
       (arr:set! out i (arr:aref v i)))
     NullFound)
 
+  (inline)
+  (declare restored-bound (F64 * F64 -> F64))
+  (define (restored-bound bound up)
+    "A bound on a quantity of the divided matrix as one on the matrix itself: multiplied back by the power of two, and raised by the smallest positive number where the product is below the normal range and could have been rounded down. It may be infinite."
+    (let restored = (* bound up))
+    (if (< restored fp:least-normal) (+ restored smallest-positive) restored))
+
   (declare residual-bound (RowAnalysis * UFix -> F64))
   (define (residual-bound analysis position)
     "The bound the latest successful null-vector! at this position recorded on the 2-norm of A^T v for the vector it wrote, exact product; -1 when there is none since the latest search."
     (let s = (analysis-storage analysis))
     (if (and (== (arr:aref (.state s) 0) 1) (< position (arr:aref (.state s) 1)))
-        (arr:aref (.bounds s) position)
+        (let ((bound (arr:aref (.bounds s) position)))
+          (if (< bound 0.0d0) -1.0d0 (inline (restored-bound bound (arr:aref (.scale s) 0)))))
         -1.0d0))
 
   (declare gap-bound (RowAnalysis -> F64))
@@ -364,6 +420,8 @@
       (let bound = (arr:aref (.bounds s) i))
       (when (< bound 0.0d0) (return -1.0d0))
       (cell:write! total (+ (cell:read total) (* bound bound))))
+    (when (== count 0) (return 0.0d0))
     (let order = (%count->float count))
-    (* (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order 4.0d0)))
-       (math:sqrt (+ (cell:read total) (* order smallest-positive))))))
+    (inline (restored-bound (* (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order 4.0d0)))
+                               (math:sqrt (+ (cell:read total) (* order smallest-positive))))
+                            (arr:aref (.scale s) 0)))))

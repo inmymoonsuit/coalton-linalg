@@ -62,7 +62,7 @@
                               (arr:make dimension 0.0d0) (arr:make dimension 0.0d0)
                               (arr:make dimension 0.0d0) (arr:make dimension 0.0d0)
                               (arr:make dimension 0.0d0)
-                              (arr:make (+ step-limit 1) 0.0d0) (arr:make 2 -1.0d0)
+                              (arr:make (+ step-limit 1) 0.0d0) (arr:make 4 -1.0d0)
                               (arr:make 2 0.0d0) (arr:make 2 (the IFix 0))
                               (arr:make 2 (the UFix 0)))))
 
@@ -93,7 +93,7 @@
 
   (declare recurrence-norms (CgWorkspace -> arr:LispArray F64))
   (define (recurrence-norms workspace)
-    "Borrowed view: the 2-norm of the running residual after each step of the latest call, entry 0 for the starting vector; step-count + 1 entries are meaningful."
+    "Borrowed view: the 2-norm of the running residual after each step of the latest call, entry 0 for the starting vector; step-count + 1 entries are meaningful. An entry is infinity where that norm was too large to hold."
     (.norms (storage workspace)))
 
   ;; The three helpers below are inlined, so that no number is boxed, and they are kept in
@@ -200,18 +200,34 @@
       (arr:set! z i (arr:aref r i)))
     True)
 
+  ;; The iteration is carried on the residual divided by one power of two, chosen from the
+  ;; first residual of the call and held in scalars[2], its reciprocal in scalars[3]. The
+  ;; preconditioned residual, the direction and its image are divided with it, since each is
+  ;; linear in the residual; the iterate and the norms reported are not. Inner products are then
+  ;; of numbers near 1 whatever the size of the right-hand side, and the operator is applied to a
+  ;; direction near 1 whatever its own size. The division is exact, so wherever the undivided
+  ;; quantities stayed in range the iterates are the same bit for bit.
   (declare form-residual! ((arr:LispArray F64 * arr:LispArray F64 -> Void)
                            * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64
-                           * arr:LispArray F64 -> Void))
-  (define (form-residual! apply b x image residual scalars)
-    "residual = b - A x through the operator, and its 2-norm into scalars[1]."
+                           * arr:LispArray F64 * Boolean -> Boolean))
+  (define (form-residual! apply b x image residual scalars choose)
+    "residual = (b - A x) / scalars[2] through the operator, and the 2-norm of b - A x into scalars[1]. With choose, scalars[2] and scalars[3] are first set from this residual's largest entry. False when that norm is not finite, as it is not when an entry is not."
     (apply x image)
-    (let sum = (cell:new 0.0d0))
+    (let largest = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i (arr:length b))
       (let r = (- (arr:aref b i) (arr:aref image i)))
       (arr:set! residual i r)
-      (cell:write! sum (+ (cell:read sum) (* r r))))
-    (arr:set! scalars 1 (inline (norm-from-squares residual (cell:read sum)))))
+      (when (> (abs r) (cell:read largest)) (cell:write! largest (abs r))))
+    (when choose (fp:binade! (cell:read largest) scalars 2))
+    (let down = (arr:aref scalars 3))
+    (let sum = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length b))
+      (let v = (* (arr:aref residual i) down))
+      (arr:set! residual i v)
+      (cell:write! sum (+ (cell:read sum) (* v v))))
+    (let norm = (* (inline (norm-from-squares residual (cell:read sum))) (arr:aref scalars 2)))
+    (arr:set! scalars 1 norm)
+    (inline (math:finite? norm)))
 
   (declare cg! (CgWorkspace * (arr:LispArray F64 * arr:LispArray F64 -> Void)
                 * arr:LispArray F64 * arr:LispArray F64 * F64 -> CgStatus))
@@ -244,8 +260,8 @@
                         (arr:set! saved i (arr:aref b i)))
                       saved)
                      (True b)))
-    (form-residual! apply rhs x q r scalars)
-    (unless (inline (math:finite? (arr:aref scalars 1))) (return CgNonFinite))
+    (unless (form-residual! apply rhs x q r scalars True) (return CgNonFinite))
+    (let up = (arr:aref scalars 2))
     (arr:set! norms 0 (arr:aref scalars 1))
     ;; True while the residual held was formed from the operator and no direction is set.
     (let fresh = (cell:new True))
@@ -270,16 +286,22 @@
       (unless (> curvature 0.0d0) (return CgNotPositive))
       (let alpha = (product-ratio s 0 1))
       (unless (inline (math:finite? alpha)) (return CgNonFinite))
+      ;; The step in the iterate's own units. The two factors first, which is exact: the
+      ;; direction multiplied back by itself need not be a number the format holds.
+      (let step = (* alpha up))
+      (unless (inline (math:finite? step)) (return CgNonFinite))
       (let sum = (cell:new 0.0d0))
       (for ((i 0 (+ i 1))) :while (< i n)
-        (arr:set! x i (+ (arr:aref x i) (* alpha (arr:aref p i))))
+        (arr:set! x i (+ (arr:aref x i) (* step (arr:aref p i))))
         (let v = (- (arr:aref r i) (* alpha (arr:aref q i))))
         (arr:set! r i v)
         (cell:write! sum (+ (cell:read sum) (* v v))))
       (unless (inline (math:finite? (cell:read sum))) (return CgNonFinite))
       (cell:write! k (+ (cell:read k) 1))
       (arr:set! st 0 (cell:read k))
-      (let norm = (inline (norm-from-squares r (cell:read sum))))
+      ;; Multiplied back, the norm can be above the largest number while the divided residual is
+      ;; sound: it is recorded as infinity, meets no tolerance, and the method goes on.
+      (let norm = (* (inline (norm-from-squares r (cell:read sum))) up))
       (arr:set! norms (cell:read k) norm)
       ;; When the running residual says the tolerance is met: it is a recurrence and can have
       ;; drifted from b - A x, so the residual is formed from the operator and the test is
@@ -287,8 +309,7 @@
       ;; again from the residual just formed.
       (let met = (<= norm tolerance))
       (when met
-        (form-residual! apply rhs x q r scalars)
-        (unless (inline (math:finite? (arr:aref scalars 1))) (return CgNonFinite))
+        (unless (form-residual! apply rhs x q r scalars False) (return CgNonFinite))
         (cell:write! fresh True)
         (arr:set! st 1 (+ (arr:aref st 1) 1)))
       (unless (or met (== (cell:read k) (.limit s)))
@@ -305,7 +326,6 @@
           (arr:set! p i (+ (arr:aref z i) (* beta (arr:aref p i)))))))
     ;; The limit. What is reported is the residual formed from the operator.
     (unless (cell:read fresh)
-      (form-residual! apply rhs x q r scalars)
-      (unless (inline (math:finite? (arr:aref scalars 1))) (return CgNonFinite)))
+      (unless (form-residual! apply rhs x q r scalars False) (return CgNonFinite)))
     (arr:set! scalars 0 (arr:aref scalars 1))
     (if (<= (arr:aref scalars 0) tolerance) CgConverged CgLimit)))

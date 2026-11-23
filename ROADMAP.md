@@ -227,10 +227,15 @@ routine; conjugate gradients and dependent rows reach less than the whole range,
 their contracts now say how much. [The rosters' page](docs/rosters.md) is the contract
 and [the record](docs/batch15.md) the evidence.
 
-Left open by it, for a decision: widening conjugate gradients at the large end the way
-the audit widened it at the small one, and at both ends when the operator is scaled, by
-normalizing the direction; and scaling inside the dependent-rows search by a power of
-two, which would give it the whole range in place of half.
+### Batch 16: the range of conjugate gradients and of dependent rows
+
+**Completed.** The two limits Batch 15 measured are removed. Conjugate gradients carry the
+iteration on the residual divided by a power of two, and the search for dependent rows is
+made on the matrix divided by one, so a right-hand side, an operator or a matrix of any
+size the format holds is solved as its ordinary-sized counterpart is, bit for bit. A row
+too small to square beside the largest entry, under a threshold of zero, is refused by a
+status of its own, `RowsUnderflow`. [The record](docs/batch16.md) has the measurements
+before and after.
 
 ### Next
 

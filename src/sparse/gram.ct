@@ -8,7 +8,7 @@
   (:export #:GramPlan #:analyze-ata #:analyze-aat
            #:analyze-ata-with-limit #:analyze-aat-with-limit
            #:dimension #:column-pointers #:row-indices #:entry-count
-           #:refill! #:refill-csc! #:default-analysis-entry-limit #:maximum-analysis-size))
+           #:refill! #:refill-csc! #:check-csc! #:default-analysis-entry-limit #:maximum-analysis-size))
 (cl:in-package #:coalton-linalg/sparse/gram)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -313,9 +313,9 @@
       (unless (inline (math:finite? (arr:aref output q)))
         (throw (err:NonFiniteResult "Gram result is not finite.")))))
 
-  (declare refill-csc! (GramPlan * csc:Matrix * arr:LispArray F64 -> Void))
-  (define (refill-csc! plan matrix output)
-    "Check original dimensions and every source CSC pointer/index before refill; equal Gram patterns alone do not establish source compatibility."
+  (declare check-csc! (GramPlan * csc:Matrix -> Void))
+  (define (check-csc! plan matrix)
+    "Raise refill-csc!'s typed error unless the matrix has the analyzed dimensions and every analyzed pointer and index. Reads no value and writes nothing."
     (let storage = (plan-storage plan))
     (unless (and (== (csc:row-count matrix) (.source-m storage))
                  (== (csc:column-count matrix) (.source-n storage)))
@@ -332,5 +332,10 @@
         (throw (err:InvalidStructure "Gram source column pointers differ from the analyzed matrix."))))
     (for ((q 0 (+ q 1))) :while (< q (arr:length expected-ri))
       (unless (== (arr:aref actual-ri q) (arr:aref expected-ri q))
-        (throw (err:InvalidStructure "Gram source row indices differ from the analyzed matrix."))))
+        (throw (err:InvalidStructure "Gram source row indices differ from the analyzed matrix.")))))
+
+  (declare refill-csc! (GramPlan * csc:Matrix * arr:LispArray F64 -> Void))
+  (define (refill-csc! plan matrix output)
+    "Check original dimensions and every source CSC pointer/index before refill; equal Gram patterns alone do not establish source compatibility."
+    (check-csc! plan matrix)
     (refill! plan (csc:entries matrix) output)))

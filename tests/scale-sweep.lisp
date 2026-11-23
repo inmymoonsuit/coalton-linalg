@@ -200,6 +200,13 @@ function of the exponent that returns the outputs. The run's source is kept, to 
          (let ((v (sweep-array (doubles 3d0 -4d0 12d0) k)))
            (list (sweep-out "norm2" (numeric:norm2 v) 1) (sweep-out "norm-inf" (numeric:norm-inf v) 1)))))
 
+     (sweep-entry "the power of two at a magnitude" (coalton-linalg/internal/float:binade!) 0d0
+         ((-1020 1020 :exact))
+       (lambda (k)
+         (let ((pair (zeros 2)))
+           (coalton-linalg/internal/float:binade! (sweep-number 5d0 k) pair 0)
+           (list (sweep-out "the power" (aref pair 0) 1) (sweep-out "its reciprocal" (aref pair 1) -1)))))
+
      (sweep-entry "a stored matrix and its products, the matrix scaled"
          (csc:from-csc csc:from-coo csc:entries csc:matvec csc:transpose-matvec csc:matvec! csc:transpose-matvec!)
          1d-15
@@ -441,8 +448,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
 
      (sweep-entry "conjugate gradients, the matrix and the right-hand side scaled together"
          (cg:cg! cg:residual-norm cg:recurrence-norms) 1d-9
-         ((-1020 -1000 :no-input) (-800 -520 :limit) (-512 -512 :close) (-510 300 :exact)
-          (400 1020 :limit))
+         ((-1020 -1000 :no-input) (-800 1020 :exact))
        (lambda (k)
          (let ((apply (rf-caller:matrix-operator (sweep-stored (sweep-arrow) k))) (workspace (cg:make-cg 4 50))
                (x (zeros 4)))
@@ -454,8 +460,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
 
      (sweep-entry "conjugate gradients, the right-hand side scaled"
          (cg:cg! cg:residual-norm cg:recurrence-norms) 1d-9
-         ((-1020 -1000 :no-input) (-800 -512 :exact) (-510 -510 :close) (-400 400 :exact)
-          (510 1020 :limit))
+         ((-1020 -1000 :no-input) (-800 1020 :exact))
        (lambda (k)
          (let ((apply (rf-caller:matrix-operator (sweep-stored (sweep-arrow) 0))) (workspace (cg:make-cg 4 50))
                (x (zeros 4)))
@@ -467,7 +472,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
 
      (sweep-entry "preconditioned conjugate gradients, the matrix, its preconditioner and the right-hand side scaled"
          (cg:pcg! cg:residual-norm cg:recurrence-norms) 1d-9
-         ((-1020 -1000 :no-input) (-800 400 :exact) (510 1020 :limit))
+         ((-1020 -1000 :no-input) (-800 1000 :exact) (1020 1020 :close))
        (lambda (k)
          (let ((apply (rf-caller:matrix-operator (sweep-stored (sweep-arrow) k))) (workspace (cg:make-cg 4 50))
                (x (zeros 4)))
@@ -503,7 +508,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
          (rows:find-dependent-rows! rows:kept-values! rows:null-vector! rows:residual-bound rows:gap-bound
           rows:transpose-product-bound)
          1d-9
-         ((-1020 -1020 :no-input) (-1000 -510 :limit) (-400 400 :exact) (510 1020 :limit))
+         ((-1020 -1020 :no-input) (-1000 -1000 :looser) (-800 1000 :exact) (1020 1020 :looser))
        (lambda (k)
          (let* ((matrix (sweep-stored (sweep-dependent) k)) (analysis (rows:analyze matrix))
                 (kept (zeros (length (csc:entries matrix)))) (v (zeros 4)))
@@ -524,7 +529,7 @@ function of the exponent that returns the outputs. The run's source is kept, to 
 
      (sweep-entry "a row that repeats another, under a threshold of zero"
          (rows:find-dependent-rows! rows:kept-values! rows:null-vector!) 1d-9
-         ((-1020 -520 :limit) (-512 510 :exact) (512 1020 :limit))
+         ((-1020 1020 :exact))
        (lambda (k)
          (let* ((matrix (sweep-stored (sweep-twice) k)) (analysis (rows:analyze matrix))
                 (kept (zeros (length (csc:entries matrix)))) (v (zeros 4)))

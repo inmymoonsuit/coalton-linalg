@@ -224,10 +224,17 @@ norms and the number of steps."
           (assert (= 2 (run workspace operator (doubles 1d0 1d0) x 1d-9)) () "Entries ~S were taken as definite." entries)
           (assert (same-bits-p x (zeros 2)))
           (assert (and (= 0 (cg:step-count workspace)) (= -1d0 (cg:residual-norm workspace))))))
-      ;; An operator whose product overflows, in the first direction's image.
-      (let ((workspace (cg:make-cg 1 5)))
-        (assert (= 3 (run workspace (cg-caller:scaling-operator 1d200) (doubles 1d200) (zeros 1) 1d-9)))
-        (assert (= -1d0 (cg:residual-norm workspace))))
+      ;; An operator whose product overflows, in the first direction's image. The direction is the
+      ;; residual divided by a power of two, 1.5 here, so the operator has to be at the top of the
+      ;; range for that: one of 1e200 under a right-hand side of 1e200, whose undivided direction
+      ;; would have an image of 1e400, is solved, and exactly.
+      (let ((workspace (cg:make-cg 1 5)) (x (zeros 1)))
+        (assert (= 3 (run workspace (cg-caller:scaling-operator most-positive-double-float) (doubles 1.5d0) (zeros 1)
+                          1d-9)))
+        (assert (= -1d0 (cg:residual-norm workspace)))
+        (assert (= 0 (run workspace (cg-caller:scaling-operator 1d200) (doubles 1d200) x 1d-9)))
+        (assert (and (= 1d0 (aref x 0)) (= 0d0 (cg:residual-norm workspace))) ()
+                "An operator and a right-hand side of 1e200 gave ~S with residual ~S." x (cg:residual-norm workspace)))
       ;; A curvature that is not a number: the first direction's image is spoiled. It is not
       ;; reported as an operator that is not positive.
       (let ((workspace (cg:make-cg 3 10)) (calls (indices 0)))
@@ -237,6 +244,22 @@ norms and the number of steps."
       (let ((workspace (cg:make-cg 1 5)) (x (zeros 1)))
         (assert (= 3 (run workspace (cg-caller:scaling-operator 1d-320) (doubles 1d10) x 1d-9)))
         (assert (same-bits-p x (zeros 1)) () "A step length that is not finite was applied: ~S." x))
+      ;; A step length that is finite, 1e10, for a solution that is not, 1e310: the step in the
+      ;; vector's own units cannot be held, and that too is reported before the vector is touched.
+      (let ((workspace (cg:make-cg 1 5)) (x (zeros 1)))
+        (assert (= 3 (run workspace (cg-caller:scaling-operator 1d-10) (doubles 1d300) x 1d-9)))
+        (assert (same-bits-p x (zeros 1)) () "A step that is not finite was applied: ~S." x))
+      ;; A running residual that cannot be held, on the way to a solution that can. The operator
+      ;; is diag(1, 1000) and the right-hand side (1.5e308, 5e307): the first step triples the
+      ;; residual, to an entry of -4.5e308, and the second ends at (1.5e308, 5e304). The norm
+      ;; of that step is recorded as infinity and the call goes on.
+      (let ((workspace (cg:make-cg 2 5)) (x (zeros 2)))
+        (assert (= 0 (run workspace (cg-caller:diagonal-operator (doubles 1d0 1000d0)) (doubles 1.5d308 5d307) x 1d295)))
+        (assert (and (= 2 (cg:step-count workspace)) (<= 0d0 (cg:residual-norm workspace) 1d295)))
+        (assert (= sb-ext:double-float-positive-infinity (aref (cg:recurrence-norms workspace) 1)) ()
+                "The running norm after the first step is ~S." (aref (cg:recurrence-norms workspace) 1))
+        (assert (and (<= (abs (- (aref x 0) 1.5d308)) 1d296) (<= (abs (- (aref x 1) 5d304)) 1d292)) ()
+                "The solution of the growing case is ~S." x))
       ;; A running residual whose norm overflows while the curvature and the step length are
       ;; finite: the operator is diag(1e-200, 1e200) and the right-hand side (1e100, 1e-100).
       (let ((workspace (cg:make-cg 2 5)))
@@ -283,6 +306,14 @@ norms and the number of steps."
             (assert (>= (cg:restart-count drifting) 2) () "The wrong product was not noticed: ~D replacements."
                     (cg:restart-count drifting))
             (assert (> (cg:step-count drifting) (cg:step-count honest)))
+            ;; And it costs no more than that: one replacement for the wrong product and one for
+            ;; the end, and from the residual formed after the wrong product at most as many
+            ;; steps again as the order. A replacement that left the method in a worse state,
+            ;; a residual divided by another power of two than its direction is multiplied back
+            ;; by, would still end within the tolerance, and only this shows it.
+            (assert (and (= 2 (cg:restart-count drifting)) (<= (cg:step-count drifting) 16)) ()
+                    "One wrong product cost ~D replacements and ~D steps." (cg:restart-count drifting)
+                    (cg:step-count drifting))
             (assert (<= (sqrt (float (exact-residual-squared dense b y) 1d0)) (* tolerance (+ 1d0 1d-3))) ()
                     "After a wrong product the call reported convergence with a residual of ~E against ~E."
                     (sqrt (float (exact-residual-squared dense b y) 1d0)) tolerance)

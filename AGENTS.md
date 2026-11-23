@@ -4,7 +4,7 @@
 - Read README.md and the relevant contract (docs/spd-ldlt.md or docs/primitives.md) before changing code; read ROADMAP.md before extending scope.
 - Inspect current Git state before editing. Preserve other people's work.
 - Keep mathematical algorithms in Coalton. Common Lisp handles hosting/tooling; Python is an independent test oracle.
-- Preserve the clean-room provenance in docs/provenance.md. Do not consult or copy numerical-library implementations or published algorithm code listings.
+- Preserve the clean-room provenance in docs/provenance.md. A published description of a method, a textbook and its pseudocode may be read as references; write the implementation from the mathematics, in this library's own structure. Never copy code, and do not consult numerical-library implementations or listings in a real programming language.
 - Keep the main ASDF system free of test, benchmark, Python, and application dependencies.
 - Document types, storage, ownership, mutation, numerical assumptions, refusals, and complexity with each public interface.
 - Keep analyze/factor!/solve! separate. Do not silently add damping, tolerances, pivoting, or geometry policy.

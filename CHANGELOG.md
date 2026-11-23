@@ -2,6 +2,33 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.14.0 — 2026-11-22
+
+Changed, and a caller that matches `RowStatus` exhaustively must add a case:
+
+- `RowStatus` gains `RowsUnderflow`: under a threshold of zero, a row holding a nonzero
+  entry that is too small beside the matrix's largest entry for its square to be held.
+  Version 0.13.4 reported this as `RowsNonFinite`, which again means only that an
+  intermediate result of the factorization was not finite.
+- `find-dependent-rows!` works on the matrix divided by the power of two at its largest
+  entry, so it no longer reaches only half the exponent range. Entries of any size the
+  format holds give the rows left out, the vectors and the values of the same matrix at
+  ordinary size, bit for bit. A matrix of large entries no longer raises the Gram
+  product's `NonFiniteResult`. `RowsBadThreshold` for a small positive threshold is now
+  relative: the threshold is too small beside the largest entry. A threshold whose own
+  square is not finite is no longer refused; it is a distance beyond every row, and
+  leaves every row out.
+- `transpose-product-bound` is formed the same way, and is finite wherever the norm it
+  bounds can be held. Two products too large to hold that cancel now give a finite bound.
+- `cg!` and `pcg!` carry the iteration on the residual divided by a power of two. A
+  right-hand side from 2^510 no longer ends `CgNonFinite`, and an operator with entries
+  far from 1 no longer ends `CgNonFinite` or, wrongly, `CgNotPositive`. Iterates on data
+  that worked before are unchanged bit for bit. The operator and the preconditioner are
+  now called with the divided vectors.
+
+Added: `gram:check-csc!`, the source pattern check of `refill-csc!` by itself.
+[Record](docs/batch16.md).
+
 ## 0.13.4 — 2026-11-22
 
 Fixed: `find-dependent-rows!` on a matrix of entries near 10⁻¹⁸⁰ and below returned

@@ -95,17 +95,28 @@ at which the value arose and may itself hold one.
   zero or subnormal, the norm is recomputed from lifted components; a nonzero residual
   does not meet zero tolerance just because its square underflowed. Tiny recurrence
   inner products likewise retain a separate binary exponent until their ratio is taken.
-  The ordinary sums can still overflow for vectors of magnitude near 10¹⁵⁴; scale such
-  a system first. This is not compensated summation.
-- **The range is measured, and narrower when the operator is large or small as well.**
-  With a right-hand side of size 2^k and an operator of ordinary size, `cg!` and `pcg!`
-  give the same iterates bit for bit from 2^-800 to 2^400 and end `CgNonFinite` from
-  2^510. With the operator's entries of size 2^k too, `cg!` holds from 2^-512 to 2^300:
-  above, the product of a direction and its image is not finite; below, the image of a
-  direction underflows, its curvature is computed as zero, and the call ends
-  `CgNotPositive` for an operator that is positive definite. A preconditioner of the
-  operator's own scale keeps the directions of ordinary size, and `pcg!` then holds
-  from 2^-800 to 2^400. [The scale-sweep roster](rosters.md#what-is-declared) pins these.
+  This is not compensated summation.
+- **The size of the system does not limit it.** The iteration is carried on the residual
+  divided by the power of two at the first residual's largest entry, and the
+  preconditioned residual, the direction and its image are divided with it, each being
+  linear in the residual. Inner products are then of numbers near 1 whatever the size of
+  the right-hand side, and the operator is applied to a direction near 1 whatever its own
+  size. The division changes no significand, so wherever the undivided arithmetic stayed
+  in range the iterates are the same bit for bit; ninety-six solves recomputed in the
+  tests hold that. [The scale-sweep roster](rosters.md#what-is-declared) pins the range:
+  with the right-hand side multiplied by 2^k, or the operator with it, or a preconditioner
+  as well, the iterates are identical from 2^-800 to 2^1020.
+- **What still ends `CgNonFinite` is a quantity that cannot be held**: a residual formed
+  from the operator whose norm is above the largest number, since that norm is what the
+  call reports; an operator whose image of a direction near 1 overflows; a step that is
+  not finite in the iterate's own units, which is a solution that is not.
+- **A running residual may be one the format cannot hold** on the way to a solution it
+  can. Its norm is then recorded in `recurrence-norms` as infinity, meets no tolerance,
+  and the call goes on: diag(1, 1000) under (1.5e308, 5e307) triples its residual in the
+  first step and is solved in the second.
+- **The operator and the preconditioner are given the divided vectors.** Both are assumed
+  linear, as the method assumes. One that is not, an absolute threshold inside it for
+  instance, sees arguments of another size than the residual's.
 
 ## The method
 

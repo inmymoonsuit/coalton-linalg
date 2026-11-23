@@ -50,6 +50,9 @@ input storage and repeated work.
   column pointers and row indices with the owned source pattern. Dimension changes
   raise InvalidDimensions; any pattern difference raises InvalidStructure. It then
   applies the ordinary refill checks to the matrix's entries.
+- `check-csc!(plan,A) -> Void` is that comparison by itself: it raises the same errors,
+  reads no value and writes nothing. A caller that refills from values of its own, in
+  the analyzed order, uses it to hold a matrix to the plan first.
 
 Output is a caller-owned F64 array of entry-count(plan) elements. It must not be
 any library's borrowed inspection array. Runtime alias detection compares it with

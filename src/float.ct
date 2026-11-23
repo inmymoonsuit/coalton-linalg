@@ -1,6 +1,7 @@
 (cl:defpackage #:coalton-linalg/internal/float
   (:use #:coalton #:coalton-prelude)
-  (:export #:least-normal))
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
+  (:export #:least-normal #:greatest #:binade!))
 (cl:in-package #:coalton-linalg/internal/float)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -8,4 +9,29 @@
   (declare least-normal F64)
   (define least-normal
     "Smallest positive normal F64."
-    (lisp (-> F64) () cl:least-positive-normalized-double-float)))
+    (lisp (-> F64) () cl:least-positive-normalized-double-float))
+
+  (declare greatest F64)
+  (define greatest
+    "Largest finite F64."
+    (lisp (-> F64) () cl:most-positive-double-float))
+
+  (declare greatest-power F64)
+  (define greatest-power (lisp (-> F64) () (cl:scale-float 1d0 1023)))
+
+  (declare binade! (F64 * arr:LispArray F64 * UFix -> Void))
+  (define (binade! magnitude target slot)
+    "Write into target[slot] the power of two p with p <= magnitude < 2 p, held between the least normal number and 2^1023, and into target[slot + 1] its reciprocal, which is exact. 1 and 1 for a magnitude that is zero, negative or not a number, and 2^1023 with its reciprocal for infinity: the two loops end whatever they are given. Dividing by a power of two changes no significand, so what is computed from the quotients rounds as it did from the originals wherever neither leaves the range."
+    (let m = (cell:new magnitude))
+    (let up = (cell:new 1.0d0))
+    (let down = (cell:new 1.0d0))
+    (for () :while (and (>= (cell:read m) 2.0d0) (< (cell:read up) greatest-power))
+      (cell:write! m (* (cell:read m) 0.5d0))
+      (cell:write! up (* (cell:read up) 2.0d0))
+      (cell:write! down (* (cell:read down) 0.5d0)))
+    (for () :while (and (> (cell:read m) 0.0d0) (and (< (cell:read m) 1.0d0) (> (cell:read up) least-normal)))
+      (cell:write! m (* (cell:read m) 2.0d0))
+      (cell:write! up (* (cell:read up) 0.5d0))
+      (cell:write! down (* (cell:read down) 2.0d0)))
+    (arr:set! target slot (cell:read up))
+    (arr:set! target (+ slot 1) (cell:read down))))

@@ -88,7 +88,7 @@ of a problem by a power of two changes no significand, so every output has one
 right value at every scale: its value at scale 1 times a known power of the
 factor. A factor's `L` does not move, its `D` moves with the matrix, a solution
 of a system whose two sides move together does not move, a Gram matrix moves
-with the square. Each of twenty-three entries runs one small problem at twenty-five scales from
+with the square. Each of twenty-four entries runs one small problem at twenty-five scales from
 2^-1020 to 2^1020 and states that power for each output. Every run is put in
 one class:
 
@@ -119,7 +119,7 @@ Exponents are of two. "Everywhere" is the whole sweep, 2^-1020 to 2^1020.
 
 | Entry | `:exact` or `:close` | Outside it |
 | --- | --- | --- |
-| `norm2`, `norm-inf` | everywhere | |
+| `norm2`, `norm-inf`; the power of two at a magnitude | everywhere | |
 | Stored matrices and their products | to 2^1000 | refused at 2^1020, where a product is too large to hold |
 | Gram refill | -520 to 400 | refused above, where a square is too large; **`:lost` at -600 and below**: the squares underflow and zeros come back |
 | Augmented refill; row, column and symmetric scaling | everywhere | |
@@ -130,28 +130,22 @@ Exponents are of two. "Everywhere" is the whole sweep, 2^-1020 to 2^1020.
 | Symmetric eigenvalues; singular values | everywhere | |
 | Sparse LU, solves, growth and bound | everywhere; the bound `:looser` at both ends, infinite at 2^1020 | |
 | Refinement | -800 up | no input below |
-| `cg!`, right-hand side scaled | -800 to 400 | **`:limit` from 2^510**: `CgNonFinite` |
-| `cg!`, matrix and right-hand side scaled together | -512 to 300 | **`:limit` from 2^400**, `CgNonFinite`, and **at 2^-520 and below, `CgNotPositive`** |
-| `pcg!`, matrix, preconditioner and right-hand side scaled together | -800 to 400 | **`:limit` from 2^510**: `CgNonFinite` |
-| Dependent rows, threshold 2^-20 of the entries | -400 to 400 | **`:limit` outside**: `RowsBadThreshold`, or the Gram product's error |
-| Dependent rows, threshold zero | -512 to 510 | **`:limit` outside**: `RowsNonFinite`, or the Gram product's error |
+| `cg!`, right-hand side scaled; `cg!`, matrix and right-hand side scaled together; `pcg!`, matrix, preconditioner and right-hand side scaled together | -800 up | no input below |
+| Dependent rows, threshold 2^-20 of the entries | -1000 up; a bound `:looser` at -1000, and infinite at 2^1020 where it cannot be held | no input at -1020 |
+| Dependent rows, threshold zero | everywhere | |
 
-The limits in bold are properties of the methods as they are built, measured
-here and now pinned:
+One limit is left, in bold, a property of the method as it is built:
 
-- **Conjugate gradients sum squares as they stand at the large end.** A
-  residual of norm near 2^512 has a sum of squares that is not finite, and the
-  call ends `CgNonFinite`. With the matrix scaled as well, the product of a
-  direction and its image leaves the range sooner, and at the small end the
-  image of a direction underflows and the call ends `CgNotPositive` although
-  the operator is positive definite. [The contract](conjugate-gradient.md#what-is-and-is-not-claimed)
-  says to scale such a system first.
-- **Dependent rows works on `A Aᵀ`**, so it reaches half the exponent range of
-  its matrix, and a threshold whose square cannot be held is refused.
-  [Its contract](dependent-rows.md#interface) has the terms.
 - **A Gram refill returns what its products round to.** Above the range that is
   a refusal. Below it there is none: the squares become zero, and a
   factorization of the result then refuses a pivot.
+
+Two more were measured by the first run of this roster and have since been
+removed, which is what a declared `:limit` is for: conjugate gradients ended
+`CgNonFinite` from a right-hand side of 2^510, and `CgNotPositive` on a small
+positive definite operator, and the search for dependent rows reached half the
+exponent range. Both now work on their data divided by a power of two.
+[The record](batch16.md) has the measurements before and after.
 
 ### What the sweep does not ask
 

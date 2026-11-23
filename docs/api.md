@@ -107,6 +107,7 @@ The operator must be symmetric positive definite and the tolerance is absolute, 
 | `column-pointers`, `row-indices` | GramPlan -> I; lower CSC pattern with every diagonal |
 | `refill!` | GramPlan * V * V -> Void; source values in analyzed order, caller output |
 | `refill-csc!` | GramPlan * Matrix * V -> Void; checks the source pattern first |
+| `check-csc!` | GramPlan * Matrix -> Void; the source pattern check alone |
 | `maximum-analysis-size`, `default-analysis-entry-limit` | UFix; the bounds shared with SPD analysis |
 
 A plan owns scratch, so refills sharing one plan are not reentrant. The output
@@ -190,7 +191,7 @@ See the [design review](design.md#coalton-interface-review-2026-11-19).
 | `default-analysis-entry-limit` | UFix; 1,048,576 |
 | `row-count`, `column-count` | RowAnalysis -> UFix |
 | `RowStatus` | Outcome type of find-dependent-rows! |
-| `RowsFound`, `RowsNonFinite`, `RowsBadThreshold` | RowStatus values |
+| `RowsFound`, `RowsNonFinite`, `RowsUnderflow`, `RowsBadThreshold` | RowStatus values |
 | `find-dependent-rows!` | RowAnalysis * coalton-linalg/sparse/csc:Matrix * F64 -> RowStatus; the threshold is a distance |
 | `rows-found?` | RowAnalysis -> Boolean |
 | `kept-count`, `left-out-count` | RowAnalysis -> UFix |

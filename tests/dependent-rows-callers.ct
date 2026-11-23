@@ -68,11 +68,12 @@
     (match status
       ((rows:RowsFound) 0)
       ((rows:RowsNonFinite) 1)
-      ((rows:RowsBadThreshold) 2)))
+      ((rows:RowsBadThreshold) 2)
+      ((rows:RowsUnderflow) 3)))
 
   (declare observe-rows (rows:RowAnalysis * csc:Matrix * F64 -> UFix))
   (define (observe-rows analysis matrix threshold)
-    "Exhaustively matched outcome: found 0, non-finite 1, threshold 2; a typed error's category from 91."
+    "Exhaustively matched outcome: found 0, non-finite 1, threshold 2, underflow 3; a typed error's category from 91."
     (catch (rows-code (rows:find-dependent-rows! analysis matrix threshold))
       ((the err:LinalgError problem) (error-code problem))
       (_ 99)))
