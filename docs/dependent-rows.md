@@ -38,6 +38,8 @@ that chose badly is seen to have.
   units of the entries: a row is left out when its squared distance from the span of the
   rows kept before it, as computed, is at most the threshold squared.
 - `rows-found?(analysis)`, `kept-count(analysis)`, `left-out-count(analysis)`.
+- `check-pattern!(analysis, matrix)`: raises that same typed error unless the matrix has
+  the analyzed shape and pattern; it reads no value and changes nothing.
 - `left-out-rows(analysis)`: a borrowed array as long as the row count, whose first
   `left-out-count` entries are the rows left out. **A position in it** is what the next
   two calls take.

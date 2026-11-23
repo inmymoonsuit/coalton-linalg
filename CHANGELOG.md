@@ -2,6 +2,21 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.16.0 — 2026-11-23
+
+Added: `coalton-linalg/sparse/rank-deficient`, the kept rows of a rank-deficient matrix
+for a loop that takes many steps on one pattern. `find-kept-rows!` searches once and
+keeps the vector of each row left out, entries below a drop tolerance set to zero and
+the bound proved for the vector as kept; `reprove!` proves every bound again for other
+values with no search and no allocation; `certify!` proves, or refuses by name, that
+the gap bound is below one floor and every singular value of the kept rows above
+another; `largest-singular-bounds!` bounds the largest singular value of any stored
+matrix from both sides. Nothing is solved by this package yet.
+[Contract](docs/rank-deficient.md) · [record](docs/batch18a.md).
+
+Added: `dependent-rows:check-pattern!`, the pattern check of a search by itself. No
+result of an earlier package changes.
+
 ## 0.15.0 — 2026-11-22
 
 Added: `coalton-linalg/sparse/damped`, damped least squares on the normal equations. One

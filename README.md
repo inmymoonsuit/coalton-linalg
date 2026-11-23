@@ -22,6 +22,7 @@ rank, perturbs a pivot or retries. No application code is loaded or required.
 | `coalton-linalg/sparse/spd-ldlt` | Sparse `P (A − shift I) Pᵀ = L D Lᵀ` with exact minimum-degree analysis done once, repeated factor and solve, a 1-norm condition estimate, a Cholesky-form entry for positivity proofs, a signed-pivot entry that measures its own growth, and an entry that leaves small pivots out and factors what is kept | [factorization](docs/spd-ldlt.md), [condition](docs/condition.md), [Cholesky form](docs/cholesky-form.md), [signed pivots](docs/quasidefinite.md), [skipped pivots](docs/skipping.md) | [3a](docs/batch3a.md), [3d](docs/batch3d.md), [6a](docs/batch6a.md), [7](docs/batch7.md), [7a](docs/batch7a.md), [8](docs/batch8.md), [10](docs/batch10.md), [11](docs/batch11.md) |
 | `coalton-linalg/sparse/dependent-rows` | Which rows of a sparse matrix depend on the others: a kept set, a left null vector for each row left out, and proved bounds on what each leaves and on the singular values beyond the kept count | [dependent rows](docs/dependent-rows.md) | [11](docs/batch11.md) |
 | `coalton-linalg/sparse/damped` | Damped least squares on the normal equations, `(Jᵀ J + μ D) p = −Jᵀ r`: one analysis, then a factorization and a step for each μ a loop tries | [damped least squares](docs/damped.md) | [17](docs/batch17.md) |
+| `coalton-linalg/sparse/rank-deficient` | A rank-deficient matrix as kept rows and rows left out, for a loop that takes many steps on one pattern: the vectors of the rows left out kept from call to call, their bounds proved again for new values without a search, and a certificate that no singular value lies between two floors | [kept rows and the certificate](docs/rank-deficient.md), [design](docs/design-rank-deficient-step.md) | [18a](docs/batch18a.md) |
 | `coalton-linalg/sparse/lu` | Sparse `P A Q = L U` for a square nonsymmetric matrix, with partial pivoting chosen from the values, solves with the matrix and its transpose, measured growth and a bound on the backward error | [LU](docs/lu.md) | [12](docs/batch12.md) |
 | `coalton-linalg/sparse/scaling` | Row and column equilibration, and diagonal scaling of a symmetric positive definite matrix, by powers of two: exact, with the vector maps | [scaling](docs/scaling.md) | [9](docs/batch9.md), [9a](docs/batch9a.md) |
 | `coalton-linalg/sparse/augmented` | The augmented matrix `[[top I, Aᵀ], [A, −bottom I]]` of a sparse A on a fixed pattern: analyze once, refill values | [signed pivots](docs/quasidefinite.md) | [7](docs/batch7.md) |
@@ -109,6 +110,7 @@ The public packages are `coalton-linalg/errors`, `coalton-linalg/numeric`,
 `coalton-linalg/sparse/csc`, `coalton-linalg/sparse/gram`, `coalton-linalg/sparse/scaling`,
 `coalton-linalg/sparse/augmented`,
 `coalton-linalg/sparse/spd-ldlt`, `coalton-linalg/sparse/dependent-rows`, `coalton-linalg/sparse/damped`,
+`coalton-linalg/sparse/rank-deficient`,
 `coalton-linalg/sparse/lu`,
 `coalton-linalg/dense/indefinite-ldlt`, `coalton-linalg/dense/orthogonal` and
 `coalton-linalg/dense/jacobi`. The [interface reference](docs/api.md) indexes
@@ -121,8 +123,9 @@ system](examples/minimum-norm.ct), [dependent constraints](examples/dependent-co
 [a solve through a scaled matrix](examples/scaled-solve.ct),
 [redundant constraints found and bounded](examples/redundant-rows.ct),
 [a nonsymmetric solve with row exchanges](examples/nonsymmetric-solve.ct),
-[a solve with a product that is never formed](examples/matrix-free-solve.ct) and
-[a least squares step and a damped one on one analysis](examples/damped-step.ct). The
+[a solve with a product that is never formed](examples/matrix-free-solve.ct),
+[a least squares step and a damped one on one analysis](examples/damped-step.ct) and
+[one kept set of rows serving two matrices](examples/kept-rows.ct). The
 [mathematical glossary](CONTEXT.md) explains shared terms.
 
 The main system loads only the library. `/tests`, `/examples`, `/tools`, and
@@ -172,6 +175,7 @@ recorded in the batch records, not rerun by this command.
 | `src/sparse/spd-ldlt.ct` | SPD, signed-pivot and pivot-skipping factorization, solves and condition estimate |
 | `src/sparse/dependent-rows.ct` | Dependent rows of a sparse matrix, their null vectors and proved bounds |
 | `src/sparse/damped.ct` | Damped least squares steps on the normal equations |
+| `src/sparse/rank-deficient.ct` | Kept rows of a rank-deficient matrix, their vectors and bounds, and the certificate |
 | `src/sparse/lu.ct` | Sparse LU with partial pivoting, and its solves |
 | `src/dense/indefinite-ldlt.ct` | Dense symmetric indefinite factorization and inertia |
 | `src/dense/orthogonal.ct` | Dense pivoted QR, complete orthogonal decomposition, least squares |

@@ -200,6 +200,12 @@ function of the exponent that returns the outputs. The run's source is kept, to 
          (let ((v (sweep-array (doubles 3d0 -4d0 12d0) k)))
            (list (sweep-out "norm2" (numeric:norm2 v) 1) (sweep-out "norm-inf" (numeric:norm-inf v) 1)))))
 
+     (sweep-entry "a count as a number" (coalton-linalg/internal/float:count->float) 0d0
+         ((-1020 1020 :exact))
+       (lambda (k)
+         (declare (ignore k))
+         (list (sweep-out "the count" (coalton-linalg/internal/float:count->float 12345) 0))))
+
      (sweep-entry "the power of two at a magnitude" (coalton-linalg/internal/float:binade!) 0d0
          ((-1020 1020 :exact))
        (lambda (k)
@@ -516,6 +522,34 @@ function of the exponent that returns the outputs. The run's source is kept, to 
            (sweep-need (dm:factor! plan 0.25d0) coalton-linalg/sparse/damped:DampedSuccess)
            (sweep-need (dm:step! plan (sweep-array b4 k) step) coalton-linalg/sparse/damped:StepSuccess)
            (list (sweep-out "the step" step 1)))))
+
+     (sweep-entry "kept rows, their vectors and bounds, proved again, and the certificate"
+         (rd:find-kept-rows! rd:reprove! rd:residual-bound rd:gap-bound rd:multiplier-values rd:certify!
+          rd:proved-lower-bound)
+         1d-15
+         ((-1020 -1020 :no-input) (-1000 -1000 :looser) (-800 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-dependent) k)) (kept (rd:analyze matrix))
+                (floor (sweep-number (scale-float 1d0 -20) k)))
+           (sweep-need (rd:find-kept-rows! kept matrix floor 1d-12) coalton-linalg/sparse/rank-deficient:FindFound)
+           (when (and (zerop k) (/= 1 (rd:left-out-count kept)))
+             (error 'sweep-premise :text (format nil "~D rows were left out, not 1." (rd:left-out-count kept))))
+           (let ((found-bound (rd:residual-bound kept 0)))
+             (sweep-need (rd:reprove! kept matrix) coalton-linalg/sparse/rank-deficient:Reproved)
+             (sweep-need (rd:certify! kept floor floor) coalton-linalg/sparse/rank-deficient:Certified)
+             (list (sweep-out "how many rows are left out" (rd:left-out-count kept) 0)
+                   (sweep-out "the vector" (sweep-prefix (rd:multiplier-values kept) (rd:multiplier-count kept 0)) 0)
+                   (sweep-out "the bound as found" found-bound 1 :kind :bound)
+                   (sweep-out "the bound proved again" (rd:residual-bound kept 0) 1 :kind :bound)
+                   (sweep-out "the gap bound" (rd:gap-bound kept) 1 :kind :bound)
+                   (sweep-out "the lower bound proved" (rd:proved-lower-bound kept) 1))))))
+
+     (sweep-entry "bounds on the largest singular value" (rd:largest-singular-bounds!) 1d-15
+         ((-1020 1020 :exact))
+       (lambda (k)
+         (let ((out (zeros 2)))
+           (rd:largest-singular-bounds! (sweep-stored (sweep-tall) k) 20 (zeros 3) (zeros 4) out)
+           (list (sweep-out "the lower bound" (aref out 0) 1) (sweep-out "the upper bound" (aref out 1) 1 :kind :bound)))))
 
      (sweep-entry "refinement" (rf:refine! rf:residual-norms) 1d-9
          ((-1020 -1000 :no-input) (-800 1020 :exact))

@@ -1,0 +1,69 @@
+(cl:defpackage #:coalton-linalg/examples/kept-rows
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:rd #:coalton-linalg/sparse/rank-deficient))
+  (:export #:kept-of-three #:kept-bounds))
+(cl:in-package #:coalton-linalg/examples/kept-rows)
+
+(coalton-toplevel
+  (declare constraints (F64 -> csc:Matrix))
+  (define (constraints corner)
+    "Three constraints on four unknowns. With a corner of 1 the third is the sum of the first two.
+
+    x0 + x1                    = ...
+                    x2 + x3    = ...
+    corner x0 + x1 + x2 + x3   = ..."
+    (let rows = (arr:make 8 (the UFix 0)))
+    (let columns = (arr:make 8 (the UFix 0)))
+    (let values = (arr:make 8 1.0d0))
+    ;; (row, column) of each entry: row 0 holds columns 0 and 1, row 1 columns 2 and 3, row 2 all four.
+    (arr:set! rows 0 0) (arr:set! columns 0 0)
+    (arr:set! rows 1 0) (arr:set! columns 1 1)
+    (arr:set! rows 2 1) (arr:set! columns 2 2)
+    (arr:set! rows 3 1) (arr:set! columns 3 3)
+    (arr:set! rows 4 2) (arr:set! columns 4 0)
+    (arr:set! rows 5 2) (arr:set! columns 5 1)
+    (arr:set! rows 6 2) (arr:set! columns 6 2)
+    (arr:set! rows 7 2) (arr:set! columns 7 3)
+    (arr:set! values 4 corner)
+    (csc:from-coo 3 4 rows columns values csc:RejectDuplicates))
+
+  (declare kept-of-three (Void -> UFix))
+  (define (kept-of-three)
+    "How many of the three constraints are kept, the third being implied by them: 2."
+    (let matrix = (constraints 1.0d0))
+    (let kept = (rd:analyze matrix))
+    (unless (== (rd:find-kept-rows! kept matrix 1.0d-6 1.0d-12) rd:FindFound)
+      (return 99))
+    (rd:kept-count kept))
+
+  (declare kept-bounds (Void -> arr:LispArray F64))
+  (define (kept-bounds)
+    "One kept set serving two matrices. Returns four numbers, or an empty vector if a call refused where it should not:
+
+    [0] the gap bound for the matrix searched: rounding level, since the third row is the sum of the others;
+    [1] what the certificate at a floor of 1e-6 proved of the kept rows: at least 1e-6, here an eighth;
+    [2] the gap bound proved again for the matrix whose corner is 1.001: the vector kept is no longer
+        the row's combination, by exactly 0.001 in one column, and the bound says so;
+    [3] what stands after the certificate at 1e-6 is asked of that matrix: -1, refused on the gap.
+
+The search and its vector are made once. The second matrix costs a pass over the rows the
+vector touches and no search; the refusal is the signal that this kept set is out of date
+for these values, and a caller that gets it searches again."
+    (let matrix = (constraints 1.0d0))
+    (let kept = (rd:analyze matrix))
+    (let out = (arr:make 4 0.0d0))
+    (unless (== (rd:find-kept-rows! kept matrix 1.0d-6 1.0d-12) rd:FindFound)
+      (return (arr:make 0 0.0d0)))
+    (arr:set! out 0 (rd:gap-bound kept))
+    (unless (== (rd:certify! kept 1.0d-6 1.0d-6) rd:Certified)
+      (return (arr:make 0 0.0d0)))
+    (arr:set! out 1 (rd:proved-lower-bound kept))
+    (unless (== (rd:reprove! kept (constraints 1.001d0)) rd:Reproved)
+      (return (arr:make 0 0.0d0)))
+    (arr:set! out 2 (rd:gap-bound kept))
+    (unless (== (rd:certify! kept 1.0d-6 1.0d-6) rd:CertificateGapAboveFloor)
+      (return (arr:make 0 0.0d0)))
+    (arr:set! out 3 (rd:proved-lower-bound kept))
+    out))

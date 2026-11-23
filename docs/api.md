@@ -221,6 +221,7 @@ The plan's constructor and storage are private. One plan serves one call at a ti
 | `RowsFound`, `RowsNonFinite`, `RowsUnderflow`, `RowsBadThreshold` | RowStatus values |
 | `find-dependent-rows!` | RowAnalysis * coalton-linalg/sparse/csc:Matrix * F64 -> RowStatus; the threshold is a distance |
 | `rows-found?` | RowAnalysis -> Boolean |
+| `check-pattern!` | RowAnalysis * coalton-linalg/sparse/csc:Matrix -> Void; the typed error of the Gram refill unless the matrix has the analyzed pattern |
 | `kept-count`, `left-out-count` | RowAnalysis -> UFix |
 | `left-out-rows` | RowAnalysis -> I; borrowed, its first left-out-count entries are the rows left out |
 | `kept-values!` | RowAnalysis * V -> Boolean; the matrix's values with zeros for the rows left out |
@@ -234,6 +235,43 @@ The plan's constructor and storage are private. One plan serves one call at a ti
 
 A search withdraws the earlier set and its bounds. After the analysis only
 `transpose-product-bound` allocates. One analysis serves one call at a time.
+
+## coalton-linalg/sparse/rank-deficient
+
+[Contract](rank-deficient.md) · [Source](../src/sparse/rank-deficient.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `KeptRows` | The kept rows of one pattern, the vectors of the rows left out, and what the certificate factors; obtain from analyze |
+| `analyze` | coalton-linalg/sparse/csc:Matrix -> KeptRows |
+| `analyze-with-limit` | coalton-linalg/sparse/csc:Matrix * UFix -> KeptRows; one entry budget for every product and factor |
+| `default-analysis-entry-limit` | UFix; 1,048,576 |
+| `row-count`, `column-count` | KeptRows -> UFix |
+| `FindStatus` | Outcome type of find-kept-rows! |
+| `FindFound`, `FindNonFinite`, `FindUnderflow`, `FindBadThreshold`, `FindBadDrop`, `FindVectorRefused` | FindStatus values |
+| `find-kept-rows!` | KeptRows * coalton-linalg/sparse/csc:Matrix * F64 * F64 -> FindStatus; a distance threshold, then a drop tolerance relative to each vector's largest entry |
+| `kept-found?` | KeptRows -> Boolean |
+| `kept-count`, `left-out-count` | KeptRows -> UFix |
+| `left-out-rows` | KeptRows -> I; borrowed, its first left-out-count entries are the rows left out |
+| `multiplier-start`, `multiplier-count` | KeptRows * UFix -> UFix; where the kept vector at a position starts, and how many entries it holds at kept rows |
+| `multiplier-rows` | KeptRows -> I; borrowed, the kept row of each entry of every kept vector |
+| `multiplier-values` | KeptRows -> V; borrowed, the vector's value at each of those rows |
+| `ReproveStatus` | Outcome type of reprove! |
+| `Reproved`, `ReproveNothingKept`, `ReproveNonFinite` | ReproveStatus values |
+| `reprove!` | KeptRows * coalton-linalg/sparse/csc:Matrix -> ReproveStatus; every kept vector's bound for other values of the pattern |
+| `residual-bound` | KeptRows * UFix -> F64; proved bound on the 2-norm of Jᵀ v for the kept vector, otherwise -1 |
+| `gap-bound` | KeptRows -> F64; upper bound on the singular value after the kept count, otherwise -1 |
+| `CertificateStatus` | Outcome type of certify! |
+| `Certified`, `CertificateGapAboveFloor`, `CertificateKeptNotAboveFloor`, `CertificateUnresolved`, `CertificateBadFloor`, `CertificateNothingKept` | CertificateStatus values |
+| `certify!` | KeptRows * F64 * F64 -> CertificateStatus; a lower and an upper floor, in the matrix's units |
+| `certified?` | KeptRows -> Boolean |
+| `proved-lower-bound` | KeptRows -> F64; what the standing certificate proved every singular value of the kept rows exceeds, otherwise -1 |
+| `largest-singular-bounds!` | coalton-linalg/sparse/csc:Matrix * UFix * V * V * V -> Void; a lower and an upper bound on the largest singular value, into the third array |
+
+The handle's constructor and storage are private. A search replaces the kept set, the
+vectors and the two borrowed vector arrays; a search or a reproof withdraws the
+certificate. Only `analyze` and `find-kept-rows!` allocate. One handle serves one call
+at a time.
 
 ## coalton-linalg/sparse/lu
 

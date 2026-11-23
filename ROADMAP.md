@@ -248,6 +248,18 @@ divided by a power of two, so the step at any scale is the step at ordinary scal
 [The record](docs/batch17.md) has the exact references and the controls;
 [the contract](docs/damped.md) says what the package leaves to its caller.
 
+### Batch 18a: kept rows and the certificate
+
+**Completed.** `coalton-linalg/sparse/rank-deficient`, the first of the two parts of a
+step on a rank-deficient matrix. A search is made once; the vector of each row left out
+is kept, with entries at rounding level dropped and the bound proved for the vector as
+kept; for each later matrix of the pattern the bounds are proved again by a pass over
+the rows the vectors touch, with no search and no allocation; and a certificate is
+issued, or refused by name, that the gap bound is below one floor and every singular
+value of the kept rows above another. The same package bounds the largest singular
+value from both sides. It solves nothing yet. [The contract](docs/rank-deficient.md)
+says what is proved and [the record](docs/batch18a.md) has the exact references.
+
 ### Next
 
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
@@ -257,11 +269,12 @@ the library, agreed with it in advance, plan before code:
    truncated singular value decomposition gives at a relative floor, with a certificate
    that no singular value lies in a band about the floor, or a refusal by name. Built on
    [dependent rows](docs/dependent-rows.md). **[The design](docs/design-rank-deficient-step.md)
-   is reviewed and measured, and carries what the measurement changed; nothing of it is
-   built.** The same note covers
+   is reviewed and measured. The certificate and the kept vectors are Batch 18a; the step,
+   its bound to the truncated answer, the option of the kept rows alone and the refresh
+   of one vector are next, as 18b.** The same note covers
    certified bases: the supports of left null vectors, and a right null-space basis with
    a proved residual.
-2. That step, then those bases, each as its own batch.
+2. Those bases, as their own batch after the step.
 3. Least squares with bounds on linear functionals of the unknown, by an active set whose
    rows' rank is proved or refused.
 4. Supernodal or multifrontal factorization, only after measurements say where real

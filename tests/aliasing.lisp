@@ -269,6 +269,12 @@ expected of each pair that can be one array. An entry of (key :exempt reason) ha
                  (alias-reordered "The unsymmetric matrix, by rows," (lu:row-permutation handle))
                  (lu-caller:observe-transpose-solve handle (first a) (second a))))
              '(((0 1) :same)))
+       ;; A square matrix of order two, so that the two work vectors and the output have one length.
+       (list "coalton-linalg/sparse/rank-deficient:largest-singular-bounds!"
+             (lambda () (list (doubles 0d0 0d0) (doubles 0d0 0d0) (doubles 0d0 0d0)))
+             (lambda (a) (rd-caller:bounds-code (csc-from-entries 2 2 '((0 0 3) (1 0 1) (1 1 4))) 10
+                                                (first a) (second a) (third a)))
+             '(((0 1) :refused) ((0 2) :refused) ((1 2) :refused)))
        (list "coalton-linalg/sparse/damped:step!" #'short-right-hand-side
              (lambda (a)
                (let* ((matrix (alias-stored (alias-columns))) (plan (dm:analyze matrix)))

@@ -2,7 +2,8 @@
 
 State: a design, reviewed twice by the consumer that asked for it. The measurement its
 first review asked for is done and is reported below; it changed the design in four
-places, each marked. Nothing here is built. It follows
+places, each marked. The certificate and the kept vectors are built, as
+[kept rows and the certificate](rank-deficient.md); the step and the bases are not. It follows
 [dependent rows](dependent-rows.md), whose proofs it reuses.
 
 ## What is asked for
@@ -400,3 +401,18 @@ In the second review, after the measurement:
 - **The system of order d is factored sparsely.**
 - **The kept rows alone are an option**, with the bound stated; whether a caller may use
   it is the caller's decision.
+
+In the third, before the build:
+
+- **The drop tolerance is an argument of its own**, relative to each vector's largest
+  multiplier and not to the matrix, with 10⁻¹² the value the measurement suggests. It is
+  not tied to the thresholds of the supports: a support's class is read from a multiplier
+  as it is used, after the drop.
+- **Kept vectors that are out of date are a refusal by name.** The library does not
+  search again by itself; the caller decides when a search is worth its cost.
+- **The bound of one vector reads only the rows that vector touches**, so that proving
+  every bound again costs in proportion to the vectors and not to the matrix.
+
+**Built so far:** the search with kept vectors, the reproof, the certificate and the
+bounds on the largest singular value, as [kept rows and the certificate](rank-deficient.md).
+The step, its bound, the option and the refresh of one vector are not built.

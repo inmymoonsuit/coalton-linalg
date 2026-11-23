@@ -94,6 +94,27 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 18a: kept rows and the certificate
+
+Nothing here is a method taken from a source, and no source was opened for it: it is
+this library's own earlier pieces put together under
+[a design](design-rank-deficient-step.md) written and reviewed before the code. The
+search and the vector of a row left out are Batch 11's. The bound on one vector's product
+is Batch 11's, the standard rounding analysis of an inner product as that batch records
+it, applied to only the rows a vector touches. The certificate on the kept rows is the
+one from the inertia that Batch 7a's section records, with both diagonal blocks set to the
+bound asked about. The bounds on the largest singular value are two textbook facts,
+that the square of the 2-norm is at most the product of the 1-norm and the
+infinity-norm and that `‖J v‖ / ‖v‖` is a lower bound for any v, with the power method
+choosing v; the rounding allowance was worked out here. No listing or pseudocode was
+read and no implementation. The structure follows from the contract and from a
+measurement on a consumer's patterns: the vectors are kept sparse because most of a
+computed vector is rounding, the bound is proved for the vector as kept and not as
+computed, the proof is on the augmented matrix because the kept rows' Gram matrix can
+be dense, and the ladder of bounds tried is there so that a steady caller pays for one
+factorization. The reference values in the tests are exact rational products and exact
+inertias from the stored doubles, by the tests' own elimination.
+
 ## Batch 17: damped least squares
 
 The damped step is the normal equations with a multiple of a positive diagonal added, the

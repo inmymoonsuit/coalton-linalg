@@ -1,0 +1,679 @@
+(cl:defpackage #:coalton-linalg/sparse/rank-deficient
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:rows #:coalton-linalg/sparse/dependent-rows)
+                    (#:aug #:coalton-linalg/sparse/augmented)
+                    (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:fp #:coalton-linalg/internal/float)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:KeptRows #:analyze #:analyze-with-limit #:default-analysis-entry-limit
+           #:row-count #:column-count
+           #:FindStatus #:FindFound #:FindNonFinite #:FindUnderflow #:FindBadThreshold #:FindBadDrop
+           #:FindVectorRefused
+           #:find-kept-rows! #:kept-found? #:kept-count #:left-out-count #:left-out-rows
+           #:multiplier-count #:multiplier-rows #:multiplier-values #:multiplier-start
+           #:ReproveStatus #:Reproved #:ReproveNothingKept #:ReproveNonFinite
+           #:reprove! #:residual-bound #:gap-bound
+           #:largest-singular-bounds!
+           #:CertificateStatus #:Certified #:CertificateGapAboveFloor #:CertificateKeptNotAboveFloor
+           #:CertificateUnresolved #:CertificateBadFloor #:CertificateNothingKept
+           #:certify! #:certified? #:proved-lower-bound))
+(cl:in-package #:coalton-linalg/sparse/rank-deficient)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+;;; A rank-deficient matrix as kept rows and rows left out, with the vectors of the rows left out
+;;; kept from call to call and a certificate that no singular value lies at a floor. See
+;;; docs/rank-deficient.md for the contract and docs/design-rank-deficient-step.md for the design.
+
+(coalton-toplevel
+  (define-struct KeptStorage
+    "Owns the search, a copy of the pattern by rows, the kept vectors, and what the certificate factors."
+    (rows UFix)
+    (columns UFix)
+    (limit UFix)
+    (analysis rows:RowAnalysis)
+    (column-starts (arr:LispArray UFix))
+    (row-indices (arr:LispArray UFix))
+    (row-starts (arr:LispArray UFix))
+    (row-columns (arr:LispArray UFix))
+    (row-positions (arr:LispArray UFix))
+    (entries (arr:LispArray F64))
+    (scale (arr:LispArray F64))
+    (state (arr:LispArray UFix))
+    (flags (arr:LispArray UFix))
+    (vector-starts (arr:LispArray UFix))
+    (vector-rows (cell:Cell (arr:LispArray UFix)))
+    (vector-values (cell:Cell (arr:LispArray F64)))
+    (bounds (arr:LispArray F64))
+    (buffer (arr:LispArray F64))
+    (sums (arr:LispArray F64))
+    (magnitudes (arr:LispArray F64))
+    (counts (arr:LispArray UFix))
+    (touched (arr:LispArray UFix))
+    (kept-positions (cell:Cell (arr:LispArray UFix)))
+    (kept-values (cell:Cell (arr:LispArray F64)))
+    (augmented (cell:Cell (arr:LispArray F64)))
+    (plan (cell:Cell (Optional aug:AugmentedPlan)))
+    (symbolic (cell:Cell (Optional ldlt:Symbolic))))
+
+  (repr :transparent)
+  (define-type KeptRows
+    "Handle for the kept rows of one sparse pattern; it owns its search, its vectors and its workspace, and one call at a time uses them."
+    (MkKeptRows KeptStorage))
+
+  (inline)
+  (declare storage (KeptRows -> KeptStorage))
+  (define (storage kept) (match kept ((MkKeptRows held) held)))
+
+  (derive Eq)
+  (repr :enum)
+  (define-type FindStatus
+    "Outcome of a search with every vector found."
+    FindFound
+    "A kept set and the vectors of the rows left out stand."
+    FindNonFinite
+    "An intermediate result of the search, or a bound, was not finite; nothing stands."
+    FindUnderflow
+    "The search's RowsUnderflow; nothing stands."
+    FindBadThreshold
+    "The search's RowsBadThreshold; nothing stands."
+    FindBadDrop
+    "The drop tolerance was not above 0 and below 1; nothing stands."
+    FindVectorRefused
+    "The vector of a row left out could not be computed; nothing stands.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type ReproveStatus
+    "Outcome of proving the kept vectors' bounds again for new values."
+    Reproved
+    "Every bound stands for the values given."
+    ReproveNothingKept
+    "No kept set stands."
+    ReproveNonFinite
+    "A bound was not finite; no certificate stands, the vectors do.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type CertificateStatus
+    "Outcome of asking that no singular value lie between two floors."
+    Certified
+    "Every singular value of the kept rows exceeds the upper floor, and at most the kept count of the matrix's exceed the lower."
+    CertificateGapAboveFloor
+    "The gap bound is not below the lower floor: a singular value beyond the kept count may reach it."
+    CertificateKeptNotAboveFloor
+    "The kept rows were not proved above the upper floor, by a factorization accurate at that floor."
+    CertificateUnresolved
+    "The proof's own error exceeds the upper floor: the floor is below what this method resolves."
+    CertificateBadFloor
+    "A floor was not positive and finite, or the lower exceeded the upper."
+    CertificateNothingKept
+    "No kept set stands, or its bounds do not.")
+
+  (declare default-analysis-entry-limit UFix)
+  (define default-analysis-entry-limit
+    "Default budget of entries, 2^20, for each product and factor the handle analyzes."
+    rows:default-analysis-entry-limit)
+
+  ;; The scale array: [0] the power of two at the matrix's largest entry and [1] its reciprocal;
+  ;; [2] the gap bound of the standing vectors, in the divided matrix's units; [3] the lower bound
+  ;; the latest certificate proved, in the caller's units, or -1; [4] the bound a ladder starts
+  ;; from next time, in the divided units, or 0.
+  ;;
+  ;; The state array: [0] 1 when a kept set and its vectors stand; [1] the rows left out; [2] 1
+  ;; when the bounds stand for the values held; [3] 1 when a certificate stands.
+
+  (declare analyze-with-limit (csc:Matrix * UFix -> KeptRows))
+  (define (analyze-with-limit matrix maximum-entries)
+    "analyze with one entry budget for every product and factor; the errors are those of the analyses it makes."
+    (let m = (csc:row-count matrix))
+    (let n = (csc:column-count matrix))
+    (let analysis = (rows:analyze-with-limit matrix maximum-entries))
+    (let column-starts = (arr:copy (csc:column-pointers matrix)))
+    (let row-indices = (arr:copy (csc:row-indices matrix)))
+    (let entry-total = (arr:length row-indices))
+    ;; The same pattern by rows: where each row starts, the column of each entry, and where the
+    ;; entry is among the values as stored by columns.
+    (let row-starts = (arr:make (+ m 1) (the UFix 0)))
+    (for ((q 0 (+ q 1))) :while (< q entry-total)
+      (let i = (arr:aref row-indices q))
+      (arr:set! row-starts (+ i 1) (+ (arr:aref row-starts (+ i 1)) 1)))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! row-starts (+ i 1) (+ (arr:aref row-starts (+ i 1)) (arr:aref row-starts i))))
+    (let row-columns = (arr:make entry-total (the UFix 0)))
+    (let row-positions = (arr:make entry-total (the UFix 0)))
+    (let cursor = (arr:make m (the UFix 0)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (for ((q (arr:aref column-starts j) (+ q 1))) :while (< q (arr:aref column-starts (+ j 1)))
+        (let i = (arr:aref row-indices q))
+        (let at = (+ (arr:aref row-starts i) (arr:aref cursor i)))
+        (arr:set! row-columns at j)
+        (arr:set! row-positions at q)
+        (arr:set! cursor i (+ (arr:aref cursor i) 1))))
+    ;; No certificate has proved a bound yet.
+    (let scale = (arr:make 5 0.0d0))
+    (arr:set! scale 3 -1.0d0)
+    (MkKeptRows
+     (KeptStorage m n maximum-entries analysis column-starts row-indices row-starts row-columns row-positions
+                  (arr:make entry-total 0.0d0) scale (arr:make 4 (the UFix 0))
+                  (arr:make m (the UFix 1)) (arr:make (+ m 1) (the UFix 0))
+                  (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0))
+                  (arr:make m -1.0d0) (arr:make m 0.0d0)
+                  (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make n (the UFix 0)) (arr:make n (the UFix 0))
+                  (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0)) (cell:new (arr:make 0 0.0d0))
+                  (cell:new None) (cell:new None))))
+
+  (declare analyze (csc:Matrix -> KeptRows))
+  (define (analyze matrix)
+    "Analyze a stored matrix's pattern under the default entry budget. Once for a pattern; no value is read."
+    (analyze-with-limit matrix default-analysis-entry-limit))
+
+  (declare row-count (KeptRows -> UFix))
+  (define (row-count kept)
+    "Rows of the analyzed matrix."
+    (.rows (storage kept)))
+
+  (declare column-count (KeptRows -> UFix))
+  (define (column-count kept)
+    "Columns of the analyzed matrix."
+    (.columns (storage kept)))
+
+  (declare kept-found? (KeptRows -> Boolean))
+  (define (kept-found? kept)
+    "Whether a kept set and its vectors stand: the latest find-kept-rows! returned FindFound."
+    (== (arr:aref (.state (storage kept)) 0) 1))
+
+  (declare left-out-count (KeptRows -> UFix))
+  (define (left-out-count kept)
+    "Rows the standing set leaves out; 0 when none stands."
+    (let s = (storage kept))
+    (if (== (arr:aref (.state s) 0) 1) (arr:aref (.state s) 1) 0))
+
+  (declare kept-count (KeptRows -> UFix))
+  (define (kept-count kept)
+    "Rows in the standing kept set; 0 when none stands."
+    (let s = (storage kept))
+    (if (== (arr:aref (.state s) 0) 1) (- (.rows s) (arr:aref (.state s) 1)) 0))
+
+  (declare left-out-rows (KeptRows -> arr:LispArray UFix))
+  (define (left-out-rows kept)
+    "Borrowed view as long as the row count: its first left-out-count entries are the rows left out, in the order the search met them. A position in it is what the vector accessors and residual-bound take."
+    (rows:left-out-rows (.analysis (storage kept))))
+
+  (declare multiplier-start (KeptRows * UFix -> UFix))
+  (define (multiplier-start kept position)
+    "Where the kept vector at this position starts in multiplier-rows and multiplier-values; positions run to left-out-count, and the start at left-out-count is the end of the last. 0 when no set stands or the position is beyond it."
+    (let s = (storage kept))
+    (if (and (== (arr:aref (.state s) 0) 1) (<= position (arr:aref (.state s) 1)))
+        (arr:aref (.vector-starts s) position)
+        0))
+
+  (declare multiplier-count (KeptRows * UFix -> UFix))
+  (define (multiplier-count kept position)
+    "Entries the kept vector at this position holds at kept rows, after the drop; 0 when there is no such vector."
+    (let s = (storage kept))
+    (if (and (== (arr:aref (.state s) 0) 1) (< position (arr:aref (.state s) 1)))
+        (- (arr:aref (.vector-starts s) (+ position 1)) (arr:aref (.vector-starts s) position))
+        0))
+
+  (declare multiplier-rows (KeptRows -> arr:LispArray UFix))
+  (define (multiplier-rows kept)
+    "Borrowed view, replaced by a search: the kept row of each entry of every kept vector, the vectors one after another as multiplier-start says."
+    (cell:read (.vector-rows (storage kept))))
+
+  (declare multiplier-values (KeptRows -> arr:LispArray F64))
+  (define (multiplier-values kept)
+    "Borrowed view, replaced by a search: the vector's value at each row of multiplier-rows. The vector of a row left out has 1 at that row, these values at kept rows, and zero elsewhere; its multipliers are these values with the sign changed."
+    (cell:read (.vector-values (storage kept))))
+
+  (inline)
+  (declare restored (F64 * F64 -> F64))
+  (define (restored bound up)
+    "A bound on a quantity of the divided matrix as one on the matrix itself: multiplied back by the power of two, and raised by the smallest positive number where the product is below the normal range and could have been rounded down. It may be infinite."
+    (let product = (* bound up))
+    (if (< product fp:least-normal) (+ product fp:least-positive) product))
+
+  (declare vector-bound! (KeptStorage * UFix -> Void))
+  (define (vector-bound! s position)
+    "Write into the bounds, at a position, an upper bound on the 2-norm of J^T v for the kept vector there and the divided values held, exact product, or infinity. Only the rows the vector touches are read. See docs/rank-deficient.md."
+    (let starts = (.row-starts s))
+    (let columns = (.row-columns s))
+    (let positions = (.row-positions s))
+    (let entries = (.entries s))
+    (let sums = (.sums s))
+    (let magnitudes = (.magnitudes s))
+    (let counts = (.counts s))
+    (let touched = (.touched s))
+    (let reached = (cell:new (the UFix 0)))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (let from = (arr:aref (.vector-starts s) position))
+    (let to = (arr:aref (.vector-starts s) (+ position 1)))
+    ;; One pass for each kept row the vector holds, and a last one, e = to, for the row left
+    ;; out itself, whose entry of the vector is 1.
+    (for ((e from (+ e 1))) :while (<= e to)
+      (let own = (== e to))
+      (let i = (if own (arr:aref (rows:left-out-rows (.analysis s)) position) (arr:aref vector-rows e)))
+      (let x = (if own 1.0d0 (arr:aref vector-values e)))
+      (for ((q (arr:aref starts i) (+ q 1))) :while (< q (arr:aref starts (+ i 1)))
+        (let j = (arr:aref columns q))
+        (let p = (* (arr:aref entries (arr:aref positions q)) x))
+        (when (== (arr:aref counts j) 0)
+          (arr:set! touched (cell:read reached) j)
+          (cell:write! reached (+ (cell:read reached) 1)))
+        (arr:set! sums j (+ (arr:aref sums j) p))
+        (arr:set! magnitudes j (+ (arr:aref magnitudes j) (abs p)))
+        (arr:set! counts j (+ (arr:aref counts j) 1))))
+    ;; As dependent rows bounds a product: the exact entry of a column with c terms is within
+    ;; gamma(2c + 2) of the sum of the rounded products' magnitudes. A column no row of the
+    ;; vector reaches is exactly zero and is not visited. The workspace is cleared as it is read.
+    (let total = (cell:new 0.0d0))
+    (for ((k 0 (+ k 1))) :while (< k (cell:read reached))
+      (let j = (arr:aref touched k))
+      (let reach = (fp:count->float (+ (* 2 (arr:aref counts j)) 2)))
+      (let relative = (/ (* reach fp:unit-roundoff) (- 1.0d0 (* reach fp:unit-roundoff))))
+      (let entry = (+ (abs (arr:aref sums j)) (* relative (arr:aref magnitudes j))))
+      (cell:write! total (+ (cell:read total) (* entry entry)))
+      (arr:set! sums j 0.0d0)
+      (arr:set! magnitudes j 0.0d0)
+      (arr:set! counts j 0))
+    (let order = (fp:count->float (cell:read reached)))
+    (let padded = (+ (cell:read total) (* order fp:least-positive)))
+    ;; Written, not returned: a number returned from here would be boxed at every call.
+    (arr:set! (.bounds s) position
+              (if (inline (math:finite? padded))
+                  (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
+                  fp:infinity)))
+
+  (declare take-values! (KeptStorage * csc:Matrix -> Void))
+  (define (take-values! s matrix)
+    "Hold the matrix's values divided by the power of two at the largest."
+    (let values = (csc:entries matrix))
+    (let entries = (.entries s))
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (let a = (abs (arr:aref values q)))
+      (when (> a (cell:read largest)) (cell:write! largest a)))
+    (fp:binade! (cell:read largest) (.scale s) 0)
+    (let down = (arr:aref (.scale s) 1))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (arr:set! entries q (* (arr:aref values q) down))))
+
+  (declare prove-bounds! (KeptStorage -> Boolean))
+  (define (prove-bounds! s)
+    "Prove every kept vector's bound for the values held, and the gap bound from them, the root of the sum of their squares rounded upward. False when one is not finite."
+    (let d = (arr:aref (.state s) 1))
+    (let bounds = (.bounds s))
+    (let total = (cell:new 0.0d0))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (vector-bound! s p)
+      (let bound = (arr:aref bounds p))
+      (unless (inline (math:finite? bound)) (return False))
+      (cell:write! total (+ (cell:read total) (* bound bound))))
+    (let order = (fp:count->float d))
+    (let gap = (if (== d 0)
+                   0.0d0
+                   (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 4.0d0)))
+                      (math:sqrt (+ (cell:read total) (* order fp:least-positive))))))
+    (arr:set! (.scale s) 2 gap)
+    (inline (math:finite? gap)))
+
+  (declare build-kept! (KeptStorage -> Unit))
+  (define (build-kept! s)
+    "For the standing kept set: where its rows' entries are among the matrix's values, and the analysis of their augmented matrix."
+    (let m = (.rows s))
+    (let n = (.columns s))
+    (let flags = (.flags s))
+    (let column-starts = (.column-starts s))
+    (let row-indices = (.row-indices s))
+    ;; The kept rows renumbered in their own order, in the buffer of counts by row.
+    (let number = (arr:make m (the UFix 0)))
+    (let next = (cell:new (the UFix 0)))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (when (== (arr:aref flags i) 1)
+        (arr:set! number i (cell:read next))
+        (cell:write! next (+ (cell:read next) 1))))
+    (let r = (cell:read next))
+    (let tally = (cell:new (the UFix 0)))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length row-indices))
+      (when (== (arr:aref flags (arr:aref row-indices q)) 1)
+        (cell:write! tally (+ (cell:read tally) 1))))
+    (let kept-entries = (cell:read tally))
+    (let pointers = (arr:make (+ n 1) (the UFix 0)))
+    (let indices = (arr:make kept-entries (the UFix 0)))
+    (let positions = (arr:make kept-entries (the UFix 0)))
+    (let filled = (cell:new (the UFix 0)))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (for ((q (arr:aref column-starts j) (+ q 1))) :while (< q (arr:aref column-starts (+ j 1)))
+        (let i = (arr:aref row-indices q))
+        (when (== (arr:aref flags i) 1)
+          (arr:set! indices (cell:read filled) (arr:aref number i))
+          (arr:set! positions (cell:read filled) q)
+          (cell:write! filled (+ (cell:read filled) 1))))
+      (arr:set! pointers (+ j 1) (cell:read filled)))
+    ;; The pattern only: the values are taken at each call.
+    (let pattern = (csc:from-csc r n pointers indices (arr:make kept-entries 1.0d0)))
+    (let plan = (aug:analyze-with-limit pattern (.limit s)))
+    (let symbolic = (ldlt:analyze-quasidefinite-with-limit
+                     (ldlt:Pattern (+ n r) (aug:column-pointers plan) (aug:row-indices plan)) n (.limit s)))
+    (cell:write! (.kept-positions s) positions)
+    (cell:write! (.kept-values s) (arr:make kept-entries 0.0d0))
+    (cell:write! (.augmented s) (arr:make (aug:entry-count plan) 0.0d0))
+    (cell:write! (.plan s) (Some plan))
+    (cell:write! (.symbolic s) (Some symbolic))
+    Unit)
+
+  (declare find-kept-rows! (KeptRows * csc:Matrix * F64 * F64 -> FindStatus))
+  (define (find-kept-rows! kept matrix threshold drop)
+    "Search for the rows that depend on the rows before them, at a distance threshold as dependent rows takes it, and find the vector of every row left out; in each, an entry below drop times the vector's largest is set to zero, and the bound is proved for the vector as kept. Once for a matrix whose kept set is to be used for many values; it allocates. See docs/rank-deficient.md."
+    (let s = (storage kept))
+    (let st = (.state s))
+    (arr:set! st 0 0)
+    (arr:set! st 2 0)
+    (arr:set! st 3 0)
+    (arr:set! (.scale s) 3 -1.0d0)
+    (arr:set! (.scale s) 4 0.0d0)
+    (unless (and (> drop 0.0d0) (< drop 1.0d0)) (return FindBadDrop))
+    (let found = (rows:find-dependent-rows! (.analysis s) matrix threshold))
+    (unless (== found rows:RowsFound)
+      (return (match found
+                ((rows:RowsUnderflow) FindUnderflow)
+                ((rows:RowsBadThreshold) FindBadThreshold)
+                (_ FindNonFinite))))
+    (take-values! s matrix)
+    (let m = (.rows s))
+    (let d = (rows:left-out-count (.analysis s)))
+    (let left = (rows:left-out-rows (.analysis s)))
+    (let flags = (.flags s))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! flags i 1))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (arr:set! flags (arr:aref left p) 0))
+    (let buffer = (.buffer s))
+    (let starts = (.vector-starts s))
+    (let total = (cell:new (the UFix 0)))
+    (arr:set! starts 0 0)
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (unless (== (rows:null-vector! (.analysis s) p buffer) rows:NullFound)
+        (return FindVectorRefused))
+      ;; The largest entry at a kept row, the entries that reach drop times it, and room for them.
+      (let largest = (cell:new 0.0d0))
+      (for ((i 0 (+ i 1))) :while (< i m)
+        (when (and (== (arr:aref flags i) 1) (> (abs (arr:aref buffer i)) (cell:read largest)))
+          (cell:write! largest (abs (arr:aref buffer i)))))
+      (let cutoff = (* drop (cell:read largest)))
+      (let wanted = (cell:new (the UFix 0)))
+      (for ((i 0 (+ i 1))) :while (< i m)
+        (when (and (== (arr:aref flags i) 1)
+                   (and (/= (arr:aref buffer i) 0.0d0) (>= (abs (arr:aref buffer i)) cutoff)))
+          (cell:write! wanted (+ (cell:read wanted) 1))))
+      (let needed = (+ (cell:read total) (cell:read wanted)))
+      (let old-rows = (cell:read (.vector-rows s)))
+      (when (> needed (arr:length old-rows))
+        (let size = (if (> (* 2 (arr:length old-rows)) needed) (* 2 (arr:length old-rows)) needed))
+        (let fresh-rows = (arr:make size (the UFix 0)))
+        (let fresh-values = (arr:make size 0.0d0))
+        (let old-values = (cell:read (.vector-values s)))
+        (for ((q 0 (+ q 1))) :while (< q (cell:read total))
+          (arr:set! fresh-rows q (arr:aref old-rows q))
+          (arr:set! fresh-values q (arr:aref old-values q)))
+        (cell:write! (.vector-rows s) fresh-rows)
+        (cell:write! (.vector-values s) fresh-values))
+      (let vector-rows = (cell:read (.vector-rows s)))
+      (let vector-values = (cell:read (.vector-values s)))
+      (for ((i 0 (+ i 1))) :while (< i m)
+        (when (and (== (arr:aref flags i) 1)
+                   (and (/= (arr:aref buffer i) 0.0d0) (>= (abs (arr:aref buffer i)) cutoff)))
+          (arr:set! vector-rows (cell:read total) i)
+          (arr:set! vector-values (cell:read total) (arr:aref buffer i))
+          (cell:write! total (+ (cell:read total) 1))))
+      (arr:set! starts (+ p 1) (cell:read total)))
+    (arr:set! st 1 d)
+    (unless (prove-bounds! s) (return FindNonFinite))
+    (build-kept! s)
+    (arr:set! st 0 1)
+    (arr:set! st 2 1)
+    FindFound)
+
+  (declare reprove! (KeptRows * csc:Matrix -> ReproveStatus))
+  (define (reprove! kept matrix)
+    "For a matrix of the analyzed pattern with other values: prove every kept vector's bound again against them. Nothing is searched, no vector changes and nothing is allocated; the kept set and the vectors are the standing ones, and whether they still serve is what the bounds, and then a certificate, say. Another pattern or shape raises the typed error of the Gram refill. See docs/rank-deficient.md."
+    (let s = (storage kept))
+    (let st = (.state s))
+    (unless (== (arr:aref st 0) 1) (return ReproveNothingKept))
+    (arr:set! st 2 0)
+    (arr:set! st 3 0)
+    (arr:set! (.scale s) 3 -1.0d0)
+    (rows:check-pattern! (.analysis s) matrix)
+    (take-values! s matrix)
+    (unless (prove-bounds! s) (return ReproveNonFinite))
+    (arr:set! st 2 1)
+    Reproved)
+
+  (declare residual-bound (KeptRows * UFix -> F64))
+  (define (residual-bound kept position)
+    "The bound standing on the 2-norm of J^T v for the kept vector at this position and the values the bounds were last proved for, exact product; -1 when there is none. It may be infinite."
+    (let s = (storage kept))
+    (if (and (== (arr:aref (.state s) 2) 1) (< position (arr:aref (.state s) 1)))
+        (inline (restored (arr:aref (.bounds s) position) (arr:aref (.scale s) 0)))
+        -1.0d0))
+
+  (declare gap-bound (KeptRows -> F64))
+  (define (gap-bound kept)
+    "With r rows kept: an upper bound on singular value r + 1 of the matrix the bounds were last proved for, the root of the sum of the squared residual bounds, rounded upward. Zero when no row is left out; -1 when no bounds stand. It may be infinite."
+    (let s = (storage kept))
+    (cond
+      ((/= (arr:aref (.state s) 2) 1) -1.0d0)
+      ((== (arr:aref (.state s) 1) 0) 0.0d0)
+      (True (inline (restored (arr:aref (.scale s) 2) (arr:aref (.scale s) 0))))))
+
+  (declare largest-singular-bounds! (csc:Matrix * UFix * arr:LispArray F64 * arr:LispArray F64
+                                     * arr:LispArray F64 -> Void))
+  (define (largest-singular-bounds! matrix steps work-columns work-rows out)
+    "Write into out[0] a lower bound and into out[1] an upper bound on the largest singular value of a stored matrix. The upper is (norm-1 * norm-infinity)^(1/2), rounded upward. The lower is the length of J v over that of v after steps of the power method from the vector of ones, lowered by a bound on the rounding of that one product and of the two lengths; 0 when it cannot be had. work-columns has a column's length and work-rows a row's, and both are overwritten. See docs/rank-deficient.md."
+    (let m = (csc:row-count matrix))
+    (let n = (csc:column-count matrix))
+    (unless (and (== (arr:length work-columns) n) (and (== (arr:length work-rows) m) (>= (arr:length out) 2)))
+      (throw (err:InvalidDimensions "The work vectors must have the matrix's column and row counts, and the output two entries.")))
+    (when (or (unsafe-pointer-eq? work-columns work-rows)
+              (or (unsafe-pointer-eq? out work-columns) (unsafe-pointer-eq? out work-rows)))
+      (throw (err:InvalidAliasing "The two work vectors and the output must be three arrays.")))
+    (let pointers = (csc:column-pointers matrix))
+    (let indices = (csc:row-indices matrix))
+    (let values = (csc:entries matrix))
+    ;; Everything on the matrix divided by the power of two at its largest entry.
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (when (> (abs (arr:aref values q)) (cell:read largest)) (cell:write! largest (abs (arr:aref values q)))))
+    (fp:binade! (cell:read largest) out 0)
+    (let up = (arr:aref out 0))
+    (let down = (arr:aref out 1))
+    ;; The upper bound: the largest column sum and the largest row sum of magnitudes.
+    (let widest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! work-rows i 0.0d0))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let sum = (cell:new 0.0d0))
+      (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+        (let a = (abs (* (arr:aref values q) down)))
+        (cell:write! sum (+ (cell:read sum) a))
+        (arr:set! work-rows (arr:aref indices q) (+ (arr:aref work-rows (arr:aref indices q)) a)))
+      (when (> (cell:read sum) (cell:read widest)) (cell:write! widest (cell:read sum))))
+    (let tallest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (when (> (arr:aref work-rows i) (cell:read tallest)) (cell:write! tallest (arr:aref work-rows i))))
+    (let terms = (fp:count->float (+ (+ m n) 4)))
+    (let upper = (* (+ 1.0d0 (* (* 4.0d0 fp:unit-roundoff) terms))
+                    (math:sqrt (* (cell:read widest) (cell:read tallest)))))
+    ;; The lower bound. v starts as ones; each step is v <- J^T (J v), divided by its largest
+    ;; entry so that nothing grows. The last product J v is the one the bound is read from.
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! work-columns j 1.0d0))
+    (let product-length = (cell:new 0.0d0))
+    (let product-slack = (cell:new 0.0d0))
+    (let vector-length = (cell:new 0.0d0))
+    (for ((step 0 (+ step 1))) :while (<= step steps)
+      (for ((i 0 (+ i 1))) :while (< i m)
+        (arr:set! work-rows i 0.0d0))
+      (for ((j 0 (+ j 1))) :while (< j n)
+        (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+          (arr:set! work-rows (arr:aref indices q)
+                    (+ (arr:aref work-rows (arr:aref indices q))
+                       (* (* (arr:aref values q) down) (arr:aref work-columns j))))))
+      (when (== step steps)
+         ;; The lengths of this J v and of this v, and what the product's rounding can have added:
+         ;; each entry is within gamma(c) of the sum of its terms' magnitudes, c a row's count,
+         ;; here bounded by the column count.
+         (let squares = (cell:new 0.0d0))
+         (for ((i 0 (+ i 1))) :while (< i m)
+           (cell:write! squares (+ (cell:read squares) (* (arr:aref work-rows i) (arr:aref work-rows i)))))
+         (cell:write! product-length (math:sqrt (cell:read squares)))
+         (let lengths = (cell:new 0.0d0))
+         (for ((j 0 (+ j 1))) :while (< j n)
+           (cell:write! lengths (+ (cell:read lengths) (* (arr:aref work-columns j) (arr:aref work-columns j)))))
+         (cell:write! vector-length (math:sqrt (cell:read lengths)))
+         ;; |J| |v| by rows, for the slack.
+         (for ((i 0 (+ i 1))) :while (< i m)
+           (arr:set! work-rows i 0.0d0))
+         (for ((j 0 (+ j 1))) :while (< j n)
+           (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+             (arr:set! work-rows (arr:aref indices q)
+                       (+ (arr:aref work-rows (arr:aref indices q))
+                          (abs (* (* (arr:aref values q) down) (arr:aref work-columns j)))))))
+         (let slack = (cell:new 0.0d0))
+         (for ((i 0 (+ i 1))) :while (< i m)
+           (cell:write! slack (+ (cell:read slack) (* (arr:aref work-rows i) (arr:aref work-rows i)))))
+         (cell:write! product-slack (math:sqrt (cell:read slack))))
+      (unless (== step steps)
+         ;; v <- J^T (J v), then divided by its largest entry.
+         (let peak = (cell:new 0.0d0))
+         (for ((j 0 (+ j 1))) :while (< j n)
+           (let sum = (cell:new 0.0d0))
+           (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+             (cell:write! sum (+ (cell:read sum) (* (* (arr:aref values q) down) (arr:aref work-rows (arr:aref indices q))))))
+           (arr:set! work-columns j (cell:read sum))
+           (when (> (abs (cell:read sum)) (cell:read peak)) (cell:write! peak (abs (cell:read sum)))))
+         (cond
+           ((and (> (cell:read peak) 0.0d0) (inline (math:finite? (cell:read peak))))
+            (for ((j 0 (+ j 1))) :while (< j n)
+              (arr:set! work-columns j (/ (arr:aref work-columns j) (cell:read peak)))))
+           (True
+            (for ((j 0 (+ j 1))) :while (< j n)
+              (arr:set! work-columns j 1.0d0))))))
+    ;; sigma_1 >= |J v| / |v| for the exact product and lengths. The computed product is within
+    ;; gamma(n + 2) |J| |v| of the exact one, entry by entry; the computed lengths within a
+    ;; factor 1 + (k + 4) u of theirs. All three are allowed for, downward.
+    (let reach = (fp:count->float (+ n 2)))
+    (let relative = (/ (* reach fp:unit-roundoff) (- 1.0d0 (* reach fp:unit-roundoff))))
+    (let margin = (* (* 4.0d0 fp:unit-roundoff) terms))
+    (let numerator = (- (* (cell:read product-length) (- 1.0d0 margin))
+                        (* (* relative (cell:read product-slack)) (+ 1.0d0 margin))))
+    (let denominator = (* (cell:read vector-length) (+ 1.0d0 margin)))
+    (let lower = (if (and (> numerator 0.0d0) (and (> denominator 0.0d0) (inline (math:finite? denominator))))
+                     (/ numerator denominator)
+                     0.0d0))
+    (arr:set! out 0 (* (* lower (- 1.0d0 margin)) up))
+    (arr:set! out 1 (inline (restored upper up))))
+
+  (declare try-floor! (KeptStorage * aug:AugmentedPlan * ldlt:Symbolic * F64 -> UFix))
+  (define (try-floor! s plan symbolic bound)
+    "Ask the inertia certificate that every singular value of the kept rows, divided, exceeds bound, with t = s = bound: 0 proved; 1 not proved by a factorization whose own error is under an eighth of the bound; 2 not proved, and the error is not."
+    (let n = (.columns s))
+    (let r = (- (.rows s) (arr:aref (.state s) 1)))
+    (let values = (cell:read (.kept-values s)))
+    (let augmented = (cell:read (.augmented s)))
+    (let factor = (ldlt:symbolic-factor symbolic))
+    (let margin = (cell:new 0.0d0))
+    (let outcome = (cell:new (the UFix 2)))
+    (let rounds = (cell:new (the UFix 0)))
+    (for () :while (< (cell:read rounds) 4)
+      (cell:write! rounds (+ (cell:read rounds) 1))
+      (let written = (+ bound (cell:read margin)))
+      (aug:refill! plan values written (- 0.0d0 written) augmented)
+      (cond
+        ((/= (ldlt:factor-signed! symbolic augmented 0.0d0) ldlt:SignedSuccess)
+         (cell:write! outcome 2)
+         (cell:write! rounds 4)
+         Unit)
+        (True
+         (let beta = (ldlt:factor-backward-bound factor))
+         (let counted = (and (== (ldlt:positive-pivot-count factor) n) (== (ldlt:negative-pivot-count factor) r)))
+         (let small = (and (inline (math:finite? beta)) (<= (* 8.0d0 beta) bound)))
+         (cond
+           ((not (inline (math:finite? beta)))
+            (cell:write! outcome 2)
+            (cell:write! rounds 4)
+            Unit)
+           ((not counted)
+            (cell:write! outcome (if small 1 2))
+            (cell:write! rounds 4)
+            Unit)
+           ((>= (- written bound) (* beta (+ 1.0d0 (* 4.0d0 fp:unit-roundoff))))
+            (cell:write! outcome 0)
+            (cell:write! rounds 4)
+            Unit)
+           (True
+            (cell:write! outcome (if small 1 2))
+            (cell:write! margin (* 2.0d0 (if (> (cell:read margin) beta) (cell:read margin) beta)))
+            Unit)))))
+    (cell:read outcome))
+
+  (declare certify! (KeptRows * F64 * F64 -> CertificateStatus))
+  (define (certify! kept lower-floor upper-floor)
+    "Ask that no singular value of the matrix the bounds were last proved for lie between two floors, in its own units: the gap bound below the lower, and every singular value of the kept rows above the upper, the second proved by the inertia of their augmented matrix. The bound proved on the kept rows is as large as a short ladder of trials finds and is read by proved-lower-bound. See docs/rank-deficient.md."
+    (let s = (storage kept))
+    (let st = (.state s))
+    (arr:set! st 3 0)
+    (arr:set! (.scale s) 3 -1.0d0)
+    (unless (and (== (arr:aref st 0) 1) (== (arr:aref st 2) 1)) (return CertificateNothingKept))
+    (unless (and (> lower-floor 0.0d0)
+                 (and (>= upper-floor lower-floor) (inline (math:finite? upper-floor))))
+      (return CertificateBadFloor))
+    (let up = (arr:aref (.scale s) 0))
+    (let down = (arr:aref (.scale s) 1))
+    (unless (< (inline (restored (arr:aref (.scale s) 2) up)) lower-floor) (return CertificateGapAboveFloor))
+    (let plan = (match (cell:read (.plan s)) ((Some held) held) ((None) (return CertificateNothingKept))))
+    (let symbolic = (match (cell:read (.symbolic s)) ((Some held) held) ((None) (return CertificateNothingKept))))
+    ;; The kept rows' values, divided, in their own stored order.
+    (let positions = (cell:read (.kept-positions s)))
+    (let values = (cell:read (.kept-values s)))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length positions))
+      (arr:set! values q (arr:aref (.entries s) (arr:aref positions q))))
+    ;; The floor in the divided units. A ladder of bounds from the one that served last time, or
+    ;; from an eighth, down by fours to the floor; the first proved is the bound.
+    (let target = (* upper-floor down))
+    (unless (and (> target 0.0d0) (inline (math:finite? target))) (return CertificateUnresolved))
+    (let remembered = (arr:aref (.scale s) 4))
+    (let trial = (cell:new (if (> remembered target) remembered 0.125d0)))
+    (let verdict = (cell:new (the UFix 2)))
+    (let proved = (cell:new 0.0d0))
+    (for () :while (and (== (cell:read proved) 0.0d0) (> (cell:read trial) target))
+      (cell:write! verdict (try-floor! s plan symbolic (cell:read trial)))
+      (cond
+        ((== (cell:read verdict) 0) (cell:write! proved (cell:read trial)))
+        (True (cell:write! trial (* 0.25d0 (cell:read trial))))))
+    (when (== (cell:read proved) 0.0d0)
+      (cell:write! verdict (try-floor! s plan symbolic target))
+      (when (== (cell:read verdict) 0) (cell:write! proved target)))
+    (cond
+      ((> (cell:read proved) 0.0d0)
+       (arr:set! (.scale s) 4 (cell:read proved))
+       ;; Back in the caller's units, downward: the statement is that every singular value exceeds it.
+       (let bound = (* (cell:read proved) up))
+       (arr:set! (.scale s) 3 (if (inline (math:finite? bound)) bound fp:greatest))
+       (arr:set! st 3 1)
+       Certified)
+      ((== (cell:read verdict) 1) CertificateKeptNotAboveFloor)
+      (True CertificateUnresolved)))
+
+  (declare certified? (KeptRows -> Boolean))
+  (define (certified? kept)
+    "Whether a certificate stands: the latest certify! returned Certified and neither a search nor a reproof came since."
+    (== (arr:aref (.state (storage kept)) 3) 1))
+
+  (declare proved-lower-bound (KeptRows -> F64))
+  (define (proved-lower-bound kept)
+    "The bound the standing certificate proved: every singular value of the kept rows, and so the kept count's largest of the matrix, exceeds it. At least the upper floor asked for; -1 when no certificate stands."
+    (arr:aref (.scale (storage kept)) 3)))

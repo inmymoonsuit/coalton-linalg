@@ -10,7 +10,7 @@
                     (#:err #:coalton-linalg/errors))
   (:export #:RowAnalysis #:analyze #:analyze-with-limit #:default-analysis-entry-limit
            #:RowStatus #:RowsFound #:RowsNonFinite #:RowsUnderflow #:RowsBadThreshold
-           #:find-dependent-rows! #:rows-found? #:row-count #:column-count
+           #:find-dependent-rows! #:rows-found? #:row-count #:column-count #:check-pattern!
            #:kept-count #:left-out-count #:left-out-rows #:kept-values!
            #:NullStatus #:NullFound #:NullNoRows #:NullBadPosition #:NullBadSize #:NullNonFinite
            #:null-vector! #:refinement-step-limit #:residual-bound #:gap-bound
@@ -274,6 +274,11 @@
   (define (left-out-rows analysis)
     "Borrowed view as long as the row count: its first left-out-count entries are the rows left out, in the order they were met. A position in it is what null-vector! and residual-bound take."
     (.left-out (analysis-storage analysis)))
+
+  (declare check-pattern! (RowAnalysis * csc:Matrix -> Void))
+  (define (check-pattern! analysis matrix)
+    "Raise the typed error of the Gram refill unless the matrix has the analyzed shape and pattern. Reads no value and changes nothing."
+    (gram:check-csc! (.plan (analysis-storage analysis)) matrix))
 
   (declare find-dependent-rows! (RowAnalysis * csc:Matrix * F64 -> RowStatus))
   (define (find-dependent-rows! analysis matrix threshold)

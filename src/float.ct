@@ -1,7 +1,7 @@
 (cl:defpackage #:coalton-linalg/internal/float
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
-  (:export #:least-normal #:greatest #:binade!))
+  (:export #:least-normal #:least-positive #:greatest #:infinity #:unit-roundoff #:count->float #:binade!))
 (cl:in-package #:coalton-linalg/internal/float)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -10,6 +10,27 @@
   (define least-normal
     "Smallest positive normal F64."
     (lisp (-> F64) () cl:least-positive-normalized-double-float))
+
+  (declare least-positive F64)
+  (define least-positive
+    "Smallest positive F64, a subnormal: what a product or a square can lose to underflow is less than it."
+    (lisp (-> F64) () cl:least-positive-double-float))
+
+  (declare infinity F64)
+  (define infinity
+    "Positive infinity, for a bound that could not be held."
+    (lisp (-> F64) () sb-ext:double-float-positive-infinity))
+
+  (declare unit-roundoff F64)
+  (define unit-roundoff
+    "Half the spacing of the numbers at 1: 2^-53."
+    (lisp (-> F64) () (cl:scale-float 1d0 -53)))
+
+  (inline)
+  (declare count->float (UFix -> F64))
+  (define (count->float count)
+    "A count as a floating-point number; exact below 2^53."
+    (lisp (-> F64) (count) (cl:coerce count 'cl:double-float)))
 
   (declare greatest F64)
   (define greatest

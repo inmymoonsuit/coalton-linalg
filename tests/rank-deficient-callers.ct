@@ -1,0 +1,90 @@
+(cl:defpackage #:coalton-linalg/tests/rank-deficient-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:rd #:coalton-linalg/sparse/rank-deficient)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:find-code #:reprove-code #:certify-code #:bounds-code #:analysis-code #:kept-loop))
+(cl:in-package #:coalton-linalg/tests/rank-deficient-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure 91, dimensions 92, aliasing 93, input 95, result 96, dimension limit 97, storage 98."
+    (match problem
+      ((err:InvalidStructure _) 91)
+      ((err:InvalidDimensions _) 92)
+      ((err:InvalidAliasing _) 93)
+      ((err:NonFiniteInput _) 95)
+      ((err:NonFiniteResult _) 96)
+      ((err:AnalysisLimitExceeded _ _) 97)
+      ((err:AnalysisStorageExceeded _ _) 98)
+      (_ 99)))
+
+  (declare find-status-code (rd:FindStatus -> UFix))
+  (define (find-status-code status)
+    (match status
+      ((rd:FindFound) 0)
+      ((rd:FindNonFinite) 1)
+      ((rd:FindUnderflow) 2)
+      ((rd:FindBadThreshold) 3)
+      ((rd:FindBadDrop) 4)
+      ((rd:FindVectorRefused) 5)))
+
+  (declare find-code (rd:KeptRows * csc:Matrix * F64 * F64 -> UFix))
+  (define (find-code kept matrix threshold drop)
+    "Exhaustively matched outcome: found 0, non-finite 1, underflow 2, threshold 3, drop 4, vector 5; a typed error's category from 91."
+    (catch (find-status-code (rd:find-kept-rows! kept matrix threshold drop))
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare reprove-status-code (rd:ReproveStatus -> UFix))
+  (define (reprove-status-code status)
+    (match status
+      ((rd:Reproved) 0)
+      ((rd:ReproveNothingKept) 1)
+      ((rd:ReproveNonFinite) 2)))
+
+  (declare reprove-code (rd:KeptRows * csc:Matrix -> UFix))
+  (define (reprove-code kept matrix)
+    "Exhaustively matched outcome: reproved 0, nothing kept 1, non-finite 2; a typed error's category from 91."
+    (catch (reprove-status-code (rd:reprove! kept matrix))
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare certify-code (rd:KeptRows * F64 * F64 -> UFix))
+  (define (certify-code kept lower-floor upper-floor)
+    "Exhaustively matched outcome: certified 0, gap above floor 1, kept not above floor 2, unresolved 3, bad floor 4, nothing kept 5."
+    (match (rd:certify! kept lower-floor upper-floor)
+      ((rd:Certified) 0)
+      ((rd:CertificateGapAboveFloor) 1)
+      ((rd:CertificateKeptNotAboveFloor) 2)
+      ((rd:CertificateUnresolved) 3)
+      ((rd:CertificateBadFloor) 4)
+      ((rd:CertificateNothingKept) 5)))
+
+  (declare bounds-code (csc:Matrix * UFix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (bounds-code matrix steps work-columns work-rows out)
+    "0 when the two bounds were written; a typed error's category from 91."
+    (catch (progn (rd:largest-singular-bounds! matrix steps work-columns work-rows out) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare analysis-code (csc:Matrix * UFix -> UFix))
+  (define (analysis-code matrix limit)
+    "0 when the analysis was made under the budget; a typed error's category from 91."
+    (catch (progn (rd:analyze-with-limit matrix limit) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare kept-loop (rd:KeptRows * csc:Matrix * F64 * F64 * UFix -> UFix))
+  (define (kept-loop kept matrix lower-floor upper-floor repeats)
+    "A real external caller, as a step taken many times on one kept set is: prove the bounds again for the values, then ask for the certificate; count what goes wrong."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k repeats)
+      (unless (== (rd:reprove! kept matrix) rd:Reproved)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (rd:certify! kept lower-floor upper-floor) rd:Certified)
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))
