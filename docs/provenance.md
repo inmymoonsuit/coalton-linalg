@@ -87,12 +87,80 @@ points without relying only on the allocating versions as a reference.
 
 Several sections below, written from Batch 3d onward, say that whether following a published
 method closely from its description meets this repository's clean-room rule was an open
-decision of the maintainer's. **He decided it on 2026-11-22: an implementation written
+decision of the maintainer's. **It was decided on 2026-11-22: an implementation written
 clean-room from a published method's description is acceptable, and textbook references
 and pseudocode may be read as references.** What is unchanged: code is never copied, in
 any form; no numerical-library implementation and no listing in a real programming
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
+
+## Published sources that are free to read
+
+Entered on 2026-11-23. Each of these is posted by its authors or its publisher at the
+address given, and stays theirs: none is in this repository, and a link here is a pointer,
+not a licence. They are read under the rule above, for the mathematics and for pseudocode.
+Several are posted beside software, and a few print short listings in a real programming
+language; neither is read. Except where a section below already names one as the origin of
+a method, they were entered after the packages they concern were built, and are here for
+the work still planned and for a reader who wants to follow a citation without a library.
+
+For the packages on an operator the caller applies:
+
+- Paige and Saunders, *LSQR: An algorithm for sparse linear equations and sparse least
+  squares*, ACM Transactions on Mathematical Software 8(1), 1982:
+  [the paper](https://web.stanford.edu/group/SOL/software/lsqr/lsqr-toms82a.pdf). The
+  method of `coalton-linalg/lsqr`.
+- Fong and Saunders, *LSMR: An iterative algorithm for sparse least-squares problems*,
+  SIAM Journal on Scientific Computing 33(5), 2011: [arXiv:1006.0758](https://arxiv.org/abs/1006.0758).
+  The same bidiagonalization arranged so that the norm of the gradient falls at every step.
+  Not built.
+- Shewchuk, *An introduction to the conjugate gradient method without the agonizing pain*,
+  Carnegie Mellon University, 1994:
+  [the report](https://www.cs.cmu.edu/~quake-papers/painless-conjugate-gradient.pdf).
+- Barrett and others, *Templates for the Solution of Linear Systems*, 2nd edition, SIAM,
+  1994: [the authors' electronic edition](https://www.netlib.org/templates/).
+- Saad, *Iterative Methods for Sparse Linear Systems*, 2nd edition, SIAM, 2003:
+  [the author's page](https://www-users.cse.umn.edu/~saad/books).
+
+For the sparse factorizations:
+
+- Davis, Rajamanickam and Sid-Lakhdar, *A survey of direct methods for sparse linear
+  systems*, Acta Numerica 25, 2016:
+  [the technical report](https://people.engr.tamu.edu/davis/publications_files/survey_tech_report.pdf).
+
+For least squares and its callers:
+
+- Madsen, Nielsen and Tingleff, *Methods for Non-Linear Least Squares Problems*, 2nd
+  edition, Technical University of Denmark, 2004:
+  [the lecture note](https://www2.imm.dtu.dk/pubdb/pubs/3215-full.html). How a caller of
+  `coalton-linalg/sparse/damped` may raise and lower the damping, which the library leaves
+  to the caller.
+- Boyd and Vandenberghe, *Introduction to Applied Linear Algebra: Vectors, Matrices, and
+  Least Squares*, Cambridge University Press, 2018:
+  [the authors' page](https://web.stanford.edu/~boyd/vmls/). An introduction from the uses.
+
+For eigenvalues and singular values, built and [planned](design-sparse-eigenvalues.md):
+
+- Demmel and Veselic, *Jacobi's method is more accurate than QR*, SIAM Journal on Matrix
+  Analysis and Applications 13(4), 1992:
+  [LAPACK Working Note 15](https://www.netlib.org/lapack/lawnspdf/lawn15.pdf). The analysis
+  behind the stopping criterion of `coalton-linalg/dense/jacobi`, named in its section below.
+- Demmel and Kahan, *Accurate singular values of bidiagonal matrices*, SIAM Journal on
+  Scientific and Statistical Computing 11(5), 1990:
+  [LAPACK Working Note 3](https://www.netlib.org/lapack/lawnspdf/lawn03.pdf).
+- Demmel, Dhillon and Ren, *On the correctness of some bisection-like parallel eigenvalue
+  algorithms in floating point arithmetic*, Electronic Transactions on Numerical Analysis
+  3, 1995: [LAPACK Working Note 70](https://www.netlib.org/lapack/lawnspdf/lawn70.pdf).
+  When a computed count of the eigenvalues below a point can be trusted.
+- Giraud, Langou, Rozloznik and van den Eshof, *Rounding error analysis of the classical
+  Gram-Schmidt orthogonalization process*, Numerische Mathematik 101, 2005:
+  [the report](https://hpcg.icl.utk.edu/files/publications/2005/icl-utk-250-2005.pdf). Why
+  orthogonalizing twice is enough.
+- Saad, *Numerical Methods for Large Eigenvalue Problems*, 2nd edition, SIAM, 2011:
+  [the author's page](https://www-users.cse.umn.edu/~saad/books).
+- Bai, Demmel, Dongarra, Ruhe and van der Vorst, editors, *Templates for the Solution of
+  Algebraic Eigenvalue Problems: A Practical Guide*, SIAM, 2000:
+  [the online edition](https://www.cs.ucdavis.edu/~bai/ET/contents.html).
 
 ## Batch 20: least squares on an operator
 
