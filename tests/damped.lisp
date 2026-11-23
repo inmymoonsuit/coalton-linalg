@@ -400,6 +400,67 @@ exact value."
                           (list 1d0 1d0 1d0))
     (damped-diagonal-case "J = diag(1, 2^-540), D = (1, 2^-1060), mu = 0" (list 1d0 (two -540)) :given
                           (list 1d0 (two -1060)) 0d0 (list 1d0 (two -540))))
+  ;; A step entry that is an ordinary number, and far below 1 in the units of the solve: the
+  ;; residual's small entry under a large damping. One power of two for the residual put the
+  ;; solve's unknown there below every number, and the entry came back as zero under StepSuccess.
+  (flet ((two (power) (scale-float 1d0 power)))
+    (damped-diagonal-case "the identity, D = (1, 2^700), mu = 1, r = (2^200, 2^-200)" (list 1d0 1d0) :given
+                          (list 1d0 (two 700)) 1d0 (list (two 200) (two -200)))
+    (damped-diagonal-case "diag(3, 5 2^40), D = (2^-300, 1.3 2^650), mu = 2^20, r = (1.1 2^300, 1.7 2^-300)"
+                          (list 3d0 (* 5d0 (two 40))) :given (list (two -300) (* 1.3d0 (two 650))) (two 20)
+                          (list (* 1.1d0 (two 300)) (* 1.7d0 (two -300))))
+    (damped-diagonal-case "diag(1.5, 1.25, 1.75), D = (2^900, 1, 2^-900), mu = 1, r = (2^-100, 1, 2^-100)"
+                          (list 1.5d0 1.25d0 1.75d0) :given (list (two 900) 1d0 (two -900)) 1d0
+                          (list (two -100) 1d0 (two -100)))
+    (damped-diagonal-case "diag(1, 2^-300), the columns' own damping with a floor of 2^-100, mu = 2^300, r = (2^100, 2^-200)"
+                          (list 1d0 (two -300)) :columns (two -100) (two 300) (list (two 100) (two -200)))
+    ;; The same where the matrix is not diagonal: the second column meets only the rows whose
+    ;; residual is small. Against the step in rational arithmetic, entry by entry.
+    (let* ((entries '((0 0 1) (1 0 1) (2 1 1) (3 1 2))) (matrix (csc-from-entries 4 2 entries)) (plan (dm:analyze matrix))
+           (r (doubles (two 200) (* 3d0 (two 200)) (two -200) (* 5d0 (two -200)))) (out (zeros 2))
+           (exact (damped-exact-step 4 2 entries (list 1 (expt 2 700)) 1 r)))
+      (assert (= 0 (dm-caller:matrix-code plan matrix)))
+      (assert (= 0 (dm-caller:damping-code plan (doubles 1d0 (two 700)))))
+      (assert (= 0 (dm-caller:factor-code plan 1d0)))
+      (assert (= 0 (dm-caller:step-code plan r out)))
+      (dotimes (j 2)
+        (assert (<= (abs (- (rational (aref out j)) (aref exact j))) (* (abs (aref exact j)) (expt 2 -48))) ()
+                "Two columns on separate rows: entry ~D of the step is ~S, and exactly it is ~S." j (aref out j)
+                (float (aref exact j) 1d0)))))
+  ;; What one power of two for the residual, and one for the solve's right-hand side, cannot
+  ;; carry is refused by name, with the output as it was, and not returned as a step with an entry
+  ;; missing: a residual whose entries are more than 2^1022 apart, and a gradient that is so in the
+  ;; units of the solve.
+  (flet ((two (power) (scale-float 1d0 power))
+         (attempt (diagonal damping mu residual)
+           (let* ((n (length diagonal))
+                  (matrix (csc-from-entries n n (loop :for j :below n :for value :in diagonal :collect (list j j value))))
+                  (plan (dm:analyze matrix)) (out (make-array n :element-type 'double-float :initial-element 9d0)))
+             (assert (= 0 (dm-caller:matrix-code plan matrix)))
+             (assert (= 0 (dm-caller:damping-code plan (coerce damping '(simple-array double-float (*))))))
+             (assert (= 0 (dm-caller:factor-code plan mu)))
+             (values (dm-caller:step-code plan (coerce residual '(simple-array double-float (*))) out) out))))
+    (dolist (case (list (list "a residual spanning 2^1100" (list 1d0 1d0) (list 1d0 1d0) 0d0 (list (two 600) (two -500)))
+                        (list "a residual spanning 2^1030 beside a zero" (list 1d0 1d0 1d0) (list 1d0 1d0 1d0) 1d0
+                              (list (two 500) 0d0 (* 1.2345678901234567d0 (two -530))))
+                        (list "a gradient spanning 2^1100 in the solve's units" (list 1d0 1d0) (list 1d0 (two 1000)) 1d0
+                              (list 1d0 (two -600)))
+                        ;; Every division here is exact, the small entry being on the grid below the
+                        ;; normal range; the solve's entry for it is below that range too, and the
+                        ;; step's own entry, 3 2^-532, is not.
+                        (list "an entry of the solve below the normal range" (list 1d0 1d0 1d0) (list 1d0 1d0 1d0) 1d0
+                              (list (two 500) 0d0 (* 3d0 (two -531))))))
+      (destructuring-bind (label diagonal damping mu residual) case
+        (multiple-value-bind (code out) (attempt diagonal damping mu residual)
+          (assert (and (= 5 code) (every (lambda (value) (= value 9d0)) out)) ()
+                  "~A: the step's outcome is ~D and the output ~S." label code out))))
+    ;; Numbers below the normal range that were given so, and that no division of this package's
+    ;; made so, are not refused: the step is exact.
+    (damped-diagonal-case "the identity, D = (1, 1), mu = 1, r = (1, 3 2^-1070)" (list 1d0 1d0) :given (list 1d0 1d0) 1d0
+                          (list 1d0 (* 3d0 (two -1070))))
+    ;; Just inside what is carried: a residual spanning 2^1000 under no damping to speak of.
+    (damped-diagonal-case "the identity, D = (1, 1), mu = 2^-10, r = (2^500, 1.25 2^-500)" (list 1d0 1d0) :given
+                          (list 1d0 1d0) (two -10) (list (two 500) (* 1.25d0 (two -500)))))
   ;; refused-column names a pivot that was refused, and is -1 after every other refusal.
   (let* ((small (csc-from-entries 1 1 (list (list 0 0 (scale-float 1d0 -600))))) (plan (dm:analyze small)))
     (assert (= 0 (dm-caller:matrix-code plan small)))

@@ -15,6 +15,7 @@
            #:DampedNotReady
            #:factor! #:factor-ready? #:refused-column
            #:StepStatus #:StepSuccess #:StepNoFactor #:StepBadSize #:StepNonFiniteRhs #:StepNonFiniteResult
+           #:StepOutOfRange
            #:step!))
 (cl:in-package #:coalton-linalg/sparse/damped)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
@@ -42,7 +43,8 @@
     (gradient (arr:LispArray F64))
     (unknown (arr:LispArray F64))
     (column-scale (arr:LispArray F64))
-    (refused (arr:LispArray IFix)))
+    (refused (arr:LispArray IFix))
+    (balance (arr:LispArray F64)))
 
   (repr :transparent)
   (define-type DampedPlan
@@ -96,7 +98,9 @@
     StepNonFiniteRhs
     "An entry of the residual was not finite; the output is unchanged."
     StepNonFiniteResult
-    "The step could not be held; the output is unchanged.")
+    "The step could not be held; the output is unchanged."
+    StepOutOfRange
+    "An entry of the step was lost on the way and the step is not returned: the residual's entries, or the gradient's in the units of the solve, lie further apart than one power of two carries, or an entry of the solve came out below the normal range where the step's own entry is not. The output is unchanged.")
 
   (declare default-analysis-entry-limit UFix)
   (define default-analysis-entry-limit
@@ -120,7 +124,7 @@
                     symbolic (arr:make n 0.0d0) (arr:make n 0.0d0)
                     (arr:make 6 1.0d0) (arr:make 3 (the UFix 0))
                     (arr:make m 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0)
-                    (arr:make (* 2 n) 1.0d0) (arr:make 1 (the IFix -1)))))
+                    (arr:make (* 2 n) 1.0d0) (arr:make 1 (the IFix -1)) (arr:make (* 2 n) 1.0d0))))
 
   (declare analyze (csc:Matrix -> DampedPlan))
   (define (analyze matrix)
@@ -159,13 +163,32 @@
 
   ;; The scale array: [2] the power of two at the largest entry of the latest step's residual
   ;; and [3] its reciprocal; [4] the mu of the standing factor; [5] the floor of the column
-  ;; damping. [0] and [1] are not used.
+  ;; damping. [0] and [1] are scratch for a power of two and its reciprocal.
   ;;
   ;; The column-scale array: for column j, [2 j] the power of two at its largest entry and
   ;; [2 j + 1] its reciprocal; 1 and 1 for a column of zeros.
   ;;
+  ;; The balance array: for column j of the standing factor, [2 j] the power of two the damped
+  ;; matrix was multiplied by on both sides there, and [2 j + 1] its reciprocal.
+  ;;
   ;; The state array: [0] 1 when a matrix is set; [1] 0 for no damping, 1 for a given diagonal,
   ;; 2 for the columns' own; [2] 1 when a factor stands.
+
+  (inline)
+  (declare thrice-scaled (F64 * F64 * F64 * F64 -> F64))
+  (define (thrice-scaled value a b c)
+    "value times three powers of two, in an order that keeps each partial product as near 1 as the powers allow: while the product so far is 1 or more in magnitude the smallest power left is taken, and otherwise the largest. It rounds nothing wherever the result is a number the format holds to full precision."
+    (let x = (min a b))
+    (let y = (max a b))
+    (let low = (min x c))
+    (let high = (max y c))
+    (let middle = (max x (min y c)))
+    (let big = (>= (abs value) 1.0d0))
+    (let one = (* value (if big low high)))
+    (let small = (if big middle low))
+    (let large = (if big high middle))
+    (let still-big = (>= (abs one) 1.0d0))
+    (* (* one (if still-big small large)) (if still-big large small)))
 
   (inline)
   (declare held? (F64 -> Boolean))
@@ -173,6 +196,7 @@
     "Whether a positive number is one the format holds to full precision: finite and not below the least normal number."
     (and (>= x fp:least-normal) (inline (math:finite? x))))
 
+  (inline)
   (declare damping-term (F64 * F64 * F64 -> F64))
   (define (damping-term mu d down)
     "mu d down^2 for positive mu and d and a power of two down: a column's damping entry in that column's divided units, times mu. Rounded once, where mu meets d. The entry is divided first where that leaves a number the format holds to full precision, (d down) down; where it does not, because the entry is far below or above the column's square, mu takes one power before it meets d and the other after, ((mu down) d) down. A product that is itself out of range comes back as infinity or below the normal range."
@@ -274,11 +298,33 @@
              (return DampedZeroDamping))
            (arr:set! damped at 1.0d0))
           (given-mode
-           (arr:set! damped at (+ own (damping-term mu (arr:aref (.given s) j) down))))
+           (arr:set! damped at (+ own (inline (damping-term mu (arr:aref (.given s) j) down)))))
           ;; The column's own squared length plus the floor, both in its divided units.
           (True
            (arr:set! damped at (+ own (* mu (+ own (* (* floor down) down)))))))
         (cell:write! column (+ (cell:read column) 1))))
+    ;; What is factored is the damped matrix multiplied on both sides by a diagonal of powers of
+    ;; two, the power at one over the root of each diagonal entry: its diagonal is then between 1
+    ;; and 4 whatever the damping, and the unknowns of a solve are of the size of its right-hand
+    ;; side. Being powers of two on both sides, it changes no significand of the factor.
+    (let balance = (.balance s))
+    (let rows = (gram:row-indices (.plan s)))
+    (let scale = (.scale s))
+    (for ((j 0 (+ j 1))) :while (< j (.columns s))
+      (let own = (arr:aref damped (arr:aref diagonals j)))
+      (cond
+        ((and (> own 0.0d0) (inline (math:finite? own)))
+         (fp:binade! own scale 0)
+         (fp:binade! (math:sqrt (arr:aref scale 0)) scale 0)
+         (arr:set! balance (* 2 j) (arr:aref scale 1))
+         (arr:set! balance (+ (* 2 j) 1) (arr:aref scale 0)))
+        (True
+         (arr:set! balance (* 2 j) 1.0d0)
+         (arr:set! balance (+ (* 2 j) 1) 1.0d0))))
+    (for ((j 0 (+ j 1))) :while (< j (.columns s))
+      (let by-column = (arr:aref balance (* 2 j)))
+      (for ((q (arr:aref diagonals j) (+ q 1))) :while (< q (arr:aref diagonals (+ j 1)))
+        (arr:set! damped q (* (* (arr:aref damped q) by-column) (arr:aref balance (* 2 (arr:aref rows q)))))))
     (match (ldlt:factor! (.symbolic s) damped 0.0d0)
       ((ldlt:FactorSuccess)
        (arr:set! (.scale s) 4 mu)
@@ -307,8 +353,12 @@
     (let scale = (.scale s))
     (fp:binade! (cell:read largest) scale 2)
     (let residual = (.residual s))
+    ;; An entry more than 2^1022 below the largest does not come back from the division as it
+    ;; went in: the step it alone would give could not be carried, and that is said.
     (for ((i 0 (+ i 1))) :while (< i m)
-      (arr:set! residual i (* (arr:aref r i) (arr:aref scale 3))))
+      (let v = (* (arr:aref r i) (arr:aref scale 3)))
+      (unless (== (* v (arr:aref scale 2)) (arr:aref r i)) (return StepOutOfRange))
+      (arr:set! residual i v))
     (let pointers = (.pointers s))
     (let indices = (.indices s))
     (let entries = (.entries s))
@@ -318,22 +368,30 @@
       (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
         (cell:write! sum (+ (cell:read sum) (* (arr:aref entries q) (arr:aref residual (arr:aref indices q))))))
       (arr:set! gradient j (- 0.0d0 (cell:read sum))))
+    ;; The gradient in the units of the matrix factored, each entry by its own power; one that
+    ;; does not come back from that as it went in has been lost to the range.
+    (let balance = (.balance s))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let g = (arr:aref gradient j))
+      (let scaled = (* g (arr:aref balance (* 2 j))))
+      (unless (== (* scaled (arr:aref balance (+ (* 2 j) 1))) g) (return StepOutOfRange))
+      (arr:set! gradient j scaled))
     (let unknown = (.unknown s))
     (unless (== (ldlt:solve! (ldlt:symbolic-factor (.symbolic s)) gradient unknown) ldlt:SolveSuccess)
       (return StepNonFiniteResult))
-    ;; An entry of the divided problem's step is the step's entry times the residual's power over
-    ;; its column's. Multiplied back by the two together, which is exact, unless that product
-    ;; leaves the range while the entry need not: then one after the other.
+    ;; An entry of the step is the solve's entry times three powers of two: the one the damped
+    ;; matrix was balanced by there, its column's, and the residual's. They are taken in an order
+    ;; that keeps the partial products in range.
     (let second = (arr:aref scale 2))
     (let column-scale = (.column-scale s))
     (for ((j 0 (+ j 1))) :while (< j n)
-      (let first = (arr:aref column-scale (+ (* 2 j) 1)))
-      (let together = (* first second))
-      (let apart = (or (== together 0.0d0) (not (inline (math:finite? together)))))
-      (let v = (if apart
-                   (* (* (arr:aref unknown j) first) second)
-                   (* (arr:aref unknown j) together)))
+      (let solved = (arr:aref unknown j))
+      (let v = (inline (thrice-scaled solved (arr:aref balance (* 2 j)) (arr:aref column-scale (+ (* 2 j) 1)) second)))
       (unless (inline (math:finite? v)) (return StepNonFiniteResult))
+      ;; An entry of the solve below the normal range has been rounded there. Where the step's
+      ;; own entry is not below it, those digits were the step's.
+      (when (and (/= solved 0.0d0) (and (< (abs solved) fp:least-normal) (>= (abs v) fp:least-normal)))
+        (return StepOutOfRange))
       (arr:set! unknown j v))
     (for ((j 0 (+ j 1))) :while (< j n)
       (arr:set! out j (arr:aref unknown j)))

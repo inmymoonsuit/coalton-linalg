@@ -67,6 +67,7 @@ caller's.
 | StepBadSize | A length is wrong; the output is unchanged |
 | StepNonFiniteRhs | An entry of the residual was not finite; the output is unchanged |
 | StepNonFiniteResult | The step cannot be held; the output is unchanged |
+| StepOutOfRange | An entry of the step was lost on the way, and the step is not returned: see [below](#what-is-and-is-not-claimed). The output is unchanged |
 
 Setting the matrix or the damping withdraws the factor: `factor-ready?` is true only
 while the factor is that of the standing matrix and damping. One plan serves one call at
@@ -91,12 +92,26 @@ a time.
   bit for bit, wherever nothing leaves the range.
   [The scale-sweep roster](rosters.md#what-is-declared) holds that from 2^-1020 to 2^1020
   for the columns' own damping, and from 2^-510 to 2^510 for a damping given, which has to
-  be scaled as the matrix squared. The two conditions:
+  be scaled as the matrix squared. One condition is stated and one is refused by name:
   - **An entry more than 2^1022 below the largest of its own column is held as rounded**,
     by at most half of 2^-1074 in the column's divided units.
-  - **An entry of the residual more than 2^1022 below its largest is not seen.** One power
-    of two cannot carry both, and the part of the step that entry alone would give is lost:
-    for the identity and `r = (2^600, 2^-500)` the step is `(−2^600, 0)`.
+  - **A step that one power of two for the residual, and one an entry for the solve,
+    cannot carry is `StepOutOfRange`, and is not returned with an entry missing.** That is:
+    an entry of the residual more than 2^1022 below its largest, which does not come back
+    from the division as it went in (the identity and `r = (2^600, 2^-500)`); an entry of
+    the gradient that is so in the units of the solve, which are those in which the damped
+    matrix has a diagonal near 1; and an entry of the solve that comes out below the
+    normal range where the step's own entry is not, its digits having been the step's. A
+    number below the normal range that was given so, and a step entry that is itself below
+    it, are not refused: they are rounded as the format rounds them.
+- **The damped matrix is balanced at the factor.** `Jᵀ J + μ D`, in its columns' units, is
+  multiplied on both sides by a diagonal of powers of two, the power at one over the root
+  of each diagonal entry, and that is what is factored: its diagonal is between 1 and 4
+  whatever the damping. An unknown of the solve is then of the size of its right-hand side
+  and not smaller by the damping. Before this a step entry that was an ordinary number
+  could vanish inside the solve under `StepSuccess`: the identity with `D = (1, 2^700)`,
+  `μ = 1` and `r = (2^200, 2^-200)` returned a second entry of zero for
+  −1.18 × 10⁻²⁷¹. A consumer's review found it.
 - **μ times a damping entry is formed once, at the factor**, as one product of μ, the
   entry and the square of its column's power, in an order whose intermediates the format
   holds. A damping far below the matrix squared under a μ large enough to make it count is
@@ -146,15 +161,21 @@ is `C G C` with C the diagonal matrix of the `2^(−e_j)`. `factor!` copies `Ĝ`
 diagonal entry j the damping in the same units, `μ D_j / 2^(2 e_j)`, and factors. `step!`
 divides r by the power of two at its largest entry, forms `ĝ = Ĵᵀ r̂` down each column,
 solves `(Ĝ + μ C D C) p̂ = −ĝ`, and returns `p_j = p̂_j · 2^f / 2^(e_j)`, f the residual's
-exponent: substituting `p = 2^f C p̂`, `(G + μ D) p = −Jᵀ r` exactly as stated. The two
-powers are multiplied together first, which is exact, unless that product leaves the
-range while the entry need not; then they are applied one after the other.
+exponent: substituting `p = 2^f C p̂`, `(G + μ D) p = −Jᵀ r` exactly as stated.
+
+The solve is made on that system balanced: with `K = Ĝ + μ C D C` and S the diagonal of
+powers of two at `1 / √K_jj`, `factor!` factors `S K S` and `step!` solves
+`(S K S) p′ = −S ĝ`, so that `p̂ = S p′`. An entry of the step is then `p′_j` times three
+powers of two, S_j, the column's and the residual's, and they are applied in the order
+that keeps each partial product nearest 1: while it is 1 or more the smallest power left,
+otherwise the largest.
 
 Dividing a symmetric matrix on both sides by powers of two, and its right-hand side with
 it, changes no significand anywhere in a factorization whose order is fixed by the
 pattern: every pivot, multiplier and solved entry comes out the same number times a power
 of two. So where one power for the whole matrix was enough, as it was before Batch 21,
-the step is bit for bit what it was. [The record](batch21.md) holds 9,000 steps to that.
+the step is bit for bit what it was, with the columns' powers and with the balance alike.
+[The record](batch21.md) holds 9,000 steps to that, twice.
 
 ## Using it
 

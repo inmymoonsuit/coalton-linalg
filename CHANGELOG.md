@@ -2,6 +2,21 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.22.2 — 2026-11-23
+
+`coalton-linalg/sparse/damped`, after a consumer's review of 0.22.0.
+[Record](docs/batch21.md#part-3-continued-an-entry-lost-inside-the-solve).
+
+- **New status `StepOutOfRange`** of `step!`. A caller that matches `StepStatus`
+  exhaustively gains a case.
+- A step entry that is an ordinary number is no longer returned as zero under
+  `StepSuccess` where the residual has a small entry and its column a large damping: the
+  damped matrix is balanced by powers of two at the factor.
+- A residual whose entries are more than 2^1022 apart is `StepOutOfRange`, with the
+  output unchanged; 0.22.0 returned the step without the small entry's part.
+- Every step that was right is still the same bit for bit: the 9,000 solves give the hash
+  they gave before 0.22.0.
+
 ## 0.22.1 — 2026-11-23
 
 Fixes in `coalton-linalg/lsqr` from an independent review.

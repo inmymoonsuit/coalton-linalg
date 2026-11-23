@@ -143,10 +143,9 @@ SHA-256 `167b3cfe2eb1627913745e8fbfdeeaff6d219542b01b733c1fc7369135ae4bc7` of 9,
 lines, both times. The package's exact tests report the same worst difference as before,
 4.872 × 10⁻¹³ on 337 steps, and the scale sweep the same 925 runs.
 
-**Stated, not changed.** An entry of the residual more than 2^1022 below its largest is
-not seen: for the identity and `r = (2^600, 2^-500)` the step is `(−2^600, 0)`. One power
-of two cannot carry both, and the contract says so. So is an entry that far below the
-largest of its own column held as rounded. `DampedNotPositive` with μ zero is described
+**Stated, not changed.** An entry more than 2^1022 below the largest of its own column
+is held as rounded. (Part 3 as first landed also stated, and did not refuse, a residual
+entry that far below the residual's largest; [it is refused now](#part-3-continued-an-entry-lost-inside-the-solve).) `DampedNotPositive` with μ zero is described
 as a finding about a computed pivot, which a matrix of full rank can also give. The
 roster's page said the step with a given damping was held everywhere; the roster holds
 it from 2^-510 to 2^510, where the damping can be scaled as the matrix squared.
@@ -165,6 +164,40 @@ Both complete serial checks pass on the tree of this part.
 - **Planted source defects.** Eleven edits to the source, each applied alone with the package's suite run. Every planted source compiled. Ten failed a test at once: the step or the damping divided by another column's power, the damping entry divided before μ meets it whatever that leaves, the zero column's pivot not made positive, its zero damping not named, `refused-column` kept from an earlier refusal or not recorded, the floor not divided as its column is, the columns' own damping without the column's square, and a μ of zero adding its damping. The eleventh did not fail, and could not: it changed a branch that the value it tested for never reaches. Replaced by an edit that puts the old raise back where the division takes an entry below the normal range, it fails. The restored source passes.
 - The aliasing roster and the scale sweep pass with their counts unchanged, and the
   allocation check of the package's loop reads zero bytes a call.
+
+### Part 3, continued: an entry lost inside the solve
+
+The consumer reviewed part 3 and found one more thing of the same family, which the
+first change had left standing. The residual is divided by one power of two, and under a
+large damping the solve's unknown is smaller than its right-hand side by the damping:
+for the identity with `D = (1, 2^700)`, `μ = 1` and `r = (2^200, 2^-200)` the second
+unknown was 2^-1100 in those units and came back as zero, under `StepSuccess`, where the
+step's second entry is −1.18 × 10⁻²⁷¹.
+
+**The damped matrix is now balanced at the factor**: multiplied on both sides by a
+diagonal of powers of two, the power at one over the root of each diagonal entry, so
+that what is factored has a diagonal between 1 and 4 whatever the damping and an unknown
+is of the size of its right-hand side. Each entry of the step is multiplied back by its
+three powers of two in the order that keeps the partial products in range.
+
+**What that still cannot carry is refused by name, with a new status, `StepOutOfRange`,
+and the output as it was**: a residual, or a gradient in the units of the solve, whose
+entries lie more than 2^1022 apart, seen by an entry not coming back from its division as
+it went in; and an entry of the solve below the normal range where the step's own entry
+is not. The first of those had been a stated condition in part 3, under which the
+identity and `r = (2^600, 2^-500)` returned `(−2^600, 0)` with `StepSuccess`; it is the
+refusal now. A number that was given below the normal range, and a step entry that is
+itself below it, are not refused.
+
+The gate again: the same 9,000 solves, written out bit for bit, give the same SHA-256 as
+before either change, `167b3cfe…4bc7`. The exact tests' worst difference, the scale
+sweep's 925 runs and the zero bytes a call are as they were.
+
+Tests seen to fail first: the consumer's probe; three more diagonal problems with numbers
+that are not powers of two; and a matrix of two columns on separate rows against the step
+in rational arithmetic. With the fix: three steps refused by the new status, with the
+output untouched; a residual entry given below the normal range, solved exactly; and a
+residual spanning 2^1000, solved. Planted source defects: nine edits, each applied alone with the package's suite run. Eight compiled and failed a test at once: the matrix not balanced, balanced on one side only, the gradient not brought to the solve's units, the step not multiplied back by the balance, each of the three refusals not made, and a number given below the normal range refused. The ninth, the three powers applied in the order they come, did not compile as first written, an edit that left a binding unread; repaired, it fails a test. The restored source passes.
 
 ## Part 4: `coalton-linalg/conjugate-gradient`
 

@@ -41,13 +41,14 @@
 
   (declare step-code (dm:DampedPlan * arr:LispArray F64 * arr:LispArray F64 -> UFix))
   (define (step-code plan r out)
-    "Exhaustively matched outcome: success 0, no factor 1, size 2, residual 3, result 4."
+    "Exhaustively matched outcome: success 0, no factor 1, size 2, residual 3, result 4, out of range 5."
     (match (dm:step! plan r out)
       ((dm:StepSuccess) 0)
       ((dm:StepNoFactor) 1)
       ((dm:StepBadSize) 2)
       ((dm:StepNonFiniteRhs) 3)
-      ((dm:StepNonFiniteResult) 4)))
+      ((dm:StepNonFiniteResult) 4)
+      ((dm:StepOutOfRange) 5)))
 
   (declare error-code (err:LinalgError -> UFix))
   (define (error-code problem)

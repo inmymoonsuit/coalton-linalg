@@ -223,7 +223,7 @@ See the [design review](design.md#coalton-interface-review-2026-11-19).
 | `factor!` | DampedPlan * F64 -> DampedStatus; the factor of Jᵀ J + mu D |
 | `refused-column` | DampedPlan -> IFix; the column whose pivot, or whose zero damping, the latest factor! refused; -1 after any other outcome |
 | `StepStatus` | Outcome type of step! |
-| `StepSuccess`, `StepNoFactor`, `StepBadSize`, `StepNonFiniteRhs`, `StepNonFiniteResult` | StepStatus values |
+| `StepSuccess`, `StepNoFactor`, `StepBadSize`, `StepNonFiniteRhs`, `StepNonFiniteResult`, `StepOutOfRange` | StepStatus values |
 | `step!` | DampedPlan * V * V -> StepStatus; the step -(Jᵀ J + mu D)⁻¹ Jᵀ r |
 
 The plan's constructor and storage are private. One plan serves one call at a time.
