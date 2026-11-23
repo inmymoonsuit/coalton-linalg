@@ -269,6 +269,14 @@ expected of each pair that can be one array. An entry of (key :exempt reason) ha
                  (alias-reordered "The unsymmetric matrix, by rows," (lu:row-permutation handle))
                  (lu-caller:observe-transpose-solve handle (first a) (second a))))
              '(((0 1) :same)))
+       (list "coalton-linalg/sparse/damped:step!" #'short-right-hand-side
+             (lambda (a)
+               (let* ((matrix (alias-stored (alias-columns))) (plan (dm:analyze matrix)))
+                 (dm:set-matrix! plan matrix)
+                 (assert (= 0 (dm-caller:column-damping-code plan 0d0)))
+                 (assert (= 0 (dm-caller:factor-code plan 0.25d0)))
+                 (dm-caller:step-code plan (first a) (second a))))
+             '(((0 1) :same)))
        (list "coalton-linalg/sparse/csc:matvec!" #'right-hand-side
              (lambda (a) (csc:matvec! definite (first a) (second a)) 0)
              '(((0 1) :refused)))

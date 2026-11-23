@@ -1,0 +1,89 @@
+(cl:defpackage #:coalton-linalg/tests/damped-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:dm #:coalton-linalg/sparse/damped)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:damping-code #:column-damping-code #:factor-code #:step-code #:matrix-code #:analysis-code
+           #:damped-loop))
+(cl:in-package #:coalton-linalg/tests/damped-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare damping-status-code (dm:DampingStatus -> UFix))
+  (define (damping-status-code status)
+    (match status
+      ((dm:DampingSet) 0)
+      ((dm:DampingBadSize) 1)
+      ((dm:DampingNotPositive) 2)
+      ((dm:DampingNoMatrix) 3)))
+
+  (declare damping-code (dm:DampedPlan * arr:LispArray F64 -> UFix))
+  (define (damping-code plan d)
+    "Exhaustively matched outcome of set-damping!: set 0, size 1, not positive 2, no matrix 3."
+    (damping-status-code (dm:set-damping! plan d)))
+
+  (declare column-damping-code (dm:DampedPlan * F64 -> UFix))
+  (define (column-damping-code plan floor)
+    "The same codes for set-column-damping!."
+    (damping-status-code (dm:set-column-damping! plan floor)))
+
+  (declare factor-code (dm:DampedPlan * F64 -> UFix))
+  (define (factor-code plan mu)
+    "Exhaustively matched outcome: success 0, not positive 1, non-finite 2, bad damping 3, not ready 4."
+    (match (dm:factor! plan mu)
+      ((dm:DampedSuccess) 0)
+      ((dm:DampedNotPositive) 1)
+      ((dm:DampedNonFinite) 2)
+      ((dm:DampedBadDamping) 3)
+      ((dm:DampedNotReady) 4)))
+
+  (declare step-code (dm:DampedPlan * arr:LispArray F64 * arr:LispArray F64 -> UFix))
+  (define (step-code plan r out)
+    "Exhaustively matched outcome: success 0, no factor 1, size 2, residual 3, result 4."
+    (match (dm:step! plan r out)
+      ((dm:StepSuccess) 0)
+      ((dm:StepNoFactor) 1)
+      ((dm:StepBadSize) 2)
+      ((dm:StepNonFiniteRhs) 3)
+      ((dm:StepNonFiniteResult) 4)))
+
+  (declare error-code (err:LinalgError -> UFix))
+  (define (error-code problem)
+    "Test-only categories: structure 91, dimensions 92, input 95, result 96, dimension limit 97, storage 98."
+    (match problem
+      ((err:InvalidStructure _) 91)
+      ((err:InvalidDimensions _) 92)
+      ((err:NonFiniteInput _) 95)
+      ((err:NonFiniteResult _) 96)
+      ((err:AnalysisLimitExceeded _ _) 97)
+      ((err:AnalysisStorageExceeded _ _) 98)
+      (_ 99)))
+
+  (declare matrix-code (dm:DampedPlan * csc:Matrix -> UFix))
+  (define (matrix-code plan matrix)
+    "0 when the values were taken; a typed error's category from 91."
+    (catch (progn (dm:set-matrix! plan matrix) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare analysis-code (csc:Matrix * UFix -> UFix))
+  (define (analysis-code matrix limit)
+    "0 when the analysis was made under the budget; a typed error's category from 91."
+    (catch (progn (dm:analyze-with-limit matrix limit) 0)
+      ((the err:LinalgError problem) (error-code problem))
+      (_ 99)))
+
+  (declare damped-loop (dm:DampedPlan * csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64
+                        * UFix -> UFix))
+  (define (damped-loop plan matrix dampings r out repeats)
+    "A real external caller: take the matrix, then factor and step for each mu in turn, as a loop that tries several does; count what goes wrong."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k repeats)
+      (dm:set-matrix! plan matrix)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length dampings))
+        (unless (== (dm:factor! plan (arr:aref dampings i)) dm:DampedSuccess)
+          (cell:write! failures (+ (cell:read failures) 1)))
+        (unless (== (dm:step! plan r out) dm:StepSuccess)
+          (cell:write! failures (+ (cell:read failures) 1)))))
+    (cell:read failures)))

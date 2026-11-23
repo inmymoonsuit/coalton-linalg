@@ -1,0 +1,314 @@
+(cl:defpackage #:coalton-linalg/sparse/damped
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
+                    (#:math #:coalton/math)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:gram #:coalton-linalg/sparse/gram)
+                    (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
+                    (#:fp #:coalton-linalg/internal/float)
+                    (#:err #:coalton-linalg/errors))
+  (:export #:DampedPlan #:analyze #:analyze-with-limit #:default-analysis-entry-limit
+           #:row-count #:column-count #:set-matrix! #:matrix-set?
+           #:DampingStatus #:DampingSet #:DampingBadSize #:DampingNotPositive #:DampingNoMatrix
+           #:set-damping! #:set-column-damping! #:damping-set?
+           #:DampedStatus #:DampedSuccess #:DampedNotPositive #:DampedNonFinite #:DampedBadDamping #:DampedNotReady
+           #:factor! #:factor-ready? #:refused-column
+           #:StepStatus #:StepSuccess #:StepNoFactor #:StepBadSize #:StepNonFiniteRhs #:StepNonFiniteResult
+           #:step!))
+(cl:in-package #:coalton-linalg/sparse/damped)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
+
+;;; Damped least squares on the normal equations: (J^T J + mu D) p = -J^T r for a sequence of
+;;; mu on one analysis. See docs/damped.md for the contract and the derivation.
+
+(coalton-toplevel
+  (define-struct DampedStorage
+    "Owns a copy of the source pattern, the plan and factor for J^T J, the damping, and the workspace of every call."
+    (rows UFix)
+    (columns UFix)
+    (pointers (arr:LispArray UFix))
+    (indices (arr:LispArray UFix))
+    (entries (arr:LispArray F64))
+    (plan gram:GramPlan)
+    (product (arr:LispArray F64))
+    (damped (arr:LispArray F64))
+    (symbolic ldlt:Symbolic)
+    (given (arr:LispArray F64))
+    (damping (arr:LispArray F64))
+    (scale (arr:LispArray F64))
+    (state (arr:LispArray UFix))
+    (residual (arr:LispArray F64))
+    (gradient (arr:LispArray F64))
+    (unknown (arr:LispArray F64)))
+
+  (repr :transparent)
+  (define-type DampedPlan
+    "Analysis handle for the damped normal equations of one sparse pattern; it owns its factor and workspace, and one call at a time uses them."
+    (MkDampedPlan DampedStorage))
+
+  (inline)
+  (declare plan-storage (DampedPlan -> DampedStorage))
+  (define (plan-storage plan) (match plan ((MkDampedPlan storage) storage)))
+
+  (derive Eq)
+  (repr :enum)
+  (define-type DampingStatus
+    "Outcome of setting the damping diagonal D."
+    DampingSet
+    "The diagonal stands; a standing factor does not."
+    DampingBadSize
+    "The diagonal's length differs from the column count; nothing changed."
+    DampingNotPositive
+    "An entry was not positive or not finite, or the floor was negative or not finite, or a column of zeros met a floor of zero; nothing changed."
+    DampingNoMatrix
+    "The diagonal is formed from the matrix and none is set; nothing changed.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type DampedStatus
+    "Outcome of a damped factorization."
+    DampedSuccess
+    "The factor of J^T J + mu D stands."
+    DampedNotPositive
+    "A computed pivot was not positive; refused-column names it. With mu zero this is a matrix without full column rank. No factor stands."
+    DampedNonFinite
+    "A damped diagonal entry or an intermediate result was not finite; no factor stands."
+    DampedBadDamping
+    "mu was negative or not finite; no factor stands."
+    DampedNotReady
+    "No matrix is set, or no damping; no factor stands.")
+
+  (derive Eq)
+  (repr :enum)
+  (define-type StepStatus
+    "Outcome of a step with the standing factor."
+    StepSuccess
+    "The output holds the step."
+    StepNoFactor
+    "No factor stands; the output is unchanged."
+    StepBadSize
+    "The residual's length differs from the row count, or the output's from the column count; the output is unchanged."
+    StepNonFiniteRhs
+    "An entry of the residual was not finite; the output is unchanged."
+    StepNonFiniteResult
+    "The step could not be held; the output is unchanged.")
+
+  (declare default-analysis-entry-limit UFix)
+  (define default-analysis-entry-limit
+    "Default budget of entries, 2^20, for the product J^T J and for its factor alike."
+    gram:default-analysis-entry-limit)
+
+  (declare analyze-with-limit (csc:Matrix * UFix -> DampedPlan))
+  (define (analyze-with-limit matrix maximum-entries)
+    "analyze with one entry budget for J^T J and for its factor; the errors are those of the Gram and factor analyses."
+    (let m = (csc:row-count matrix))
+    (let n = (csc:column-count matrix))
+    (let plan = (gram:analyze-ata-with-limit matrix maximum-entries))
+    (let symbolic = (ldlt:analyze-with-limit
+                     (ldlt:Pattern n (gram:column-pointers plan) (gram:row-indices plan))
+                     maximum-entries))
+    (let indices = (arr:copy (csc:row-indices matrix)))
+    (MkDampedPlan
+     (DampedStorage m n (arr:copy (csc:column-pointers matrix)) indices
+                    (arr:make (arr:length indices) 0.0d0) plan
+                    (arr:make (gram:entry-count plan) 0.0d0) (arr:make (gram:entry-count plan) 0.0d0)
+                    symbolic (arr:make n 0.0d0) (arr:make n 0.0d0)
+                    (arr:make 6 1.0d0) (arr:make 3 (the UFix 0))
+                    (arr:make m 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0))))
+
+  (declare analyze (csc:Matrix -> DampedPlan))
+  (define (analyze matrix)
+    "Analyze the damped normal equations of a stored matrix's pattern under the default entry budget. Once for a pattern; no values are read."
+    (analyze-with-limit matrix default-analysis-entry-limit))
+
+  (declare row-count (DampedPlan -> UFix))
+  (define (row-count plan)
+    "Rows of the analyzed matrix: the length of a residual."
+    (.rows (plan-storage plan)))
+
+  (declare column-count (DampedPlan -> UFix))
+  (define (column-count plan)
+    "Columns of the analyzed matrix: the length of a step and of the damping."
+    (.columns (plan-storage plan)))
+
+  (declare matrix-set? (DampedPlan -> Boolean))
+  (define (matrix-set? plan)
+    "Whether values stand: the latest set-matrix! returned."
+    (== (arr:aref (.state (plan-storage plan)) 0) 1))
+
+  (declare damping-set? (DampedPlan -> Boolean))
+  (define (damping-set? plan)
+    "Whether a damping diagonal stands."
+    (/= (arr:aref (.state (plan-storage plan)) 1) 0))
+
+  (declare factor-ready? (DampedPlan -> Boolean))
+  (define (factor-ready? plan)
+    "Whether a factor stands: the latest factor! succeeded and neither the matrix nor the damping was set since."
+    (== (arr:aref (.state (plan-storage plan)) 2) 1))
+
+  (declare refused-column (DampedPlan -> IFix))
+  (define (refused-column plan)
+    "The column of the matrix whose pivot the latest factor! refused as not positive; -1 otherwise."
+    (ldlt:refused-column (.symbolic (plan-storage plan))))
+
+  ;; The scale array: [0] the power of two at the matrix's largest entry and [1] its
+  ;; reciprocal; [2] and [3] the same for the residual of the latest step; [4] the mu of the
+  ;; standing factor; [5] the floor of the column damping.
+  ;;
+  ;; The state array: [0] 1 when a matrix is set; [1] 0 for no damping, 1 for a given diagonal,
+  ;; 2 for the columns' own; [2] 1 when a factor stands.
+
+  (inline)
+  (declare divided-damping (F64 * F64 -> F64))
+  (define (divided-damping d down)
+    "A positive damping entry in the units of the divided matrix: d times down squared, the two powers multiplied first unless that product leaves the range, and raised to the least normal number when it falls below it."
+    (let together = (* down down))
+    (let scaled = (if (or (== together 0.0d0) (not (inline (math:finite? together))))
+                      (* (* d down) down)
+                      (* d together)))
+    (if (< scaled fp:least-normal) fp:least-normal scaled))
+
+  (declare rescale-damping! (DampedStorage -> Void))
+  (define (rescale-damping! s)
+    "Form the damping in the divided matrix's units, from the diagonal given or from the product's own with the floor."
+    (let down = (arr:aref (.scale s) 1))
+    (let damping = (.damping s))
+    (let mode = (arr:aref (.state s) 1))
+    (let diagonals = (gram:column-pointers (.plan s)))
+    (let floor = (arr:aref (.scale s) 5))
+    (let lifted = (if (== floor 0.0d0) 0.0d0 (inline (divided-damping floor down))))
+    (when (== mode 1)
+      (for ((j 0 (+ j 1))) :while (< j (.columns s))
+        (arr:set! damping j (inline (divided-damping (arr:aref (.given s) j) down)))))
+    (when (== mode 2)
+      (for ((j 0 (+ j 1))) :while (< j (.columns s))
+        (arr:set! damping j (+ (arr:aref (.product s) (arr:aref diagonals j)) lifted)))))
+
+  (declare set-matrix! (DampedPlan * csc:Matrix -> Void))
+  (define (set-matrix! plan matrix)
+    "Take the matrix's values for the analyzed pattern and form J^T J from them, divided by the power of two at the largest entry. Another pattern or shape raises the typed error of the Gram refill and leaves no matrix set. A standing factor does not survive, and a standing damping is formed again for these values."
+    (let s = (plan-storage plan))
+    (let st = (.state s))
+    (arr:set! st 0 0)
+    (arr:set! st 2 0)
+    (gram:check-csc! (.plan s) matrix)
+    (let values = (csc:entries matrix))
+    (let entries = (.entries s))
+    (let largest = (cell:new 0.0d0))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (let a = (abs (arr:aref values q)))
+      (when (> a (cell:read largest)) (cell:write! largest a)))
+    (fp:binade! (cell:read largest) (.scale s) 0)
+    (let down = (arr:aref (.scale s) 1))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length values))
+      (arr:set! entries q (* (arr:aref values q) down)))
+    (gram:refill! (.plan s) entries (.product s))
+    (arr:set! st 0 1)
+    (rescale-damping! s))
+
+  (declare set-damping! (DampedPlan * arr:LispArray F64 -> DampingStatus))
+  (define (set-damping! plan d)
+    "Take a positive diagonal D, one entry a column, in the units of the matrix squared. It stays through later set-matrix! calls until another damping is set. A standing factor does not survive."
+    (let s = (plan-storage plan))
+    (unless (== (arr:length d) (.columns s)) (return DampingBadSize))
+    (for ((j 0 (+ j 1))) :while (< j (.columns s))
+      (unless (and (> (arr:aref d j) 0.0d0) (inline (math:finite? (arr:aref d j))))
+        (return DampingNotPositive)))
+    (for ((j 0 (+ j 1))) :while (< j (.columns s))
+      (arr:set! (.given s) j (arr:aref d j)))
+    (arr:set! (.state s) 1 1)
+    (arr:set! (.state s) 2 0)
+    (when (== (arr:aref (.state s) 0) 1) (rescale-damping! s))
+    DampingSet)
+
+  (declare set-column-damping! (DampedPlan * F64 -> DampingStatus))
+  (define (set-column-damping! plan floor)
+    "Take D = diag(J^T J) + floor: each column's squared length plus a floor in the same units, formed again from each later matrix. A matrix must be set, and every entry must come out positive. A standing factor does not survive."
+    (let s = (plan-storage plan))
+    (unless (== (arr:aref (.state s) 0) 1) (return DampingNoMatrix))
+    (unless (and (>= floor 0.0d0) (inline (math:finite? floor))) (return DampingNotPositive))
+    (let diagonals = (gram:column-pointers (.plan s)))
+    (when (== floor 0.0d0)
+      (for ((j 0 (+ j 1))) :while (< j (.columns s))
+        (unless (> (arr:aref (.product s) (arr:aref diagonals j)) 0.0d0) (return DampingNotPositive))))
+    (arr:set! (.scale s) 5 floor)
+    (arr:set! (.state s) 1 2)
+    (arr:set! (.state s) 2 0)
+    (rescale-damping! s)
+    DampingSet)
+
+  (declare factor! (DampedPlan * F64 -> DampedStatus))
+  (define (factor! plan mu)
+    "Factor J^T J + mu D for the standing matrix and damping. Any number of mu in turn on one analysis; each call overwrites the factor, and a refusal leaves none. See docs/damped.md."
+    (let s = (plan-storage plan))
+    (let st = (.state s))
+    (arr:set! st 2 0)
+    (unless (and (== (arr:aref st 0) 1) (/= (arr:aref st 1) 0)) (return DampedNotReady))
+    (unless (and (>= mu 0.0d0) (inline (math:finite? mu))) (return DampedBadDamping))
+    (let product = (.product s))
+    (let damped = (.damped s))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length product))
+      (arr:set! damped q (arr:aref product q)))
+    ;; Each column of the lower pattern begins with its diagonal.
+    (let diagonals = (gram:column-pointers (.plan s)))
+    ;; With mu zero nothing is added: zero times a damping that is not finite is not a number.
+    (unless (== mu 0.0d0)
+      (for ((j 0 (+ j 1))) :while (< j (.columns s))
+        (arr:set! damped (arr:aref diagonals j)
+                  (+ (arr:aref damped (arr:aref diagonals j)) (* mu (arr:aref (.damping s) j))))))
+    (match (ldlt:factor! (.symbolic s) damped 0.0d0)
+      ((ldlt:FactorSuccess)
+       (arr:set! (.scale s) 4 mu)
+       (arr:set! st 2 1)
+       DampedSuccess)
+      ((ldlt:FactorNonPositive) DampedNotPositive)
+      (_ DampedNonFinite)))
+
+  (declare step! (DampedPlan * arr:LispArray F64 * arr:LispArray F64 -> StepStatus))
+  (define (step! plan r out)
+    "Write p = -(J^T J + mu D)^-1 J^T r for the standing factor: the damped least squares step against the residual r. The output may be r when the matrix is square. See docs/damped.md."
+    (let s = (plan-storage plan))
+    (unless (== (arr:aref (.state s) 2) 1) (return StepNoFactor))
+    (let m = (.rows s))
+    (let n = (.columns s))
+    (unless (and (== (arr:length r) m) (== (arr:length out) n)) (return StepBadSize))
+    (let largest = (cell:new 0.0d0))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let a = (abs (arr:aref r i)))
+      (unless (inline (math:finite? a)) (return StepNonFiniteRhs))
+      (when (> a (cell:read largest)) (cell:write! largest a)))
+    ;; The residual divided by the power of two at its own largest entry, as the matrix is by
+    ;; its: the gradient is then a sum of products of numbers near 1.
+    (let scale = (.scale s))
+    (fp:binade! (cell:read largest) scale 2)
+    (let residual = (.residual s))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! residual i (* (arr:aref r i) (arr:aref scale 3))))
+    (let pointers = (.pointers s))
+    (let indices = (.indices s))
+    (let entries = (.entries s))
+    (let gradient = (.gradient s))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let sum = (cell:new 0.0d0))
+      (for ((q (arr:aref pointers j) (+ q 1))) :while (< q (arr:aref pointers (+ j 1)))
+        (cell:write! sum (+ (cell:read sum) (* (arr:aref entries q) (arr:aref residual (arr:aref indices q))))))
+      (arr:set! gradient j (- 0.0d0 (cell:read sum))))
+    (let unknown = (.unknown s))
+    (unless (== (ldlt:solve! (ldlt:symbolic-factor (.symbolic s)) gradient unknown) ldlt:SolveSuccess)
+      (return StepNonFiniteResult))
+    ;; The step of the divided problem is the step times the residual's power over the
+    ;; matrix's. Multiplied back by the two together, which is exact, unless that product leaves
+    ;; the range while the step need not: then one after the other.
+    (let first = (arr:aref scale 1))
+    (let second = (arr:aref scale 2))
+    (let together = (* first second))
+    (let apart = (or (== together 0.0d0) (not (inline (math:finite? together)))))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (let v = (if apart
+                   (* (* (arr:aref unknown j) first) second)
+                   (* (arr:aref unknown j) together)))
+      (unless (inline (math:finite? v)) (return StepNonFiniteResult))
+      (arr:set! unknown j v))
+    (for ((j 0 (+ j 1))) :while (< j n)
+      (arr:set! out j (arr:aref unknown j)))
+    StepSuccess))

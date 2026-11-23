@@ -34,7 +34,7 @@ that chose badly is seen to have.
   analysis](spd-ldlt.md); the budget applies to each.
 - `find-dependent-rows!(analysis, matrix, threshold) -> RowStatus`. The matrix must have
   the analyzed pattern; another pattern or shape raises the typed error of
-  `refill-csc!`, and a value that is not finite that of `refill!`. The threshold is a distance, in the
+  `refill-csc!`. The threshold is a distance, in the
   units of the entries: a row is left out when its squared distance from the span of the
   rows kept before it, as computed, is at most the threshold squared.
 - `rows-found?(analysis)`, `kept-count(analysis)`, `left-out-count(analysis)`.

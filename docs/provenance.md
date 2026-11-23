@@ -94,6 +94,19 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 17: damped least squares
+
+The damped step is the normal equations with a multiple of a positive diagonal added, the
+method of Levenberg (1944) and, with the diagonal taken from the columns of the matrix,
+of Marquardt (1963). It was written from that statement of it, which is one equation, on
+top of this library's own Gram product and factorization. No listing or pseudocode was
+read and no implementation. The structure differs from a textbook's because of this
+library's contract: the matrix and the residual are divided by powers of two before
+anything is squared, the damping is held in both the caller's units and the divided
+ones, and every refusal is a named status that leaves the output unwritten. The
+reference values in the tests are steps in exact rational arithmetic by a dense
+elimination written for the tests.
+
 ## Batch 16: the range of conjugate gradients and of dependent rows
 
 Both changes are one idea applied twice: divide the data by a power of two before a method

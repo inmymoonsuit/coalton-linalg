@@ -484,6 +484,39 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                  (sweep-out "the residual" (cg:residual-norm workspace) 1 :kind :within :bound small)
                  (sweep-out "the first running norm" (aref (cg:recurrence-norms workspace) 0) 1)))))
 
+     (sweep-entry "the damped step under the columns' own damping, the matrix scaled"
+         (dm:set-column-damping! dm:factor! dm:step!) 1d-15
+         ((-1020 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-tall) k)) (plan (dm:analyze matrix)) (step (zeros 3)))
+           (dm:set-matrix! plan matrix)
+           (sweep-need (dm:set-column-damping! plan 0d0) coalton-linalg/sparse/damped:DampingSet)
+           (sweep-need (dm:factor! plan 0.25d0) coalton-linalg/sparse/damped:DampedSuccess)
+           (sweep-need (dm:step! plan b4 step) coalton-linalg/sparse/damped:StepSuccess)
+           (list (sweep-out "the step" step -1)))))
+
+     (sweep-entry "the damped step under a given damping, the matrix and the residual scaled"
+         (dm:set-damping! dm:factor! dm:step!) 1d-15
+         ((-1020 -512 :no-input) (-510 510 :exact) (512 1020 :no-input))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-tall) k)) (plan (dm:analyze matrix)) (step (zeros 3)))
+           (dm:set-matrix! plan matrix)
+           (sweep-need (dm:set-damping! plan (sweep-array (doubles 2d0 0.5d0 3d0) (* 2 k)))
+                       coalton-linalg/sparse/damped:DampingSet)
+           (sweep-need (dm:factor! plan 0.25d0) coalton-linalg/sparse/damped:DampedSuccess)
+           (sweep-need (dm:step! plan (sweep-array b4 k) step) coalton-linalg/sparse/damped:StepSuccess)
+           (list (sweep-out "the step" step 0)))))
+
+     (sweep-entry "the damped step, the residual scaled" (dm:factor! dm:step!) 1d-15
+         ((-1020 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-tall) 0)) (plan (dm:analyze matrix)) (step (zeros 3)))
+           (dm:set-matrix! plan matrix)
+           (sweep-need (dm:set-column-damping! plan 0d0) coalton-linalg/sparse/damped:DampingSet)
+           (sweep-need (dm:factor! plan 0.25d0) coalton-linalg/sparse/damped:DampedSuccess)
+           (sweep-need (dm:step! plan (sweep-array b4 k) step) coalton-linalg/sparse/damped:StepSuccess)
+           (list (sweep-out "the step" step 1)))))
+
      (sweep-entry "refinement" (rf:refine! rf:residual-norms) 1d-9
          ((-1020 -1000 :no-input) (-800 1020 :exact))
        (lambda (k)

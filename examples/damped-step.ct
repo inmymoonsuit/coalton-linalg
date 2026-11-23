@@ -1,0 +1,52 @@
+(cl:defpackage #:coalton-linalg/examples/damped-step
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:dm #:coalton-linalg/sparse/damped))
+  (:export #:damped-steps))
+(cl:in-package #:coalton-linalg/examples/damped-step)
+
+(coalton-toplevel
+  (declare jacobian (Void -> csc:Matrix))
+  (define (jacobian)
+    "J, three rows on two unknowns.
+
+    [ 1  0 ]
+    [ 0  1 ]
+    [ 1  1 ]"
+    (let rows = (arr:make 4 (the UFix 0)))
+    (let columns = (arr:make 4 (the UFix 0)))
+    (let values = (arr:make 4 1.0d0))
+    (arr:set! rows 0 0) (arr:set! columns 0 0)
+    (arr:set! rows 1 1) (arr:set! columns 1 1)
+    (arr:set! rows 2 2) (arr:set! columns 2 0)
+    (arr:set! rows 3 2) (arr:set! columns 3 1)
+    (csc:from-coo 3 2 rows columns values csc:RejectDuplicates))
+
+  (declare damped-steps (Void -> arr:LispArray F64))
+  (define (damped-steps)
+    "Two steps against the residual r = [1, 2, 4] on one analysis: the least squares step, [-4/3, -7/3], and the step damped by mu = 1 with D the columns' own squared lengths, [-14/15, -19/15]. Returns the four numbers in that order, or an empty vector if a call refused.
+
+J^T J is [[2, 1], [1, 2]] and J^T r is [5, 6]. With D = diag(2, 2) and mu = 1 the damped matrix is
+[[4, 1], [1, 4]]. The analysis, the matrix and the damping are set once; each mu is one
+factorization and one step, and the damped step is the shorter of the two."
+    (let j = (jacobian))
+    (let plan = (dm:analyze j))
+    (dm:set-matrix! plan j)
+    (unless (== (dm:set-column-damping! plan 0.0d0) dm:DampingSet)
+      (return (arr:make 0 0.0d0)))
+    (let r = (arr:make 3 0.0d0))
+    (arr:set! r 0 1.0d0)
+    (arr:set! r 1 2.0d0)
+    (arr:set! r 2 4.0d0)
+    (let step = (arr:make 2 0.0d0))
+    (let both = (arr:make 4 0.0d0))
+    (unless (and (== (dm:factor! plan 0.0d0) dm:DampedSuccess) (== (dm:step! plan r step) dm:StepSuccess))
+      (return (arr:make 0 0.0d0)))
+    (arr:set! both 0 (arr:aref step 0))
+    (arr:set! both 1 (arr:aref step 1))
+    (unless (and (== (dm:factor! plan 1.0d0) dm:DampedSuccess) (== (dm:step! plan r step) dm:StepSuccess))
+      (return (arr:make 0 0.0d0)))
+    (arr:set! both 2 (arr:aref step 0))
+    (arr:set! both 3 (arr:aref step 1))
+    both))

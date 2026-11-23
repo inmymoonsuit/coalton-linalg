@@ -2,6 +2,15 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.15.0 — 2026-11-22
+
+Added: `coalton-linalg/sparse/damped`, damped least squares on the normal equations. One
+analysis for a pattern, then `set-matrix!`, a damping by `set-damping!` or
+`set-column-damping!`, and for each μ a `factor!` and a `step!` giving
+`−(Jᵀ J + μ D)⁻¹ Jᵀ r`. Refusals are by name; a steady loop allocates nothing; the step at
+any scale the format holds is the step at ordinary scale.
+[Contract](docs/damped.md) · [record](docs/batch17.md).
+
 ## 0.14.0 — 2026-11-22
 
 Changed, and a caller that matches `RowStatus` exhaustively must add a case:

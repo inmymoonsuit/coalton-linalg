@@ -179,6 +179,33 @@ remain mutable at runtime and read-only by contract. An earlier FactorSuccess
 describes its original call; the separately borrowed factor can later become invalid.
 See the [design review](design.md#coalton-interface-review-2026-11-19).
 
+## coalton-linalg/sparse/damped
+
+[Contract](damped.md) · [Source](../src/sparse/damped.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `DampedPlan` | Analysis, factor and workspace for the damped normal equations of one pattern; obtain from analyze |
+| `analyze` | coalton-linalg/sparse/csc:Matrix -> DampedPlan |
+| `analyze-with-limit` | coalton-linalg/sparse/csc:Matrix * UFix -> DampedPlan; one entry budget for Jᵀ J and for its factor |
+| `default-analysis-entry-limit` | UFix; 1,048,576 |
+| `row-count`, `column-count` | DampedPlan -> UFix |
+| `set-matrix!` | DampedPlan * coalton-linalg/sparse/csc:Matrix -> Void; the values of J for the analyzed pattern |
+| `matrix-set?`, `damping-set?`, `factor-ready?` | DampedPlan -> Boolean |
+| `DampingStatus` | Outcome type of set-damping! and set-column-damping! |
+| `DampingSet`, `DampingBadSize`, `DampingNotPositive`, `DampingNoMatrix` | DampingStatus values |
+| `set-damping!` | DampedPlan * V -> DampingStatus; a positive diagonal D in the units of the matrix squared |
+| `set-column-damping!` | DampedPlan * F64 -> DampingStatus; D = diag(Jᵀ J) + floor, following the matrix |
+| `DampedStatus` | Outcome type of factor! |
+| `DampedSuccess`, `DampedNotPositive`, `DampedNonFinite`, `DampedBadDamping`, `DampedNotReady` | DampedStatus values |
+| `factor!` | DampedPlan * F64 -> DampedStatus; the factor of Jᵀ J + mu D |
+| `refused-column` | DampedPlan -> IFix; the column whose pivot the latest factor! refused, or -1 |
+| `StepStatus` | Outcome type of step! |
+| `StepSuccess`, `StepNoFactor`, `StepBadSize`, `StepNonFiniteRhs`, `StepNonFiniteResult` | StepStatus values |
+| `step!` | DampedPlan * V * V -> StepStatus; the step -(Jᵀ J + mu D)⁻¹ Jᵀ r |
+
+The plan's constructor and storage are private. One plan serves one call at a time.
+
 ## coalton-linalg/sparse/dependent-rows
 
 [Contract](dependent-rows.md) · [Source](../src/sparse/dependent-rows.ct)

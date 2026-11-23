@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.14.0"
+  :version "0.15.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -16,7 +16,8 @@
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
                                            (:ct-file "gram") (:ct-file "scaling") (:ct-file "augmented")
-                                           (:ct-file "spd-ldlt") (:ct-file "dependent-rows") (:ct-file "lu")))
+                                           (:ct-file "spd-ldlt") (:ct-file "dependent-rows") (:ct-file "lu")
+                                           (:ct-file "damped")))
                              (:module "dense" :serial t
                               :components ((:ct-file "limits") (:ct-file "indefinite-ldlt")
                                            (:ct-file "orthogonal") (:ct-file "jacobi")))))))
@@ -28,7 +29,7 @@
                                                 (:ct-file "normal-equations") (:ct-file "minimum-norm") (:ct-file "dependent-constraints") (:ct-file "singular-rank")
                                                 (:ct-file "augmented-minimum-norm") (:ct-file "scaled-solve")
                                                 (:ct-file "redundant-rows") (:ct-file "nonsymmetric-solve")
-                                                (:ct-file "matrix-free-solve")))))
+                                                (:ct-file "matrix-free-solve") (:ct-file "damped-step")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -54,6 +55,7 @@
                              (:ct-file "dependent-rows-callers") (:file "dependent-rows")
                              (:ct-file "lu-callers") (:file "lu")
                              (:ct-file "cg-callers") (:file "cg")
+                             (:ct-file "damped-callers") (:file "damped")
                              (:file "aliasing") (:file "scale-sweep")
                              (:file "suite"))))
   :perform (asdf:test-op (operation system)

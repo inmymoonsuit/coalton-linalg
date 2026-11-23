@@ -237,19 +237,43 @@ too small to square beside the largest entry, under a threshold of zero, is refu
 status of its own, `RowsUnderflow`. [The record](docs/batch16.md) has the measurements
 before and after.
 
+### Batch 17: damped least squares
+
+**Completed.** `coalton-linalg/sparse/damped`: for a loop that tries one damping after
+another on the same matrix, the step `−(Jᵀ J + μ D)⁻¹ Jᵀ r` with one analysis for the
+pattern, the values of J set once an iterate, and a factorization and a step for each μ,
+nothing analyzed again and nothing allocated. D is a positive diagonal the caller gives,
+or the columns' own squared lengths with a floor. The matrix and the residual are each
+divided by a power of two, so the step at any scale is the step at ordinary scale.
+[The record](docs/batch17.md) has the exact references and the controls;
+[the contract](docs/damped.md) says what the package leaves to its caller.
+
 ### Next
 
-From 2026-11-20 the library develops ahead of any one consumer's measurements, toward
-what solving in CAD and engineering work is likely to need. The order is a consumer's
-ranking of what it would use first:
+From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
+the library, agreed with it in advance, plan before code:
 
-1. Iterative least squares and minimum norm on an operator, with damping. Conjugate
-   gradients for the definite case, the other half of this item, is Batch 13.
-2. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
+1. A design note for a step on a rank-deficient matrix: the minimum-norm least squares
+   step that a truncated singular value decomposition gives at a relative floor, with a
+   certificate that no singular value lies in a band about the floor, or a refusal by
+   name. Built on [dependent rows](docs/dependent-rows.md). The same note covers certified
+   bases: the supports of left null vectors, and a right null-space basis with a proved
+   residual.
+2. That step, then those bases, each as its own batch.
+3. Least squares with bounds on linear functionals of the unknown, by an active set whose
+   rows' rank is proved or refused.
+4. Supernodal or multifrontal factorization, only after measurements say where real
+   problems spend their time.
+
+Kept on the roadmap for the library's own users, though that consumer has no use for it:
+
+5. Iterative least squares and minimum norm on an operator, with damping. Conjugate
+   gradients for the definite case is Batch 13.
+6. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
-3. Continuous integration on the pinned toolchain.
+7. Continuous integration on the pinned toolchain.
 
-Dependent rows, first in that ranking, is Batch 11, and sparse LU, second, is Batch 12.
+Dependent rows, first in the ranking before this one, is Batch 11, and sparse LU, second, is Batch 12.
 Two things are left open by those batches and wait for a consumer's use:
 
 - For dependent rows, a second method: a triangular factor of Aᵀ by rotations, which
