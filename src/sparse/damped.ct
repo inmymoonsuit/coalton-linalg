@@ -7,6 +7,7 @@
                     (#:ldlt #:coalton-linalg/sparse/spd-ldlt)
                     (#:fp #:coalton-linalg/internal/float)
                     (#:err #:coalton-linalg/errors))
+  (:import-from #:coalton/math #:finite?)
   (:export #:DampedPlan #:analyze #:analyze-with-limit #:default-analysis-entry-limit
            #:row-count #:column-count #:set-matrix! #:matrix-set?
            #:DampingStatus #:DampingSet #:DampingBadSize #:DampingNotPositive #:DampingNoMatrix
@@ -43,7 +44,7 @@
     (gradient (arr:LispArray F64))
     (unknown (arr:LispArray F64))
     (column-scale (arr:LispArray F64))
-    (refused (arr:LispArray IFix))
+    (refused (cell:Cell IFix))
     (balance (arr:LispArray F64)))
 
   (repr :transparent)
@@ -124,7 +125,7 @@
                     symbolic (arr:make n 0.0d0) (arr:make n 0.0d0)
                     (arr:make 6 1.0d0) (arr:make 3 (the UFix 0))
                     (arr:make m 0.0d0) (arr:make n 0.0d0) (arr:make n 0.0d0)
-                    (arr:make (* 2 n) 1.0d0) (arr:make 1 (the IFix -1)) (arr:make (* 2 n) 1.0d0))))
+                    (arr:make (* 2 n) 1.0d0) (cell:new (the IFix -1)) (arr:make (* 2 n) 1.0d0))))
 
   (declare analyze (csc:Matrix -> DampedPlan))
   (define (analyze matrix)
@@ -159,7 +160,7 @@
   (declare refused-column (DampedPlan -> IFix))
   (define (refused-column plan)
     "The column the latest factor! refused: the one whose pivot was not positive, or the column of zeros whose damping was zero. -1 after any other outcome of it, and before any."
-    (arr:aref (.refused (plan-storage plan)) 0))
+    (cell:read (.refused (plan-storage plan))))
 
   ;; The scale array: [2] the power of two at the largest entry of the latest step's residual
   ;; and [3] its reciprocal; [4] the mu of the standing factor; [5] the floor of the column
@@ -194,7 +195,7 @@
   (declare held? (F64 -> Boolean))
   (define (held? x)
     "Whether a positive number is one the format holds to full precision: finite and not below the least normal number."
-    (and (>= x fp:least-normal) (inline (math:finite? x))))
+    (and (>= x fp:least-normal) (finite? x)))
 
   (inline)
   (declare damping-term (F64 * F64 * F64 -> F64))
@@ -238,7 +239,7 @@
     (let s = (plan-storage plan))
     (unless (== (arr:length d) (.columns s)) (return DampingBadSize))
     (for ((j 0 (+ j 1))) :while (< j (.columns s))
-      (unless (and (> (arr:aref d j) 0.0d0) (inline (math:finite? (arr:aref d j))))
+      (unless (and (> (arr:aref d j) 0.0d0) (finite? (arr:aref d j)))
         (return DampingNotPositive)))
     (for ((j 0 (+ j 1))) :while (< j (.columns s))
       (arr:set! (.given s) j (arr:aref d j)))
@@ -251,7 +252,7 @@
     "Take D = diag(J^T J) + floor: each column's squared length plus a floor in the same units, formed again from each later matrix. A matrix must be set, and every entry must come out positive. A standing factor does not survive."
     (let s = (plan-storage plan))
     (unless (== (arr:aref (.state s) 0) 1) (return DampingNoMatrix))
-    (unless (and (>= floor 0.0d0) (inline (math:finite? floor))) (return DampingNotPositive))
+    (unless (and (>= floor 0.0d0) (finite? floor)) (return DampingNotPositive))
     (let diagonals = (gram:column-pointers (.plan s)))
     (when (== floor 0.0d0)
       (for ((j 0 (+ j 1))) :while (< j (.columns s))
@@ -267,9 +268,9 @@
     (let s = (plan-storage plan))
     (let st = (.state s))
     (arr:set! st 2 0)
-    (arr:set! (.refused s) 0 -1)
+    (cell:write! (.refused s) -1)
     (unless (and (== (arr:aref st 0) 1) (/= (arr:aref st 1) 0)) (return DampedNotReady))
-    (unless (and (>= mu 0.0d0) (inline (math:finite? mu))) (return DampedBadDamping))
+    (unless (and (>= mu 0.0d0) (finite? mu)) (return DampedBadDamping))
     (let product = (.product s))
     (let damped = (.damped s))
     (for ((q 0 (+ q 1))) :while (< q (arr:length product))
@@ -294,7 +295,7 @@
           ;; a floor of zero the entry is zero, and no mu helps.
           ((== own 0.0d0)
            (when (and (not given-mode) (== floor 0.0d0))
-             (arr:set! (.refused s) 0 (cell:read column))
+             (cell:write! (.refused s) (cell:read column))
              (return DampedZeroDamping))
            (arr:set! damped at 1.0d0))
           (given-mode
@@ -313,7 +314,7 @@
     (for ((j 0 (+ j 1))) :while (< j (.columns s))
       (let own = (arr:aref damped (arr:aref diagonals j)))
       (cond
-        ((and (> own 0.0d0) (inline (math:finite? own)))
+        ((and (> own 0.0d0) (finite? own))
          (fp:binade! own scale 0)
          (fp:binade! (math:sqrt (arr:aref scale 0)) scale 0)
          (arr:set! balance (* 2 j) (arr:aref scale 1))
@@ -331,7 +332,7 @@
        (arr:set! st 2 1)
        DampedSuccess)
       ((ldlt:FactorNonPositive)
-       (arr:set! (.refused s) 0 (ldlt:refused-column (.symbolic s)))
+       (cell:write! (.refused s) (ldlt:refused-column (.symbolic s)))
        DampedNotPositive)
       (_ DampedNonFinite)))
 
@@ -346,7 +347,7 @@
     (let largest = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i m)
       (let a = (abs (arr:aref r i)))
-      (unless (inline (math:finite? a)) (return StepNonFiniteRhs))
+      (unless (finite? a) (return StepNonFiniteRhs))
       (when (> a (cell:read largest)) (cell:write! largest a)))
     ;; The residual divided by the power of two at its own largest entry, as each column is by
     ;; its: the gradient is then a sum of products of numbers near 1.
@@ -387,10 +388,10 @@
     (for ((j 0 (+ j 1))) :while (< j n)
       (let solved = (arr:aref unknown j))
       (let v = (inline (thrice-scaled solved (arr:aref balance (* 2 j)) (arr:aref column-scale (+ (* 2 j) 1)) second)))
-      (unless (inline (math:finite? v)) (return StepNonFiniteResult))
+      (unless (finite? v) (return StepNonFiniteResult))
       ;; An entry of the solve below the normal range has been rounded there. Where the step's
       ;; own entry is not below it, those digits were the step's.
-      (when (and (/= solved 0.0d0) (and (< (abs solved) fp:least-normal) (>= (abs v) fp:least-normal)))
+      (when (and (/= solved 0.0d0) (< (abs solved) fp:least-normal) (>= (abs v) fp:least-normal))
         (return StepOutOfRange))
       (arr:set! unknown j v))
     (for ((j 0 (+ j 1))) :while (< j n)

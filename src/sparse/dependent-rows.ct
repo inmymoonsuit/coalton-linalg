@@ -8,6 +8,8 @@
                     (#:rf #:coalton-linalg/refinement)
                     (#:fp #:coalton-linalg/internal/float)
                     (#:err #:coalton-linalg/errors))
+  (:import-from #:coalton/math #:finite?)
+  (:import-from #:coalton-linalg/internal/float #:scaled-product #:restored-bound)
   (:export #:RowAnalysis #:analyze #:analyze-with-limit #:default-analysis-entry-limit
            #:RowStatus #:RowsFound #:RowsNonFinite #:RowsUnderflow #:RowsBadThreshold
            #:find-dependent-rows! #:rows-found? #:row-count #:column-count #:check-pattern!
@@ -38,7 +40,7 @@
     (combination (arr:LispArray F64))
     (unknown (arr:LispArray F64))
     (zeros (arr:LispArray F64))
-    (target (arr:LispArray UFix))
+    (target (cell:Cell UFix))
     (refiner rf:Refiner)
     (operator (arr:LispArray F64 * arr:LispArray F64 -> Void))
     (corrector (arr:LispArray F64 * arr:LispArray F64 -> Boolean)))
@@ -80,19 +82,6 @@
     NullNonFinite
     "The vector or its bound was not finite; the output is unchanged.")
 
-  (inline)
-  (declare %count->float (UFix -> F64))
-  (define (%count->float count)
-    "A count as a floating-point number; exact below 2^53."
-    (lisp (-> F64) (count) (cl:coerce count 'cl:double-float)))
-
-  (declare unit-roundoff F64)
-  (define unit-roundoff (lisp (-> F64) () (cl:scale-float 1d0 -53)))
-  (declare smallest-positive F64)
-  (define smallest-positive (lisp (-> F64) () cl:least-positive-double-float))
-  (declare positive-infinity F64)
-  (define positive-infinity (lisp (-> F64) () sb-ext:double-float-positive-infinity))
-
   (declare default-analysis-entry-limit UFix)
   (define default-analysis-entry-limit
     "Default budget of entries, 2^20, for the product A A^T and for its factor alike."
@@ -130,20 +119,20 @@
       ;; The exact entry is within gamma(c) of the sum of the rounded products' magnitudes, c the
       ;; column's length, and that sum is within gamma(c - 1) of the one computed: together under
       ;; gamma(2c + 2).
-      (let reach = (%count->float (+ (* 2 (- end start)) 2)))
-      (let relative = (/ (* reach unit-roundoff) (- 1.0d0 (* reach unit-roundoff))))
+      (let reach = (fp:count->float (+ (* 2 (- end start)) 2)))
+      (let relative = (/ (* reach fp:unit-roundoff) (- 1.0d0 (* reach fp:unit-roundoff))))
       (let entry = (+ (abs (cell:read sum)) (* relative (cell:read magnitude))))
       (cell:write! total (+ (cell:read total) (* entry entry))))
     ;; Underflow: a product can be off by half the smallest positive number and a square can
     ;; lose all of it. One smallest positive number for each column, under the root, is more
     ;; than both together. The margin covers the rounding of the entries, the squares, the sum
     ;; and the root.
-    (let order = (%count->float n))
-    (let padded = (+ (cell:read total) (* order smallest-positive)))
+    (let order = (fp:count->float n))
+    (let padded = (+ (cell:read total) (* order fp:least-positive)))
     (arr:set! target slot
-              (if (inline (math:finite? padded))
-                  (* (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
-                  positive-infinity)))
+              (if (finite? padded)
+                  (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 10.0d0))) (math:sqrt padded))
+                  math:infinity)))
 
   (declare transpose-product-bound (csc:Matrix * arr:LispArray F64 -> F64))
   (define (transpose-product-bound matrix v)
@@ -169,15 +158,7 @@
     (fp:binade! (cell:read longest) target 3)
     (product-bound! (csc:column-count matrix) (csc:column-pointers matrix) (csc:row-indices matrix)
                     entries v target 0 (arr:aref target 2) (arr:aref target 4))
-    (let first = (arr:aref target 1))
-    (let second = (arr:aref target 3))
-    (let together = (* first second))
-    ;; The two powers multiplied first, which is exact, unless that product leaves the range
-    ;; while the bound itself need not: then one after the other, each step toward the result.
-    (let restored = (if (or (== together 0.0d0) (not (inline (math:finite? together))))
-                        (* (* (arr:aref target 0) first) second)
-                        (* (arr:aref target 0) together)))
-    (if (< restored fp:least-normal) (+ restored smallest-positive) restored))
+    (restored-bound (scaled-product (arr:aref target 0) (arr:aref target 1) (arr:aref target 3)) 1.0d0))
 
   (declare analyze (csc:Matrix -> RowAnalysis))
   (define (analyze matrix)
@@ -202,7 +183,7 @@
     (let combination = (arr:make m 0.0d0))
     (let across = (arr:make n 0.0d0))
     (let gradient = (arr:make m 0.0d0))
-    (let target = (arr:make 1 (the UFix 0)))
+    (let target = (cell:new (the UFix 0)))
     ;; For the row k in target, and y the unknown on the kept rows: the residual of the least
     ;; squares problem is r = a_k - A_S^T y, formed in the column space where it is small, and
     ;; the correction to y is the solution d of (A_S A_S^T) d = A_S r, from the standing factor,
@@ -215,7 +196,7 @@
       (fn (x out)
         (for ((i 0 (+ i 1))) :while (< i m)
           (arr:set! combination i (- 0.0d0 (arr:aref x i))))
-        (arr:set! combination (arr:aref target 0) 1.0d0)
+        (arr:set! combination (cell:read target) 1.0d0)
         (transpose-product! n pointers indices entries combination across)
         (for ((i 0 (+ i 1))) :while (< i m)
           (arr:set! gradient i 0.0d0))
@@ -230,7 +211,7 @@
              (arr:set! out i (- 0.0d0 (arr:aref out i)))))
           (True
            (for ((i 0 (+ i 1))) :while (< i m)
-             (arr:set! out i positive-infinity))))))
+             (arr:set! out i math:infinity))))))
     (let corrector =
       (fn (r out)
         (for ((i 0 (+ i 1))) :while (< i m)
@@ -287,7 +268,7 @@
     (let st = (.state s))
     (arr:set! st 0 0)
     (arr:set! st 1 0)
-    (unless (and (>= threshold 0.0d0) (inline (math:finite? threshold))) (return RowsBadThreshold))
+    (unless (and (>= threshold 0.0d0) (finite? threshold)) (return RowsBadThreshold))
     (gram:check-csc! (.plan s) matrix)
     ;; The search compares squares, of the rows in A A^T and of the threshold, and a square
     ;; leaves the range at half the exponent of what is squared. So the search is made on the
@@ -313,12 +294,12 @@
     (let reach = (* threshold down))
     (let squared = (* reach reach))
     ;; A threshold beyond every row, once divided, leaves every row out, as it should.
-    (let floor = (if (inline (math:finite? squared)) squared fp:greatest))
+    (let floor = (if (finite? squared) squared fp:greatest))
     ;; A positive threshold whose square is below the least normal number has become zero or
     ;; lost its digits, and would be compared as another threshold.
     ;; A matrix whose values are all zero has no largest entry for it to be small beside: every
     ;; pivot is zero and at or below any floor, and every row is left out.
-    (unless (or (== threshold 0.0d0) (or (== (cell:read largest) 0.0d0) (>= floor fp:least-normal)))
+    (unless (or (== threshold 0.0d0) (== (cell:read largest) 0.0d0) (>= floor fp:least-normal))
       (return RowsBadThreshold))
     ;; Under a positive threshold a row whose square underflowed is shorter than the threshold
     ;; and is rightly left out. Under a threshold of zero nothing says so: the row would be
@@ -384,7 +365,7 @@
     (for ((i 0 (+ i 1))) :while (< i m)
       (arr:set! x i (- 0.0d0 (arr:aref x i))))
     (arr:set! x k 0.0d0)
-    (arr:set! (.target s) 0 k)
+    (cell:write! (.target s) k)
     ;; Whatever the outcome, x holds the best iterate seen, the factor's own at the least. A
     ;; tolerance of zero and a stall factor of one half: carry on while each correction is at
     ;; most half the one before.
@@ -394,19 +375,12 @@
     (arr:set! v k 1.0d0)
     (let bounds = (.bounds s))
     (product-bound! (.columns s) (.pointers s) (.indices s) (.entries s) v bounds position 1.0d0 1.0d0)
-    (unless (inline (math:finite? (arr:aref bounds position)))
+    (unless (finite? (arr:aref bounds position))
       (arr:set! bounds position -1.0d0)
       (return NullNonFinite))
     (for ((i 0 (+ i 1))) :while (< i m)
       (arr:set! out i (arr:aref v i)))
     NullFound)
-
-  (inline)
-  (declare restored-bound (F64 * F64 -> F64))
-  (define (restored-bound bound up)
-    "A bound on a quantity of the divided matrix as one on the matrix itself: multiplied back by the power of two, and raised by the smallest positive number where the product is below the normal range and could have been rounded down. It may be infinite."
-    (let restored = (* bound up))
-    (if (< restored fp:least-normal) (+ restored smallest-positive) restored))
 
   (declare residual-bound (RowAnalysis * UFix -> F64))
   (define (residual-bound analysis position)
@@ -414,7 +388,7 @@
     (let s = (analysis-storage analysis))
     (if (and (== (arr:aref (.state s) 0) 1) (< position (arr:aref (.state s) 1)))
         (let ((bound (arr:aref (.bounds s) position)))
-          (if (< bound 0.0d0) -1.0d0 (inline (restored-bound bound (arr:aref (.scale s) 0)))))
+          (if (< bound 0.0d0) -1.0d0 (restored-bound bound (arr:aref (.scale s) 0))))
         -1.0d0))
 
   (declare gap-bound (RowAnalysis -> F64))
@@ -429,7 +403,7 @@
       (when (< bound 0.0d0) (return -1.0d0))
       (cell:write! total (+ (cell:read total) (* bound bound))))
     (when (== count 0) (return 0.0d0))
-    (let order = (%count->float count))
-    (inline (restored-bound (* (+ 1.0d0 (* (* 2.0d0 unit-roundoff) (+ order 4.0d0)))
-                               (math:sqrt (+ (cell:read total) (* order smallest-positive))))
-                            (arr:aref (.scale s) 0)))))
+    (let order = (fp:count->float count))
+    (restored-bound (* (+ 1.0d0 (* (* 2.0d0 fp:unit-roundoff) (+ order 4.0d0)))
+                       (math:sqrt (+ (cell:read total) (* order fp:least-positive))))
+                    (arr:aref (.scale s) 0))))

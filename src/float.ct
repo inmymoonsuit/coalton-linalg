@@ -1,7 +1,8 @@
 (cl:defpackage #:coalton-linalg/internal/float
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
-  (:export #:least-normal #:least-positive #:greatest #:infinity #:unit-roundoff #:count->float #:binade!))
+  (:import-from #:coalton/math #:finite?)
+  (:export #:least-normal #:least-positive #:greatest #:unit-roundoff #:count->float #:binade!))
 (cl:in-package #:coalton-linalg/internal/float)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -15,11 +16,6 @@
   (define least-positive
     "Smallest positive F64, a subnormal: what a product or a square can lose to underflow is less than it."
     (lisp (-> F64) () cl:least-positive-double-float))
-
-  (declare infinity F64)
-  (define infinity
-    "Positive infinity, for a bound that could not be held."
-    (lisp (-> F64) () sb-ext:double-float-positive-infinity))
 
   (declare unit-roundoff F64)
   (define unit-roundoff
@@ -40,6 +36,22 @@
   (declare greatest-power F64)
   (define greatest-power (lisp (-> F64) () (cl:scale-float 1d0 1023)))
 
+  (inline)
+  (declare scaled-product (F64 * F64 * F64 -> F64))
+  (define (scaled-product value first-scale second-scale)
+    "value times two scale factors: by their product where that is a nonzero finite number, and one after the other where their product underflows or overflows."
+    (let together = (* first-scale second-scale))
+    (if (or (== together 0.0d0) (not (finite? together)))
+        (* (* value first-scale) second-scale)
+        (* value together)))
+
+  (inline)
+  (declare restored-bound (F64 * F64 -> F64))
+  (define (restored-bound bound up)
+    "A bound on a quantity of the divided matrix as one on the matrix itself: multiplied back by the power of two, and raised by the smallest positive number where the product is below the normal range and could have been rounded down. It may be infinite."
+    (let product = (* bound up))
+    (if (< product least-normal) (+ product least-positive) product))
+
   (declare binade! (F64 * arr:LispArray F64 * UFix -> Void))
   (define (binade! magnitude target slot)
     "Write into target[slot] the power of two p with p <= magnitude < 2 p, held between the least normal number and 2^1023, and into target[slot + 1] its reciprocal, which is exact. 1 and 1 for a magnitude that is zero, negative or not a number, and 2^1023 with its reciprocal for infinity: the two loops end whatever they are given. Dividing by a power of two changes no significand, so what is computed from the quotients rounds as it did from the originals wherever neither leaves the range."
@@ -50,7 +62,7 @@
       (cell:write! m (* (cell:read m) 0.5d0))
       (cell:write! up (* (cell:read up) 2.0d0))
       (cell:write! down (* (cell:read down) 0.5d0)))
-    (for () :while (and (> (cell:read m) 0.0d0) (and (< (cell:read m) 1.0d0) (> (cell:read up) least-normal)))
+    (for () :while (and (> (cell:read m) 0.0d0) (< (cell:read m) 1.0d0) (> (cell:read up) least-normal))
       (cell:write! m (* (cell:read m) 2.0d0))
       (cell:write! up (* (cell:read up) 0.5d0))
       (cell:write! down (* (cell:read down) 2.0d0)))

@@ -1,6 +1,6 @@
 (cl:defpackage #:coalton-linalg/sparse/limits
   (:use #:coalton #:coalton-prelude)
-  (:local-nicknames (#:err #:coalton-linalg/errors))
+  (:local-nicknames (#:math #:coalton/math) (#:err #:coalton-linalg/errors))
   (:export #:maximum-analysis-size #:default-analysis-entry-limit
            #:effective-entry-limit #:check-dimension!))
 (cl:in-package #:coalton-linalg/sparse/limits)
@@ -9,8 +9,8 @@
   (declare maximum-analysis-size UFix)
   (define maximum-analysis-size
     "Largest order a sparse analysis accepts, and the cap on any entry budget: what the host can index."
-    (lisp (-> UFix) ()
-      (cl:min (cl:- cl:array-dimension-limit 2) (cl:floor cl:most-positive-fixnum 2))))
+    (min (lisp (-> UFix) () (cl:- cl:array-dimension-limit 2))
+         (math:quot math:maxBound 2)))
 
   (declare default-analysis-entry-limit UFix)
   (define default-analysis-entry-limit

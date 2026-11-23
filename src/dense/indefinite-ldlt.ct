@@ -169,17 +169,16 @@
     (let i = (cell:new k))
     (let r = (cell:new (column-argmax w n k k)))
     (let omega = (cell:new (off-magnitude w n (cell:read r) k)))
-    (let searching = (cell:new True))
     ;; Each round moves to a column whose largest off-diagonal entry is strictly larger, so no
     ;; column is visited twice and the bound on rounds is never the reason the search ends.
-    (for ((round 0 (+ round 1))) :while (and (cell:read searching) (<= round n))
+    (for ((round 0 (+ round 1))) :while (<= round n)
       (let here = (cell:read i))
       (let diagonal = (abs (arr:aref w (+ here (* here n)))))
       (cond
         ((or (== (cell:read omega) 0.0d0)
              (>= diagonal (* pivot-threshold (cell:read omega))))
-         (cell:write! searching False)
-         (arr:set! choice 1 here))
+         (arr:set! choice 1 here)
+         (break))
         (True
          (let c = (cell:read r))
          (let next = (column-argmax w n k c))
@@ -187,14 +186,14 @@
          (let diagonal-c = (abs (arr:aref w (+ c (* c n)))))
          (cond
            ((>= diagonal-c (* pivot-threshold omega-c))
-            (cell:write! searching False)
-            (arr:set! choice 1 c))
+            (arr:set! choice 1 c)
+            (break))
            ((== omega-c (cell:read omega))
             ;; The entry (here, c) is the largest off-diagonal of both its columns.
-            (cell:write! searching False)
             (arr:set! choice 0 2)
             (arr:set! choice 1 here)
-            (arr:set! choice 2 c))
+            (arr:set! choice 2 c)
+            (break))
            (True
             (cell:write! i c)
             (cell:write! r next)
@@ -231,7 +230,7 @@
     (let w = (.lower f))
     (let st = (.state f))
     (let d = (arr:aref w (+ k (* k n))))
-    (unless (inline (finite? d)) (return False))
+    (unless (finite? d) (return False))
     (cond
       ((== d 0.0d0)
        ;; The selection rule takes a zero pivot only from a column that is entirely zero,
@@ -248,7 +247,7 @@
                      (- (arr:aref w (+ i (* j n))) (* (arr:aref w (+ i (* k n))) multiplier)))))
        (for ((i (+ k 1) (+ i 1))) :while (< i n)
          (let multiplier = (/ (arr:aref w (+ i (* k n))) d))
-         (unless (inline (finite? multiplier)) (return False))
+         (unless (finite? multiplier) (return False))
          (arr:set! w (+ i (* k n)) multiplier))))
     (arr:set! (.diagonal f) k d)
     (arr:set! (.subdiagonal f) k 0.0d0)
@@ -262,7 +261,7 @@
     ;; The dimensionless determinant has magnitude between 0.58 and 1.42.
     ;; Move its multiplication by b away from overflow and subnormal rounding.
     (cond
-      ((> (abs b) (lisp (-> F64) () (cl:/ cl:most-positive-double-float 2))) 0.5d0)
+      ((> (abs b) (* 0.5d0 fp:greatest)) 0.5d0)
       ((< (abs b) (* 2.0d0 fp:least-normal)) (lisp (-> F64) () (cl:scale-float 1d0 512)))
       (True 1.0d0)))
 
@@ -270,7 +269,7 @@
   (declare block-component (F64 * F64 * F64 * F64 -> F64))
   (define (block-component ratio u v divisor)
     (let numerator = (- (* ratio u) v))
-    (if (inline (finite? numerator))
+    (if (finite? numerator)
         (/ numerator divisor)
         ;; A large RHS can overflow the subtraction even if the quotient fits.
         (/ (- (* ratio (* 0.5d0 u)) (* 0.5d0 v)) (* 0.5d0 divisor))))
@@ -284,7 +283,7 @@
     (let a = (arr:aref w (+ k (* k n))))
     (let b = (arr:aref w (+ (+ k 1) (* k n))))
     (let c = (arr:aref w (+ (+ k 1) (* (+ k 1) n))))
-    (unless (and (inline (finite? a)) (and (inline (finite? b)) (inline (finite? c)))) (return False))
+    (unless (and (finite? a) (finite? b) (finite? c)) (return False))
     ;; Work with the block divided by b. Its determinant a/b * c/b - 1 lies strictly between
     ;; -(1 + threshold^2) and -(1 - threshold^2), where b * b could overflow or underflow.
     (let ar = (/ a b))
@@ -306,7 +305,7 @@
       (let v = (* gain (arr:aref w (+ i (* (+ k 1) n)))))
       (let p = (block-component cr u v divisor))
       (let q = (block-component ar v u divisor))
-      (unless (and (inline (finite? p)) (inline (finite? q))) (return False))
+      (unless (and (finite? p) (finite? q)) (return False))
       (arr:set! w (+ i (* k n)) p)
       (arr:set! w (+ i (* (+ k 1) n)) q))
     ;; Both diagonal entries are below threshold * |b| in magnitude, so the determinant is negative:
@@ -344,7 +343,7 @@
     (arr:set! st 2 0)
     (arr:set! st 3 0)
     (unless (== (arr:length a) (* n n)) (return FactorBadSize))
-    (unless (inline (finite? shift)) (return FactorBadShift))
+    (unless (finite? shift) (return FactorBadShift))
     (let w = (.lower f))
     (let permutation = (.permutation f))
     (for ((j 0 (+ j 1))) :while (< j n)
@@ -353,10 +352,10 @@
         (arr:set! w (+ i (* j n)) 0.0d0))
       (for ((i j (+ i 1))) :while (< i n)
         (let v = (arr:aref a (+ i (* j n))))
-        (unless (inline (finite? v)) (return (refuse! f)))
+        (unless (finite? v) (return (refuse! f)))
         (arr:set! w (+ i (* j n)) v))
       (let shifted = (- (arr:aref w (+ j (* j n))) shift))
-      (unless (inline (finite? shifted)) (return (refuse! f)))
+      (unless (finite? shifted) (return (refuse! f)))
       (arr:set! w (+ j (* j n)) shifted))
     (let choice = (.choice f))
     (for ((k 0 (+ k (arr:aref choice 0)))) :while (< k n)
@@ -392,7 +391,7 @@
     (let w = (.scratch f))
     (for ((k 0 (+ k 1))) :while (< k n)
       (let v = (arr:aref b (arr:aref permutation k)))
-      (unless (inline (finite? v)) (return SolveNonFiniteRhs))
+      (unless (finite? v) (return SolveNonFiniteRhs))
       (arr:set! w k v))
     (for ((k 0 (+ k 1))) :while (< k n)
       (let v = (arr:aref w k))
@@ -410,19 +409,19 @@
          (let v = (* gain (arr:aref w (+ k 1))))
          (let p = (block-component cr u v divisor))
          (let q = (block-component ar v u divisor))
-         (unless (and (inline (finite? p)) (inline (finite? q))) (return SolveNonFiniteResult))
+         (unless (and (finite? p) (finite? q)) (return SolveNonFiniteResult))
          (arr:set! w k p)
          (arr:set! w (+ k 1) q))
         (True
          (let v = (/ (arr:aref w k) (arr:aref d k)))
-         (unless (inline (finite? v)) (return SolveNonFiniteResult))
+         (unless (finite? v) (return SolveNonFiniteResult))
          (arr:set! w k v))))
     (for ((remaining n (- remaining 1))) :while (> remaining 0)
       (let k = (- remaining 1))
       (let acc = (cell:new (arr:aref w k)))
       (for ((i (+ k 1) (+ i 1))) :while (< i n)
         (cell:write! acc (- (cell:read acc) (* (arr:aref l (+ i (* k n))) (arr:aref w i)))))
-      (unless (inline (finite? (cell:read acc))) (return SolveNonFiniteResult))
+      (unless (finite? (cell:read acc)) (return SolveNonFiniteResult))
       (arr:set! w k (cell:read acc)))
     (for ((k 0 (+ k 1))) :while (< k n)
       (arr:set! out (arr:aref permutation k) (arr:aref w k)))

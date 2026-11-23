@@ -1,8 +1,10 @@
 (cl:defpackage #:coalton-linalg/sparse/scaling
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:math #:coalton/math) (#:csc #:coalton-linalg/sparse/csc)
+                    (#:csc #:coalton-linalg/sparse/csc)
                     (#:err #:coalton-linalg/errors))
+  (:import-from #:coalton/math #:finite?)
+  (:import-from #:coalton-linalg/internal/float #:scaled-product #:greatest-power)
   (:export #:row-maxima! #:column-maxima! #:equilibrate! #:scale! #:scale-vector!
            #:DiagonalStatus #:DiagonalScaled #:DiagonalNotPositive
            #:equilibrate-symmetric! #:scale-symmetric!))
@@ -25,24 +27,6 @@
     (lisp (-> (arr:LispArray F64)) ()
       (cl:make-array 10 :element-type 'cl:double-float
                         :initial-contents (cl:loop :for k :from 9 :downto 0 :collect (cl:scale-float 1d0 (cl:ash 1 k))))))
-
-  (declare largest-power F64)
-  (define largest-power
-    "2^1023, the largest power of two there is and the product of the ten above."
-    (lisp (-> F64) () (cl:scale-float 1d0 1023)))
-
-  (inline)
-  (declare scaled-product (F64 * F64 * F64 -> F64))
-  (define (scaled-product value first-scale second-scale)
-    "value times the two scale factors. For factors that are powers of two it is the exact product whenever that product is a normal number or zero, whatever the sizes of the three: see docs/scaling.md, Derivation."
-    (let together = (* first-scale second-scale))
-    ;; The two factors' own product is exact unless it leaves the range. Where it does not, one
-    ;; multiplication by it has no intermediate to lose anything in. Where it underflows to zero
-    ;; both factors are below 1, and where it overflows both are above 1, so taking them in turn
-    ;; moves the value one way only and every intermediate lies between the value and the result.
-    (if (or (== together 0.0d0) (not (inline (math:finite? together))))
-        (* (* value first-scale) second-scale)
-        (* value together)))
 
   (declare replace-by-reciprocal-power! (arr:LispArray F64 * UFix -> Void))
   (define (replace-by-reciprocal-power! a i)
@@ -99,7 +83,7 @@
     (unless (== (arr:length values) (csc:entry-count matrix))
       (throw (err:InvalidDimensions "The value count differs from the matrix's stored entries.")))
     (for ((q 0 (+ q 1))) :while (< q (arr:length values))
-      (unless (inline (math:finite? (arr:aref values q)))
+      (unless (finite? (arr:aref values q))
         (throw (err:NonFiniteInput "Matrix values must be finite.")))))
 
   (declare check-scales! (arr:LispArray F64 * UFix -> Void))
@@ -107,7 +91,7 @@
     (unless (== (arr:length scales) expected)
       (throw (err:InvalidDimensions "A scale vector's length differs from the matrix dimension.")))
     (for ((i 0 (+ i 1))) :while (< i expected)
-      (unless (inline (math:finite? (arr:aref scales i)))
+      (unless (finite? (arr:aref scales i))
         (throw (err:NonFiniteInput "Scale factors must be finite.")))))
 
   (declare row-maxima! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 -> Void))
@@ -149,8 +133,8 @@
                  (== (arr:length column-scales) (csc:column-count matrix)))
       (throw (err:InvalidDimensions "A scale vector's length differs from the matrix dimension.")))
     (when (or (unsafe-pointer-eq? row-scales values)
-              (or (unsafe-pointer-eq? column-scales values)
-                  (unsafe-pointer-eq? row-scales column-scales)))
+              (unsafe-pointer-eq? column-scales values)
+              (unsafe-pointer-eq? row-scales column-scales))
       (throw (err:InvalidAliasing "The two scale vectors and the values must be three arrays.")))
     (let cp = (csc:column-pointers matrix))
     (let ri = (csc:row-indices matrix))
@@ -175,16 +159,16 @@
       (for ((q (arr:aref cp j) (+ q 1))) :while (< q (arr:aref cp (+ j 1)))
         (let magnitude = (abs (arr:aref values q)))
         (when (> magnitude 0.0d0) (cell:write! present True))
-        (let lifted = (scaled-product magnitude (arr:aref row-scales (arr:aref ri q)) largest-power))
+        (let lifted = (scaled-product magnitude (arr:aref row-scales (arr:aref ri q)) greatest-power))
         (when (> lifted (cell:read largest))
           (cell:write! largest lifted)))
       (cond
         ((not (cell:read present)) (arr:set! column-scales j 1.0d0))
-        ((< (cell:read largest) 0.5d0) (arr:set! column-scales j largest-power))
+        ((< (cell:read largest) 0.5d0) (arr:set! column-scales j greatest-power))
         (True
          (arr:set! column-scales j (cell:read largest))
          (replace-by-reciprocal-power! column-scales j)
-         (arr:set! column-scales j (* (arr:aref column-scales j) largest-power))))))
+         (arr:set! column-scales j (* (arr:aref column-scales j) greatest-power))))))
 
   (declare scale! (csc:Matrix * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> Void))
   (define (scale! matrix values row-scales column-scales out)
@@ -195,7 +179,8 @@
     (unless (== (arr:length out) (arr:length values))
       (throw (err:InvalidDimensions "The output length differs from the value count.")))
     (when (or (unsafe-pointer-eq? out values)
-              (or (unsafe-pointer-eq? out row-scales) (unsafe-pointer-eq? out column-scales)))
+              (unsafe-pointer-eq? out row-scales)
+              (unsafe-pointer-eq? out column-scales))
       (throw (err:InvalidAliasing "The output must be distinct from the values and the scale vectors.")))
     (let cp = (csc:column-pointers matrix))
     (let ri = (csc:row-indices matrix))
@@ -204,7 +189,7 @@
         (arr:set! out q (scaled-product (arr:aref values q) (arr:aref row-scales (arr:aref ri q))
                                         (arr:aref column-scales j)))))
     (for ((q 0 (+ q 1))) :while (< q (arr:length out))
-      (unless (inline (math:finite? (arr:aref out q)))
+      (unless (finite? (arr:aref out q))
         (throw (err:NonFiniteResult "A scaled value is not finite.")))))
 
   (declare scale-vector! (arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 -> Void))
@@ -215,12 +200,12 @@
     (when (unsafe-pointer-eq? out scales)
       (throw (err:InvalidAliasing "The output must be distinct from the scale vector.")))
     (for ((i 0 (+ i 1))) :while (< i (arr:length x))
-      (unless (and (inline (math:finite? (arr:aref scales i))) (inline (math:finite? (arr:aref x i))))
+      (unless (and (finite? (arr:aref scales i)) (finite? (arr:aref x i)))
         (throw (err:NonFiniteInput "Scale factors and vector entries must be finite."))))
     (for ((i 0 (+ i 1))) :while (< i (arr:length x))
       (arr:set! out i (* (arr:aref scales i) (arr:aref x i))))
     (for ((i 0 (+ i 1))) :while (< i (arr:length out))
-      (unless (inline (math:finite? (arr:aref out i)))
+      (unless (finite? (arr:aref out i))
         (throw (err:NonFiniteResult "A scaled vector entry is not finite.")))))
 
   (declare check-lower! (csc:Matrix -> Void))
@@ -270,5 +255,5 @@
         (arr:set! out q (scaled-product (arr:aref values q) (arr:aref scales (arr:aref ri q))
                                         (arr:aref scales j)))))
     (for ((q 0 (+ q 1))) :while (< q (arr:length out))
-      (unless (inline (math:finite? (arr:aref out q)))
+      (unless (finite? (arr:aref out q))
         (throw (err:NonFiniteResult "A scaled symmetric value is not finite."))))))

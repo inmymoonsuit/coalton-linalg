@@ -1,7 +1,7 @@
 (cl:defpackage #:coalton-linalg/refinement
   (:use #:coalton #:coalton-prelude)
-  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:math #:coalton/math) (#:err #:coalton-linalg/errors))
+  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
+  (:import-from #:coalton/math #:finite?)
   (:export #:Refiner #:make-refiner #:dimension #:step-limit
            #:RefineStatus #:RefineConverged #:RefineStalled #:RefineLimit #:RefineNonFinite
            #:RefineSolveRefused #:RefineBadSize #:RefineBadTolerance
@@ -102,7 +102,7 @@
     (for ((i 0 (+ i 1))) :while (< i (arr:length b))
       (let r = (- (arr:aref b i) (arr:aref residual i)))
       (arr:set! residual i r)
-      (unless (inline (math:finite? r))
+      (unless (finite? r)
         (cell:write! sound False)
         (cell:write! unsound (abs r)))
       (when (> (abs r) (cell:read largest))
@@ -154,7 +154,7 @@
       (let sound = (cell:new True))
       (for ((i 0 (+ i 1))) :while (< i (arr:length x))
         (let moved = (+ (arr:aref x i) (arr:aref correction i)))
-        (unless (inline (math:finite? moved))
+        (unless (finite? moved)
           (cell:write! sound False))
         (arr:set! x i moved))
       (unless (cell:read sound)

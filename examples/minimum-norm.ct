@@ -27,7 +27,8 @@ positive and two negative eigenvalues when J has full row rank."
       (lisp (-> Void) () (cl:error "Example factorization refused.")))
     ;; The inertia tells full row rank from dependent constraints before any solve.
     (unless (and (== (il:positive-count factor) 4)
-                 (and (== (il:negative-count factor) 2) (== (il:zero-count factor) 0)))
+                 (== (il:negative-count factor) 2)
+                 (== (il:zero-count factor) 0))
       (lisp (-> Void) () (cl:error "Example constraints are not of full row rank.")))
     (let rhs = (arr:make n 0.0d0))
     (arr:set! rhs 4 2.0d0)

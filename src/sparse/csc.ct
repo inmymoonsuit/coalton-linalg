@@ -1,7 +1,8 @@
 (cl:defpackage #:coalton-linalg/sparse/csc
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:math #:coalton/math) (#:err #:coalton-linalg/errors))
+                    (#:err #:coalton-linalg/errors))
+  (:import-from #:coalton/math #:finite?)
   (:export #:Matrix #:DuplicatePolicy #:RejectDuplicates #:SumDuplicates
            #:from-csc #:from-coo #:row-count #:column-count #:entry-count
            #:column-pointers #:row-indices #:entries
@@ -67,7 +68,7 @@
             (throw (err:DuplicateEntry (arr:aref ri q) j)))
           (when (> (arr:aref ri (- q 1)) (arr:aref ri q))
             (throw (err:InvalidStructure "CSC rows must increase in each column."))))
-        (unless (inline (math:finite? (arr:aref vals q)))
+        (unless (finite? (arr:aref vals q))
           (throw (err:NonFiniteInput "Matrix values must be finite.")))))
     (MkMatrix m n (arr:copy cp) (arr:copy ri) (arr:copy vals)))
 
@@ -80,8 +81,8 @@
     (for ((i 0 (+ i 1))) :while (< i count) (arr:set! order i i))
     (for ((width 1 (* width 2))) :while (< width count)
       (for ((start 0 (+ start (* width 2)))) :while (< start count)
-        (let middle = (if (< (+ start width) count) (+ start width) count))
-        (let end = (if (< (+ middle width) count) (+ middle width) count))
+        (let middle = (min (+ start width) count))
+        (let end = (min (+ middle width) count))
         (let left = (cell:new start))
         (let right = (cell:new middle))
         (for ((at start (+ at 1))) :while (< at end)
@@ -114,7 +115,7 @@
     (for ((i 0 (+ i 1))) :while (< i count)
       (unless (and (< (arr:aref rows i) m) (< (arr:aref columns i) n))
         (throw (err:InvalidStructure "COO coordinate is out of range.")))
-      (unless (inline (math:finite? (arr:aref entries i)))
+      (unless (finite? (arr:aref entries i))
         (throw (err:NonFiniteInput "Matrix values must be finite."))))
     (let order = (coordinate-order rows columns))
     (let cp = (arr:make (+ n 1) (the UFix 0)))
@@ -136,7 +137,7 @@
           (when (match duplicate-policy ((RejectDuplicates) True) ((SumDuplicates) False))
             (throw (err:DuplicateEntry row j)))
           (let next = (+ (cell:read total) (arr:aref entries (arr:aref order (cell:read position)))))
-          (unless (inline (math:finite? next))
+          (unless (finite? next)
             (throw (err:NonFiniteResult "Duplicate sum is not finite.")))
           (cell:write! total next)
           (cell:write! position (+ (cell:read position) 1)))
@@ -219,7 +220,7 @@
   (define (validate-product-vector x)
     "Validate every input component, including those unused by the matrix structure."
     (for ((i 0 (+ i 1))) :while (< i (arr:length x))
-      (unless (inline (math:finite? (arr:aref x i)))
+      (unless (finite? (arr:aref x i))
         (throw (err:NonFiniteInput "Vector input must be finite.")))))
 
   (declare multiply-into! (Matrix * arr:LispArray F64 * arr:LispArray F64 * Boolean -> Void))
@@ -239,7 +240,7 @@
         (arr:set! output target (+ (arr:aref output target)
                                   (* (arr:aref vals q) (arr:aref x source))))))
     (for ((i 0 (+ i 1))) :while (< i (arr:length output))
-      (unless (inline (math:finite? (arr:aref output i)))
+      (unless (finite? (arr:aref output i))
         (throw (err:NonFiniteResult "Matrix-vector result is not finite.")))))
 
   (declare multiply (Matrix * arr:LispArray F64 * Boolean -> arr:LispArray F64))
@@ -286,4 +287,22 @@
   (declare transpose-matvec! (Matrix * arr:LispArray F64 * arr:LispArray F64 -> Void))
   (define (transpose-matvec! matrix x output)
     "Overwrite output with transpose(A)*x. Output must differ from x and matrix entries; preflight errors preserve it, while NonFiniteResult leaves it unspecified."
-    (multiply! matrix x output True)))
+    (multiply! matrix x output True))
+
+  (declare check-same-pattern! (Matrix * UFix * UFix * arr:LispArray UFix * arr:LispArray UFix -> Void))
+  (define (check-same-pattern! matrix expected-m expected-n expected-cp expected-ri)
+    "Raise InvalidDimensions or InvalidStructure unless matrix has the expected dimensions, column pointers and row indices."
+    (unless (and (== (row-count matrix) expected-m)
+                 (== (column-count matrix) expected-n))
+      (throw (err:InvalidDimensions "Source dimensions differ from the analyzed matrix.")))
+    (let actual-cp = (column-pointers matrix))
+    (let actual-ri = (row-indices matrix))
+    (unless (and (== (arr:length actual-cp) (arr:length expected-cp))
+                 (== (arr:length actual-ri) (arr:length expected-ri)))
+      (throw (err:InvalidStructure "Source pattern differs from the analyzed matrix.")))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length expected-cp))
+      (unless (== (arr:aref actual-cp q) (arr:aref expected-cp q))
+        (throw (err:InvalidStructure "Source column pointers differ from the analyzed matrix."))))
+    (for ((q 0 (+ q 1))) :while (< q (arr:length expected-ri))
+      (unless (== (arr:aref actual-ri q) (arr:aref expected-ri q))
+        (throw (err:InvalidStructure "Source row indices differ from the analyzed matrix."))))))
