@@ -240,6 +240,29 @@ the matrix's, bit for bit: nothing is squared before it is divided."
       (assert (= 0 (dm-caller:step-code plan (doubles (scale-float 1d0 -600)) step)))
       (assert (= -1d0 (aref step 0)))
       (assert (= 2 (dm-caller:factor-code plan 1d0))))
+    ;; The same of a floor: 1e-12 under a matrix at 2^-700 is not a number the format holds in the
+    ;; divided matrix's units. The floor is taken, since it stays for later matrices; the factor is
+    ;; where it is refused, and only with mu positive. Under the next matrix, at ordinary scale, the
+    ;; same floor stands and is used.
+    (let* ((small (csc-from-entries 1 1 (list (list 0 0 (scale-float 1d0 -700)))))
+           (ordinary (csc-from-entries 1 1 (list (list 0 0 1d0))))
+           (plan (dm:analyze small)) (step (doubles 9d0)))
+      (assert (= 0 (dm-caller:matrix-code plan small)))
+      (assert (= 0 (dm-caller:column-damping-code plan 1d-12)) () "A floor the scale takes out of range was not taken.")
+      (let ((code (dm-caller:factor-code plan 1d0)))
+        (assert (= 2 code) () "A floor of 1e-12 under a matrix at 2^-700: the factor's outcome is ~D." code))
+      (assert (not (dm:factor-ready? plan)))
+      (let ((code (dm-caller:step-code plan (doubles (scale-float 1d0 -700)) step)))
+        (assert (and (= 1 code) (= 9d0 (aref step 0))) () "After that refusal the step's outcome is ~D and it wrote ~S."
+                code (aref step 0)))
+      (assert (= 0 (dm-caller:factor-code plan 0d0)))
+      (assert (= 0 (dm-caller:step-code plan (doubles (scale-float 1d0 -700)) step)))
+      (assert (= -1d0 (aref step 0)) () "With mu zero the step is ~S." (aref step 0))
+      (assert (= 0 (dm-caller:matrix-code plan ordinary)))
+      (let ((code (dm-caller:factor-code plan 1d0)))
+        (assert (= 0 code) () "The same floor under a matrix at ordinary scale: the factor's outcome is ~D." code))
+      (assert (= 0 (dm-caller:step-code plan (doubles 1d0) step)))
+      (assert (<= (abs (+ (aref step 0) (/ 1d0 (+ 2d0 1d-12)))) 1d-15) () "The step with the floor is ~S." (aref step 0)))
     ;; A step multiplied back by two powers whose own product cannot be held, 2^520 for the
     ;; matrix and 2^520 for the residual, though the step can: the residual is all but
     ;; orthogonal to the one column, and the step is -2^988 exactly.

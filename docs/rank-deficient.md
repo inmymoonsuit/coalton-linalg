@@ -182,6 +182,10 @@ bound at least the floor.
 The rows left out, the vectors and the statuses at any scale the format holds are those
 at ordinary scale, and the bounds are those times the scale;
 [the scale-sweep roster](rosters.md#what-is-declared) holds that from 2^-800 to 2^1020.
+**Below the normal range a bound is rounded up**: where the product with the scale is
+under 2^-1022 it could have been rounded down, so the smallest positive number, 2^-1074,
+is added to it. A bound whose exact value is far below what the format holds comes back
+as 2^-1074, which is still a bound.
 
 ## Refreshing the kept vectors
 
@@ -370,7 +374,9 @@ of a step do not use it.
 
 **The residual is divided by the power of two at its largest entry**, as the matrix is by
 its own, and the step is multiplied back by the two. A step at any scale the format holds
-is the step at ordinary scale, bit for bit, and the bounds are those times the scale.
+is the step at ordinary scale, bit for bit, and the bounds are those times the scale, with
+2^-1074 added where that product is below the normal range: `step-solve-bound` and
+`step-bound` are never rounded down, and one too small for the format is 2^-1074.
 
 ## Dependent sets
 

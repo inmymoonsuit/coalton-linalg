@@ -54,7 +54,7 @@ caller's.
 | --- | --- |
 | DampedSuccess | The factor stands |
 | DampedNotPositive | A computed pivot was not positive, and `refused-column` names its column. With μ zero this is a matrix without full column rank. No factor stands |
-| DampedNonFinite | A damped diagonal entry or an intermediate result was not finite; no factor stands |
+| DampedNonFinite | A damped diagonal entry or an intermediate result was not finite, [a damping the matrix's scale took out of range](#what-is-and-is-not-claimed) among them; no factor stands |
 | DampedBadDamping | μ was negative or not finite; no factor stands |
 | DampedNotReady | No matrix is set, or no damping; no factor stands |
 
@@ -102,6 +102,16 @@ a time.
 - **A damping given in the caller's units must be one the format holds.** For a matrix of
   entries near 2^600 the columns' squared lengths are not; `set-column-damping!` forms
   them in the divided units and has no such limit.
+- **A damping that the matrix's scale takes out of range is refused at the factor, not
+  where it was given.** The damping is carried in the divided matrix's units: a given
+  entry, or the floor, times the square of the power of two the matrix was divided by.
+  Under a small enough matrix that is not a number the format holds: a floor of 10⁻¹²
+  under entries near 2^-700, or a given entry of 10³⁰⁰ under entries near 2^-600.
+  `set-damping!` and `set-column-damping!` still answer `DampingSet`, because the damping
+  stays through later matrices and may be in range for the next, and `set-matrix!`
+  refuses nothing. `factor!` with μ positive then answers `DampedNonFinite`, and `step!`
+  `StepNoFactor`. With μ zero the damping is not used and the factor stands. The tests
+  hold both cases.
 - **`DampedNotPositive` is a finding about a computed pivot.** With μ zero on a matrix
   that is rank deficient only to rounding, the factorization can succeed with a pivot at
   rounding level and the step is then large and meaningless; the package does not judge
