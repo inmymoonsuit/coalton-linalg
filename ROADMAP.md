@@ -355,7 +355,8 @@ Kept on the roadmap for the library's own users, though that consumer has no use
    gradient falls monotonically, and reorthogonalization, each for a caller who needs it.
 6. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
-   **[Designed](docs/design-sparse-eigenvalues.md), in four pieces, and not built.**
+   **[Designed](docs/design-sparse-eigenvalues.md), in four pieces, read once by an independent
+   reviewer and corrected, and not built.**
 7. Continuous integration on the pinned toolchain.
 
 Dependent rows, first in the ranking before this one, is Batch 11, and sparse LU, second, is Batch 12.

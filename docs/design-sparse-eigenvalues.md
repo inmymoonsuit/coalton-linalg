@@ -1,6 +1,9 @@
 # Design: a few eigenvalues of a sparse symmetric matrix
 
-State: **design; nothing is built.** It answers the roadmap item "a few eigenvalues of a
+State: **design; nothing is built.** It was read once by an independent reviewer, on
+2026-11-23, who re-derived the theorem of *Several pairs* and the count and found them
+sound, and found one decision wrong and eight smaller things; all are worked in below
+and marked where the first version said otherwise. It answers the roadmap item "a few eigenvalues of a
 sparse symmetric matrix: Lanczos, shift-invert through the signed factorization, and the
 inertia as a count that none was missed". No consumer asked for it; it is for the
 library's own users, and it changes no existing call. Where it says "in exact arithmetic"
@@ -85,12 +88,21 @@ In floating point the three-term recurrence loses the orthogonality of the q as 
 a pair has converged, and then finds the same eigenvalue again, any number of times
 (Paige, 1971). A count of eigenvalues cannot be compared with pairs that may be copies.
 So the basis is kept, and what is left of `B q_j` after the two terms of the recurrence
-is made orthogonal to every earlier q, **twice**. One pass leaves, along the basis, the
-rounding of the pass, which is small against the vector before the pass and need not be
-small against what is left of it; the second pass starts from what is left. This is
-Kahan's rule as Parlett gives it. What the passes subtract is discarded, not added to
-T: with an orthonormal basis it is of the size of rounding, since
-`q_iᵀ B q_j = (B q_i)ᵀ q_j` and `B q_i` lies along q_{i−1}, q_i and q_{i+1}.
+is made orthogonal to every earlier q, by a rule in three branches:
+
+1. One pass. If what is left is at least half as long as what the pass was given, it is
+   taken: the pass removed little, and its own rounding is small beside what is left.
+2. If not, a second pass, on what the first left. If what that leaves is at least half
+   as long as what it was given, it is taken.
+3. If not, **the vector is in the span of the basis as far as the arithmetic can tell,
+   and the sequence has ended.** Each pass has taken away most of what it was given; what
+   is left is the rounding of rounding, and has no direction of its own.
+
+This is Kahan's rule as Parlett gives it, as far as memory serves: the book was not at
+hand, and the reviewer's recollection of it is the same. What the passes subtract is
+discarded, not added to T: with an orthonormal basis it is of the size of rounding, since
+`q_iᵀ B q_j = (B q_i)ᵀ q_j` and `B q_i` lies along q_{i−1}, q_i and q_{i+1}. The third
+branch is what keeps the basis orthonormal, and so keeps that sentence true.
 
 The cost is storage of the basis, n numbers a step, and work of 4 j n a step. That is
 the price of a count that means something, and it is why the step limit is the caller's
@@ -99,11 +111,27 @@ and is meant to be tens or a few hundreds, not thousands.
 ### Where the sequence ends
 
 If `β_j = 0` the span of q₁ … q_j is invariant: every eigenvalue of T_j is an eigenvalue
-of B exactly, and there is nothing to continue with. The iteration ends there. Only an
-exact zero ends it. A β_j that is at rounding level and not zero gives a q_{j+1} whose
-direction rounding chose; it is a unit vector orthogonal to the basis like any other,
-T is then nearly in two blocks, and the pairs are judged by their formed residuals as
-always. No threshold decides that a small norm is zero.
+of B exactly, and there is nothing to continue with. The iteration ends there, and it
+ends by the third branch above as well as by an exact zero.
+
+**The first version of this page ended the sequence on an exact zero alone, and that was
+wrong.** Its reason was that a remainder at rounding level, made a unit vector, is
+orthogonal to the basis like any other. That holds only while rounding can still leave
+the span. Once the basis spans all the start can reach, which is the whole space, a
+block of a reducible operator, or the complement of the pairs that stand, the remainder
+is inside the span and so is the vector made of it. The reviewer's case: the matrix with
+rows (2, 1, 0, 0), (1, 3, 1, 0), (0, 1, 5, 1), (0, 0, 1, 7) from the start (1, 2, 3, 4).
+After the fourth step the norm is 4.7 × 10⁻¹⁶ after the recurrence, 3.7 × 10⁻³² after one
+pass and 9.5 × 10⁻⁴⁸ after two. Made a unit vector, the fifth has inner products of order
+1 with the first four, and T₅ has an eigenvalue 3.1561 that the matrix does not have,
+with an estimate of 1.4 × 10⁻¹⁶ and a formed residual of 1.7. A call for the three
+smallest at a tolerance under rounding would have returned that value twice and left out
+two pairs it had held to rounding. No status would have been false, the residuals being
+formed; the pairs would have been inventions.
+
+The test is of the passes and not of the norm's size: no threshold beside the operator
+decides that a small norm is zero. A norm at rounding level that a pass leaves nearly
+whole is a direction, and is taken.
 
 ### One copy of a multiple eigenvalue
 
@@ -114,24 +142,51 @@ not promised. A second copy is found by a second run from another starting vecto
 orthogonal to the vectors already found; the interface has that call. Whether there is a
 second copy is what the count says.
 
+**In that second run the estimate has a second term.** Keeping every vector orthogonal to
+the vectors Y of the pairs that stand is the iteration on `(I − P) B (I − P)`, P the
+projector onto their span, and what is discarded along Y is not rounding: with
+`R = B Y − Y Θ` their residuals, and y orthogonal to Y,
+
+    B y − θ y = β_j s_j q_{j+1} + P B y,        P B y = Y (Yᵀ Y)⁻¹ Rᵀ y,
+
+so `‖B y − θ y‖² = (β_j s_j)² + ‖P B y‖²`, and the second term does not fall as j grows.
+It is at most `ρ_Y / √(1 − γ_Y)`, ρ_Y the root of the sum of the squared residual norms of
+the pairs that stand and γ_Y their Gram matrix's distance from the identity. The estimate
+of the second run carries that bound as its second term. So **a tolerance below the
+residuals of the pairs kept is not met by the estimate**, the run goes to its limit, and
+the residuals formed there say what was reached: pairs to be kept for a second run are
+first dropped down to those at least as good as the tolerance to be asked. The reviewer
+measured a standing residual of 1.3 × 10⁻³ leaving the second run's best pair at
+3.5 × 10⁻⁴ under an estimate, without the term, of 10⁻¹⁵.
+
 ### The small problem
 
 All eigenvalues of T_j are wanted at every step, with the last entries of their
 vectors; and at a confirmation the vectors whole. Both are one computation: shifted QR
-steps on the tridiagonal matrix, applied implicitly, each a sequence of plane rotations
-that removes one off-diagonal entry at the top and chases the entry it creates down and
-off the matrix, the shift being the eigenvalue of the trailing two-by-two block nearer
-its last entry (Wilkinson's). The rotations are also applied, from the right, to a
+steps on the tridiagonal matrix, applied implicitly. A step with shift μ is a sequence
+of plane rotations applied to T as similarities. The first is the rotation that would
+make the second entry of the first column of `T − μ I` zero; applied on both sides of T
+it removes nothing and creates one entry outside the three diagonals. Each rotation
+after it is the one that removes that entry, and moves it one place down, until it
+leaves the matrix. The shift is the eigenvalue of the trailing two-by-two block nearer
+its last entry (Wilkinson's): with a and b the block's diagonal entries, b the last, e
+its off-diagonal entry and `d = (a − b) / 2`, it is `b − e² / (d + sign(d) √(d² + e²))`,
+**and where the two diagonal entries are equal, so that both eigenvalues are equally
+near, it is the smaller, `b − |e|`.** A rule that fell back to the last entry itself there
+would leave the block `[[a, e], [e, a]]` where it stood for ever. The rotations are also applied, from the right, to a
 matrix C of j columns that the caller supplies, which then holds C Z, Z being the matrix
 of eigenvectors. With C the one row e_jᵀ that is the last entries, at a cost of j² for
 the whole decomposition; with C the identity it is Z, at j³.
 
 An off-diagonal entry is taken to be zero when its magnitude is at most 2⁻⁵³ times the
 sum of the magnitudes of its two diagonal neighbours, and the matrix then splits there.
+Between two diagonal entries that are both zero that test never passes for an entry that
+is not zero, and convergence there rests on the steps bringing it to zero exactly or on
+the bound.
 The number of steps is bounded, thirty for each eigenvalue, and reaching the bound is a
 named outcome. The method is that of Francis (1961) in the form used for symmetric
-tridiagonal matrices; it converges for every such matrix with this shift (Wilkinson,
-1968), and the bound is there because a proof about exact arithmetic is not a proof
+tridiagonal matrices; it converges for every such matrix with this shift, in exact
+arithmetic, and the bound is there because a proof about exact arithmetic is not a proof
 about this arithmetic.
 
 **Why not the dense routine that exists.** Jacobi rotations on T_j as a dense matrix
@@ -145,7 +200,11 @@ steps it did not need, each a product or a solve.
 For the eigenvalues of A nearest σ, iterate on `B = (A − σ I)⁻¹`: an eigenvalue λ of A is
 the eigenvalue `1 / (λ − σ)` of B with the same vector, so those nearest σ are the
 largest in magnitude, at the two ends of B's spectrum, where the iteration is best, and
-well separated there however close together they are in A.
+well separated there **from the rest of the spectrum**. They are not separated from one
+another by it: the gap between two of them, against their own size in B, is
+`|λ₁ − λ₂| / |λ₂ − σ|`, small whenever the two are closer to each other than to the shift,
+and the iteration resolves such a pair slowly. (The first version said "well separated
+however close together they are in A", which is false of the pair.)
 
 B is applied by `solve!` on the factor that `factor-signed!(symbolic, values, σ)` leaves:
 one factorization, then one solve a step. Nothing new is built for it. What has to be
@@ -203,9 +262,11 @@ The derivation, to be carried in full on the contract page:
    lie between `1/(1 + γ)` and `1/(1 − γ)`. So `|μ_i − λ_i(M)| ≤ (w + e) γ / (1 − γ)`.
 7. Adding the three distances with `γ ≤ 1/4` gives at most `2.66 ρ + 2.67 γ w`.
 
-The constant is not sharp: with exactly orthonormal vectors the same argument gives
-`√2 ρ`. With the vectors of this iteration γ is a small multiple of rounding and the
-term γ w is far below any residual.
+The constant is not sharp. With exactly orthonormal vectors the argument as written
+gives `2 ρ`; one more step gives `√2 ρ`, since then `R = Q (H − Θ) + Q⊥ C` with the two
+parts orthogonal, so `‖H − Θ‖_F² + ‖C‖_F² = ρ²` and the two distances add to at most `√2 ρ`.
+With the vectors of this iteration γ is a small multiple of rounding, the third branch
+of the orthogonalization seeing to it, and the term γ w is far below any residual.
 
 **What δ is formed from.** ρ and γ are computed in floating point. On an operator their
 rounding cannot be bounded, since nothing is known of the operator's own; there δ is a
@@ -237,7 +298,11 @@ eigenvalue within e of s it says nothing, and e is a number the call returns.
 For two numbers a < b with counts ν_a, ν_b and margins e_a, e_b, where
 `a + e_a ≤ b − e_b`, subtracting the two statements:
 
-    #{ eigenvalues of A in [a + e_a, b − e_b) }   ≤   ν_b − ν_a.
+    #{ eigenvalues of A in [a + e_a, b − e_b) }   ≤   ν_b − ν_a   ≤   #{ eigenvalues of A in [a − e_a, b + e_b) }.
+
+The second inequality, which the first version of this page did not draw, is from the
+other halves of the same two statements. The counts bound the inner interval from above
+and the outer one from below.
 
 ## None was missed
 
@@ -249,10 +314,14 @@ counted with multiplicity, and the i-th is within δ of the i-th θ.** Without a
 end, `k = ν_b` gives the same of everything below `b − e_b`; without an upper end,
 `k = n − ν_a` of everything from `a + e_a` up.
 
-When k is less than the count allows, nothing is proved missing: the count is an upper
-bound. The outcome is named for what it is, with the number that may be missing, and
-the remedy is a second run from another starting vector, kept orthogonal to the pairs
-that stand. When an interval crosses an end nothing is said, and the end is moved.
+When k is less than `ν_b − ν_a`, something is proved, of the outer interval: if no
+other pair's interval meets `[a − e_a, b + e_b)`, then **at least `ν_b − ν_a − k`
+eigenvalues of A in that outer interval have no pair.** They are proved unfound; they are
+not proved to lie in the inner interval, which the counts bound only from above. The
+outcome is named for that, with the number, and the remedy is a second run from another
+starting vector, kept orthogonal to the pairs that stand. When a pair's interval crosses
+an end of the inner interval, or meets the outer one without lying in the inner, nothing
+is said, and the end is moved.
 
 ## Interface
 
@@ -291,9 +360,12 @@ that stand. When an interval crosses an end nothing is said, and the end is move
   vectors, and the pairs it finds added to them. It is how a second copy of a multiple
   eigenvalue is found. It keeps every pair that stands, whatever its residual:
   `drop-above!(workspace, bound)` first removes those whose residual norm, as last
-  formed, is above a bound the caller gives. The values it adds are the operator's it
-  ran on; where the pairs kept were measured on another, `measure!` afterwards makes
-  them all one operator's.
+  formed, is above a bound the caller gives, and the bound to give is the tolerance about
+  to be asked, since the run's estimate cannot fall below the residuals of the pairs
+  kept. The values it adds are the operator's it ran on; where the pairs kept were
+  measured on another, `measure!` afterwards makes them all one operator's. **The δ that
+  stood is withdrawn when a pair is added**: it was of a subset. After `drop-above!` it
+  stands, being a bound for any subset of the pairs it was formed for.
 - `measure!(workspace, apply) -> MeasureStatus`: for the vectors that stand and this
   operator, which may be another than the one iterated on, replaces each value by the
   Rayleigh quotient and each residual norm by the one formed, one product a vector, and
@@ -303,45 +375,49 @@ that stand. When an interval crosses an end nothing is said, and the end is move
 - `pair-count`, `pair-values`, `pair-vectors`, `residual-norms`: the pairs that stand,
   ascending by value, the vectors as columns.
 - `orthogonality-defect`, `error-bound`: γ and δ as last formed; `error-bound` is −1
-  where γ is above 1/4 or nothing has been measured.
+  where γ is above 1/4, where nothing has been measured, and where a pair has been added
+  since it was formed.
 - `step-count`, `confirmation-count`, `estimates`: of the latest run; the estimates are
   `β_j |s_j|` for the wanted pairs at its last step, as they were.
-- `asymmetry-estimate`: the largest `|q_{j−1}ᵀ B q_j − β_{j−1}|` of the latest run, which
-  the first pass computes anyway. For a symmetric operator it is rounding. Far above
+- `asymmetry-estimate`: over the latest run, the largest of `|q_{j−1}ᵀ B q_j − β_{j−1}|`
+  and of `|q_iᵀ B q_j|` for every i below j − 1, all of which the first pass computes
+  anyway. For a symmetric operator and an orthonormal basis each is rounding. Far above
   rounding it says the operator is not symmetric on the vectors met; small, it proves
   nothing.
 - `certify-between(workspace, a, count-a, margin-a, b, count-b, margin-b)`,
   `certify-below(workspace, b, count-b, margin-b)` and
   `certify-above(workspace, a, count-a, margin-a) -> CompletenessStatus`: the comparison
   under *None was missed*, on the pairs and the δ that stand, with every sum and
-  difference rounded against the statement. Arithmetic only. `possibly-missing` is the
-  number the count allows beyond those found.
+  difference rounded against the statement. Arithmetic only. `unfound-count` is
+  `ν_b − ν_a − k` where that is positive: a proved lower bound on the eigenvalues of the
+  outer interval that have no pair.
 
 | LanczosStatus | Meaning |
 | --- | --- |
 | LanczosConverged | Every wanted pair has a residual, formed from the operator, within the tolerance |
-| LanczosEnded | The sequence ended, so that no more can come from this start, with fewer pairs than wanted or a residual above the tolerance |
+| LanczosEnded | The sequence ended, by a remainder of zero or by the third branch of the orthogonalization, so that no more can come from this start, with fewer pairs than wanted or a residual above the tolerance |
+| LanczosSmallProblem | The small problem did not converge within its bound, or an eigenvalue of it is too large for the format: the pairs that stood before the call stand and none is added |
 | LanczosLimit | The step limit was reached with a wanted residual above the tolerance |
 | LanczosNonFinite | The start, an image or an update was not finite |
 | LanczosOutOfRange | An image is too large, in the units of the first, to be squared |
-| LanczosBadStart | The start is zero, or is zero once made orthogonal to the pairs that stand |
-| LanczosBadCount | `wanted` is zero, or with the pairs that stand exceeds the pair limit, or exceeds the step limit |
+| LanczosBadStart | The start is zero, or is in the span of the pairs that stand as far as the arithmetic can tell, by the same three branches |
+| LanczosBadCount | `wanted` is zero, or with the pairs that stand exceeds the pair limit or the dimension, or exceeds the step limit |
 | LanczosBadSize | The start does not have the workspace's dimension |
 | LanczosBadTolerance | The tolerance is negative or not a number |
 
 After the first three the pairs found stand, each with its formed residual, and the
 status says only whether all are within the tolerance. The four `Bad` statuses are
-returned with nothing written. After `LanczosNonFinite` and `LanczosOutOfRange` the
-pairs that stood before the call stand and none is added.
+returned with nothing written. After `LanczosSmallProblem`, `LanczosNonFinite` and
+`LanczosOutOfRange` the pairs that stood before the call stand and none is added.
 
 | CompletenessStatus | Meaning |
 | --- | --- |
 | Complete | The interval holds exactly the pairs inside it, each eigenvalue within δ of its value |
-| PossiblyMissing | Fewer pairs are inside than the counts allow; `possibly-missing` says by how many |
-| Straddles | The interval of a pair crosses an end of the certified interval; nothing is said |
+| Unfound | Fewer pairs are inside than the counts give: at least `unfound-count` eigenvalues of the outer interval have no pair. Not proved to lie in the inner interval |
+| Straddles | The interval of a pair crosses an end of the inner interval, or meets the outer one without lying in the inner; nothing is said |
 | NoBound | No δ stands |
 | Inconsistent | More pairs are inside than the counts allow, which the two theorems exclude: the matrix measured is not the one counted, or the δ that stands is not an upper bound |
-| BadInput | A number is not finite, a margin or a count is negative, or the ends are out of order |
+| BadInput | A number is not finite, a margin is negative, the ends are out of order, or the count at the upper end is below the count at the lower |
 
 ### `coalton-linalg/sparse/inertia-count`
 
@@ -368,8 +444,9 @@ compared with pairs needs the pairs to be distinct by construction, and the boun
 needs γ small. Selective and partial schemes exist and are left out.
 
 **D2. No restart inside a call.** A run that reaches its step limit returns what it has.
-With shift and invert a run is expected to take tens of steps, which is not measured
-here; one that needs more wants its shift nearer. A caller continues with
+With shift and invert a run is expected to take tens of steps where the eigenvalues
+wanted are not closer to one another than to the shift, which is not measured here; one
+that needs more wants its shift nearer, or has such a pair. A caller continues with
 `drop-above!` and `lanczos-more!`, from a start of its own.
 
 **D3. Confirmation instead of trust**, as in [least squares on an operator](lsqr.md).
@@ -386,10 +463,14 @@ against a norm estimated on the way.
 random numbers or choose a fixed vector that some matrix defeats. The contract would
 say what a good one is.
 
-**D6. Only an exact zero ends the sequence.** No threshold on a small norm; see *Where
-the sequence ends*.
+**D6. The sequence ends on a remainder of zero, or on one that two passes of
+orthogonalization have each more than halved.** No threshold beside the operator's size
+decides that a small norm is zero; the test is of what the passes removed. The first
+version had an exact zero alone, and *Where the sequence ends* says what that would have
+returned.
 
-**D7. Everything iterated is near 1.** The start is divided by the power of two at its
+**D7. Everything iterated is near 1, where the first image has the operator's size.**
+Where it has not, an image far above the first is `LanczosOutOfRange`. The start is divided by the power of two at its
 largest entry before it is normalized, and every image by the power of two at the
 largest entry of the first. T is then in those units and the values are multiplied back
 once. The same operator multiplied by a power of two gives the same vectors, bit for
@@ -416,8 +497,9 @@ would say that only the δ of `measure-symmetric!` makes their statement a proof
 - **`Complete` is a theorem** when δ is from `measure-symmetric!` and the counts from
   `count-below!` on the same stored values: of the matrix as stored, in exact
   arithmetic, with every rounding on the way allowed for.
-- **`PossiblyMissing` is not a proof that one is missing**, and no number of runs proves
-  that none is. Only `Complete` says none is.
+- **`Unfound` proves pairs missing from the outer interval, and does not prove them in
+  the inner one.** No number of runs proves that none is missing. Only `Complete` says
+  none is.
 - **No rate and no step count is promised.** Eigenvalues inside the spectrum, or close
   together against its width, converge slowly without shift and invert.
 - **One copy of a multiple eigenvalue a run**, in exact arithmetic. A second copy within
@@ -442,7 +524,9 @@ For the small problem:
 2. **`T Z − Z Λ` and `Zᵀ Z − I`** exactly, in rational arithmetic, for C the identity; C
    a single row and C a general matrix against that Z.
 3. **Matrices made for it**: one that splits, by a zero and by an entry at the threshold
-   on either side; equal diagonals; Wilkinson's W₂₁⁺, whose top pairs agree to many
+   on either side; equal diagonals, the two-by-two `[[a, e], [e, a]]` among them, which a
+   shift without its tie rule leaves standing; a zero diagonal with an off-diagonal entry
+   that is not zero; Wilkinson's W₂₁⁺, whose top pairs agree to many
    digits; graded entries; order 1 and 2; a step bound of one, for the named outcome.
 
 For the iteration:
@@ -455,9 +539,15 @@ For the iteration:
 5. **An independent recomputation** in the test language, with the library's product,
    reproduces T, the estimates, the steps, the confirmations and the pairs bit for bit.
 6. **The orthogonality kept**, and what one pass alone would have left on a case made to
-   show it.
+   show it. **A run past what the start can reach**: the reviewer's four by four matrix
+   with a step limit of seven, a block-diagonal operator with the start inside one block,
+   and a second run whose start is in the span of the pairs that stand. Each must end by
+   name, with no value the operator does not have. On small matrices a step limit at or
+   above the reachable dimension is the ordinary case, and every exact test meets it.
 7. **A multiple eigenvalue**: one copy from a run, the second from `lanczos-more!`, and
-   the count naming the one missing in between.
+   the count naming the one unfound in between. **The second term of the second run's
+   estimate**: pairs kept with residuals above the tolerance asked, where the estimate
+   must not trigger, and the same after `drop-above!`, where it must.
 8. **Every status and every completeness outcome**, each by a case made for it, with
    nothing written where that is said.
 9. **A confirmation that fails**, by a product wrong in one step, as in least squares on
@@ -502,8 +592,16 @@ given in Parlett's *The Symmetric Eigenvalue Problem*, which also gives Kahan's 
 on a set of orthonormal vectors and their residuals. Shift and invert for this iteration
 is that of Ericsson and Ruhe (1980). The shifted QR step is that of Francis (1961), with
 Wilkinson's shift and his proof of convergence (1968); Trefethen and Bau, *Numerical
-Linear Algebra*, lectures 28 to 30 and 36, describe both methods. The theorems of Weyl,
-Sylvester and Ostrowski are used as stated. The extension of the bound to vectors that
+Linear Algebra*, lectures 28 to 30 and 36, describe the iteration and the shifted QR
+algorithm in its explicit form; the implicit form used here, and the conditions under
+which an entry is taken to be zero, are not in those lectures and are set out above. The
+theorems of Weyl, Sylvester and Ostrowski are used as stated. **Cited from memory, with
+no text at hand that carries them**, and so to be checked before they are relied on for
+more than a name: Ericsson and Ruhe (1980), Kahan's theorem (1967) and its place in
+Parlett's book, Kahan's rule for the passes as given there, Wilkinson's proof of
+convergence, and Ostrowski (1959). The reviewer could confirm Lanczos, Paige, Francis,
+Wilkinson's shift and its convergence, Parlett's book and Sylvester's theorem from the
+texts available, and recalls the others the same way. The extension of the bound to vectors that
 are only nearly orthonormal, the band about a count, the comparison of the two and the
 rules of confirmation, scaling and ending are worked out on this page, and the code
 would be written from it. No implementation and no listing would be opened.
