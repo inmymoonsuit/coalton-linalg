@@ -1,0 +1,66 @@
+(cl:defpackage #:coalton-linalg/examples/operator-least-squares
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:arr #:coalton/lisparray)
+                    (#:csc #:coalton-linalg/sparse/csc)
+                    (#:lsqr #:coalton-linalg/lsqr))
+  (:export #:fitted-line #:shortest-solution-on-an-operator))
+(cl:in-package #:coalton-linalg/examples/operator-least-squares)
+
+(coalton-toplevel
+  (declare fitted-line (Void -> arr:LispArray F64))
+  (define (fitted-line)
+    "Fit y = c0 + c1 t through (0,1), (1,3), (2,4), (3,8), which lie on no line; return [0.7, 2.2], or an empty vector if the call met no tolerance.
+
+Nothing is formed or factored: the method asks for products with the matrix and with its
+transpose. The points do not lie on a line, so the residual does not go to zero and is
+given a tolerance of zero; the call stops on the gradient A^T (y - A c), formed from the
+two products."
+    ;; A has rows [1, t]: four rows, two columns, eight stored entries in coordinate form.
+    (let rows = (arr:make 8 (the UFix 0)))
+    (let columns = (arr:make 8 (the UFix 0)))
+    (let entries = (arr:make 8 1.0d0))
+    (for ((i 0 (+ i 1))) :while (< i 4)
+      (arr:set! rows (* 2 i) i)
+      (arr:set! rows (+ (* 2 i) 1) i)
+      (arr:set! columns (+ (* 2 i) 1) 1))
+    ;; The second column holds t = 0, 1, 2, 3; the stored zero stays part of the pattern.
+    (arr:set! entries 1 0.0d0)
+    (arr:set! entries 5 2.0d0)
+    (arr:set! entries 7 3.0d0)
+    (let a = (csc:from-coo 4 2 rows columns entries csc:RejectDuplicates))
+    (let y = (arr:make 4 1.0d0))
+    (arr:set! y 1 3.0d0)
+    (arr:set! y 2 4.0d0)
+    (arr:set! y 3 8.0d0)
+    (let apply = (fn (v out) (csc:matvec! a v out)))
+    (let apply-transpose = (fn (u out) (csc:transpose-matvec! a u out)))
+    (let workspace = (lsqr:make-lsqr 4 2 20))
+    (let c = (arr:make 2 0.0d0))
+    (unless (== (lsqr:lsqr! workspace apply apply-transpose y c 0.0d0 0.0d0 1.0d-12) lsqr:LsqrGradientMet)
+      (return (arr:make 0 0.0d0)))
+    c)
+
+  (declare shortest-solution-on-an-operator (Void -> arr:LispArray F64))
+  (define (shortest-solution-on-an-operator)
+    "The solution of least norm of x0 + x1 = 3, x1 + x2 = 0; return [2, 1, -1], or an empty vector if the call met no tolerance.
+
+Two equations on three unknowns have a line of solutions. The method starts from zero and
+moves only within the range of the transpose, so the one it converges to is the shortest;
+that is why the call takes no starting vector."
+    (let rows = (arr:make 4 (the UFix 0)))
+    (let columns = (arr:make 4 (the UFix 0)))
+    (let entries = (arr:make 4 1.0d0))
+    (arr:set! rows 0 0) (arr:set! columns 0 0)
+    (arr:set! rows 1 0) (arr:set! columns 1 1)
+    (arr:set! rows 2 1) (arr:set! columns 2 1)
+    (arr:set! rows 3 1) (arr:set! columns 3 2)
+    (let j = (csc:from-coo 2 3 rows columns entries csc:RejectDuplicates))
+    (let apply = (fn (v out) (csc:matvec! j v out)))
+    (let apply-transpose = (fn (u out) (csc:transpose-matvec! j u out)))
+    (let workspace = (lsqr:make-lsqr 2 3 20))
+    (let b = (arr:make 2 0.0d0))
+    (arr:set! b 0 3.0d0)
+    (let x = (arr:make 3 0.0d0))
+    (unless (== (lsqr:lsqr! workspace apply apply-transpose b x 0.0d0 1.0d-12 0.0d0) lsqr:LsqrResidualMet)
+      (return (arr:make 0 0.0d0)))
+    x))

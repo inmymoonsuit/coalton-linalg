@@ -1,6 +1,6 @@
 (asdf:defsystem "coalton-linalg"
   :description "Numerical linear algebra in Coalton: sparse CSC operations, Gram products and SPD LDL factorization."
-  :version "0.20.0"
+  :version "0.21.0"
   :license "MIT"
   :defsystem-depends-on ("coalton-asdf")
   :depends-on ("coalton")
@@ -12,7 +12,7 @@
       (funcall compile)))
   :components ((:module "src" :serial t
                 :components ((:ct-file "errors") (:ct-file "float") (:ct-file "numeric") (:ct-file "refinement")
-                             (:ct-file "conjugate-gradient")
+                             (:ct-file "conjugate-gradient") (:ct-file "lsqr")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")
                                            (:ct-file "gram") (:ct-file "scaling") (:ct-file "augmented")
@@ -30,7 +30,8 @@
                                                 (:ct-file "augmented-minimum-norm") (:ct-file "scaled-solve")
                                                 (:ct-file "redundant-rows") (:ct-file "nonsymmetric-solve")
                                                 (:ct-file "matrix-free-solve") (:ct-file "damped-step")
-                                                (:ct-file "kept-rows") (:ct-file "rank-deficient-step")))))
+                                                (:ct-file "kept-rows") (:ct-file "rank-deficient-step")
+                                                (:ct-file "operator-least-squares")))))
 
 (asdf:defsystem "coalton-linalg/tests"
   :description "Interface, Coalton caller, and allocation regression tests."
@@ -56,6 +57,7 @@
                              (:ct-file "dependent-rows-callers") (:file "dependent-rows")
                              (:ct-file "lu-callers") (:file "lu")
                              (:ct-file "cg-callers") (:file "cg")
+                             (:ct-file "lsqr-callers") (:file "lsqr")
                              (:ct-file "damped-callers") (:file "damped")
                              (:ct-file "rank-deficient-callers") (:file "rank-deficient")
                              (:file "aliasing") (:file "scale-sweep")

@@ -2,6 +2,18 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.21.0 — 2026-11-23
+
+Added `coalton-linalg/lsqr`: `lsqr!(workspace, apply, apply-transpose, b, x, damping,
+residual-tolerance, gradient-tolerance)`, least squares on an operator of any shape and
+rank given as its product and its transpose's, with damping, returning without damping
+the minimizer of least norm; `make-lsqr` and the accessors `rows`, `columns`,
+`step-limit`, `step-count`, `confirmation-count`, `residual-norm`, `gradient-norm`,
+`recurrence-residual-norms`, `recurrence-gradient-norms` and `operator-norm-estimate`.
+[Contract](docs/lsqr.md) · [record](docs/batch20.md).
+
+No existing call changes.
+
 ## 0.20.0 — 2026-11-23
 
 Added to `coalton-linalg/sparse/rank-deficient`: `class-supports!(kept, cut)`, which

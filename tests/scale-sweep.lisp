@@ -490,6 +490,58 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                  (sweep-out "the residual" (cg:residual-norm workspace) 1 :kind :within :bound small)
                  (sweep-out "the first running norm" (aref (cg:recurrence-norms workspace) 0) 1)))))
 
+     ;; A right-hand side in the operator's range, (0, 17, 3, 2) from (1, -1, 2), asked for its residual:
+     ;; the gradient's scale is the square of this sweep's and is answered for by the two entries after.
+     (sweep-entry "least squares on an operator, the matrix and the right-hand side scaled together"
+         (lsqr:lsqr! lsqr:residual-norm lsqr:recurrence-residual-norms lsqr:operator-norm-estimate) 1d-9
+         ((-1020 -1000 :no-input) (-800 1000 :exact) (1020 1020 :no-input))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-tall) k)) (workspace (lsqr:make-lsqr 4 3 50)) (x (zeros 3)))
+           (sweep-need (lsqr:lsqr! workspace (rf-caller:matrix-operator matrix) (ls-caller:transpose-operator matrix)
+                                   (sweep-array (doubles 0d0 17d0 3d0 2d0) k) x 0d0
+                                   (sweep-number (scale-float 1d0 -30) k) 0d0)
+                       coalton-linalg/lsqr:LsqrResidualMet)
+           (list (sweep-out "x" x 0) (sweep-out "the steps" (lsqr:step-count workspace) 0)
+                 (sweep-out "the residual" (lsqr:residual-norm workspace) 1 :kind :within :bound (scale-float 1d0 -30))
+                 (sweep-out "the first running residual" (aref (lsqr:recurrence-residual-norms workspace) 0) 1)
+                 (sweep-out "the operator norm estimate" (lsqr:operator-norm-estimate workspace) 1)))))
+
+     (sweep-entry "damped least squares on an operator, the right-hand side scaled"
+         (lsqr:lsqr! lsqr:residual-norm lsqr:gradient-norm lsqr:recurrence-residual-norms
+          lsqr:recurrence-gradient-norms lsqr:operator-norm-estimate)
+         1d-9
+         ((-1020 -1000 :no-input) (-800 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-tall) 0)) (workspace (lsqr:make-lsqr 4 3 50)) (x (zeros 3)))
+           (sweep-need (lsqr:lsqr! workspace (rf-caller:matrix-operator matrix) (ls-caller:transpose-operator matrix)
+                                   (sweep-array b4 k) x 0.5d0 0d0 (sweep-number (scale-float 1d0 -30) k))
+                       coalton-linalg/lsqr:LsqrGradientMet)
+           (list (sweep-out "x" x 1) (sweep-out "the steps" (lsqr:step-count workspace) 0)
+                 (sweep-out "the residual" (lsqr:residual-norm workspace) 1)
+                 (sweep-out "the gradient" (lsqr:gradient-norm workspace) 1 :kind :within :bound (scale-float 1d0 -30))
+                 (sweep-out "the first running residual" (aref (lsqr:recurrence-residual-norms workspace) 0) 1)
+                 (sweep-out "the last running gradient"
+                            (aref (lsqr:recurrence-gradient-norms workspace) (lsqr:step-count workspace)) 1)
+                 (sweep-out "the operator norm estimate" (lsqr:operator-norm-estimate workspace) 0)))))
+
+     (sweep-entry "damped least squares on an operator, the matrix and the damping scaled"
+         (lsqr:lsqr! lsqr:residual-norm lsqr:gradient-norm lsqr:recurrence-residual-norms
+          lsqr:recurrence-gradient-norms lsqr:operator-norm-estimate)
+         1d-9
+         ((-1020 -1000 :no-input) (-800 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-tall) k)) (workspace (lsqr:make-lsqr 4 3 50)) (x (zeros 3)))
+           (sweep-need (lsqr:lsqr! workspace (rf-caller:matrix-operator matrix) (ls-caller:transpose-operator matrix)
+                                   b4 x (sweep-number 0.5d0 k) 0d0 (sweep-number (scale-float 1d0 -30) k))
+                       coalton-linalg/lsqr:LsqrGradientMet)
+           (list (sweep-out "x" x -1) (sweep-out "the steps" (lsqr:step-count workspace) 0)
+                 (sweep-out "the residual" (lsqr:residual-norm workspace) 0)
+                 (sweep-out "the gradient" (lsqr:gradient-norm workspace) 1 :kind :within :bound (scale-float 1d0 -30))
+                 (sweep-out "the first running residual" (aref (lsqr:recurrence-residual-norms workspace) 0) 0)
+                 (sweep-out "the last running gradient"
+                            (aref (lsqr:recurrence-gradient-norms workspace) (lsqr:step-count workspace)) 1)
+                 (sweep-out "the operator norm estimate" (lsqr:operator-norm-estimate workspace) 1)))))
+
      (sweep-entry "the damped step under the columns' own damping, the matrix scaled"
          (dm:set-column-damping! dm:factor! dm:step!) 1d-15
          ((-1020 1020 :exact))

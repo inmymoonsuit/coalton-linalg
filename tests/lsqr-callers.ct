@@ -1,0 +1,58 @@
+(cl:defpackage #:coalton-linalg/tests/lsqr-callers
+  (:use #:coalton #:coalton-prelude)
+  (:local-nicknames (#:lsqr #:coalton-linalg/lsqr) (#:csc #:coalton-linalg/sparse/csc)
+                    (#:arr #:coalton/lisparray) (#:cell #:coalton/cell))
+  (:export #:lsqr-code #:transpose-operator #:scaled-operator #:lsqr-loop))
+(cl:in-package #:coalton-linalg/tests/lsqr-callers)
+(cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
+
+(coalton-toplevel
+  (declare status-code (lsqr:LsqrStatus -> UFix))
+  (define (status-code status)
+    (match status
+      ((lsqr:LsqrResidualMet) 0)
+      ((lsqr:LsqrGradientMet) 1)
+      ((lsqr:LsqrExhausted) 2)
+      ((lsqr:LsqrLimit) 3)
+      ((lsqr:LsqrNonFinite) 4)
+      ((lsqr:LsqrOutOfRange) 5)
+      ((lsqr:LsqrBadSize) 6)
+      ((lsqr:LsqrBadTolerance) 7)
+      ((lsqr:LsqrBadDamping) 8)))
+
+  (declare lsqr-code (lsqr:LsqrWorkspace
+                      * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                      * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                      * arr:LispArray F64 * arr:LispArray F64 * F64 * F64 * F64 -> UFix))
+  (define (lsqr-code workspace apply apply-transpose b x damping residual-tolerance gradient-tolerance)
+    "Exhaustively matched outcome: residual met 0, gradient met 1, exhausted 2, limit 3, non-finite 4, out of range 5, size 6, tolerance 7, damping 8."
+    (status-code (lsqr:lsqr! workspace apply apply-transpose b x damping residual-tolerance gradient-tolerance)))
+
+  (declare transpose-operator (csc:Matrix -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (transpose-operator matrix)
+    "u -> A^T u for a stored matrix."
+    (fn (u out) (csc:transpose-matvec! matrix u out)))
+
+  (declare scaled-operator ((arr:LispArray F64 * arr:LispArray F64 -> Void) * F64
+                            -> (arr:LispArray F64 * arr:LispArray F64 -> Void)))
+  (define (scaled-operator apply factor)
+    "The given operator with every image multiplied by factor."
+    (fn (v out)
+      (apply v out)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length out))
+        (arr:set! out i (* factor (arr:aref out i))))))
+
+  (declare lsqr-loop (lsqr:LsqrWorkspace
+                      * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                      * (arr:LispArray F64 * arr:LispArray F64 -> Void)
+                      * arr:LispArray F64 * arr:LispArray F64 * F64 * F64 * F64 * UFix -> UFix))
+  (define (lsqr-loop workspace apply apply-transpose b x damping residual-tolerance gradient-tolerance rounds)
+    "A real external caller: solve the same problem each round; count the rounds that met neither tolerance or reported nothing."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((round 0 (+ round 1))) :while (< round rounds)
+      (let status = (lsqr:lsqr! workspace apply apply-transpose b x damping residual-tolerance gradient-tolerance))
+      (unless (or (== status lsqr:LsqrResidualMet) (== status lsqr:LsqrGradientMet))
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (and (>= (lsqr:residual-norm workspace) 0.0d0) (>= (lsqr:gradient-norm workspace) 0.0d0))
+        (cell:write! failures (+ (cell:read failures) 1))))
+    (cell:read failures)))

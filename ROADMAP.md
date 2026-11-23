@@ -303,6 +303,18 @@ right null space needed no code: the package applied to the transpose is a basis
 it, with a proved bound for each vector, and is now documented and tested as one.
 [The contract](docs/rank-deficient.md#dependent-sets) and [the record](docs/batch19.md).
 
+### Batch 20: least squares on an operator
+
+**Completed.** `coalton-linalg/lsqr`: the minimizer of `‖b − A x‖² + λ² ‖x‖²` for a matrix
+of any shape and rank that is given as two functions, its product and its transpose's,
+and with no damping the minimizer of least norm. It is the bidiagonalization method,
+which never forms `Aᵀ A`. Both tolerances are tested on norms formed from the operators,
+not on the method's running estimates, and the same problem at another power of two is
+solved bit for bit the same. It was built for the library's own users; no consumer asked
+for it. [The design](docs/design-iterative-least-squares.md) came first,
+[the contract](docs/lsqr.md) says what is claimed and [the record](docs/batch20.md) has
+the exact references.
+
 ### Next
 
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
@@ -330,8 +342,9 @@ the library, agreed with it in advance, plan before code:
 
 Kept on the roadmap for the library's own users, though that consumer has no use for it:
 
-5. Iterative least squares and minimum norm on an operator, with damping. Conjugate
-   gradients for the definite case is Batch 13.
+5. Iterative least squares and minimum norm on an operator, with damping: **Batch 20.**
+   Conjugate gradients for the definite case is Batch 13. Left: the variant whose
+   gradient falls monotonically, and reorthogonalization, each for a caller who needs it.
 6. A few eigenvalues of a sparse symmetric matrix: Lanczos, shift-invert through the
    signed factorization, and the inertia as a count that none was missed.
 7. Continuous integration on the pinned toolchain.

@@ -94,6 +94,28 @@ right-hand side on entry. A call allocates nothing.
 The operator must be symmetric positive definite and the tolerance is absolute, in the
 2-norm. The right-hand side and solution may share one array. A call allocates nothing.
 
+## coalton-linalg/lsqr
+
+[Contract](lsqr.md) · [Source](../src/lsqr.ct)
+
+| Export | Type or role |
+| --- | --- |
+| `LsqrWorkspace` | Workspace and latest-call history; obtain from make-lsqr |
+| `make-lsqr` | UFix * UFix * UFix -> LsqrWorkspace; rows, columns, step limit |
+| `rows`, `columns`, `step-limit` | LsqrWorkspace -> UFix |
+| `LsqrStatus` | Outcome type of lsqr! |
+| `LsqrResidualMet`, `LsqrGradientMet`, `LsqrExhausted`, `LsqrLimit`, `LsqrNonFinite`, `LsqrOutOfRange`, `LsqrBadSize`, `LsqrBadTolerance`, `LsqrBadDamping` | LsqrStatus values |
+| `lsqr!` | LsqrWorkspace * (V * V -> Void) * (V * V -> Void) * V * V * F64 * F64 * F64 -> LsqrStatus; apply, apply-transpose, right-hand side, solution, damping, residual tolerance, gradient tolerance |
+| `step-count`, `confirmation-count` | LsqrWorkspace -> UFix; of the latest call |
+| `residual-norm`, `gradient-norm` | LsqrWorkspace -> F64; 2-norms of b − A x and of Aᵀ(b − A x) − damping² x for the vector returned, formed from the operators, otherwise -1 |
+| `recurrence-residual-norms`, `recurrence-gradient-norms` | LsqrWorkspace -> V; the latest call's running estimates of the two |
+| `operator-norm-estimate` | LsqrWorkspace -> F64; the Frobenius norm of the bidiagonal matrix reached, an estimate only; -1 where no product was made |
+
+The operator may be of any shape and rank. The solution array is written only: the method
+starts from zero, and without damping returns the minimizer of least norm. The tolerances
+are absolute, in the 2-norm. The right-hand side and solution may share one array. A call
+allocates nothing.
+
 ## coalton-linalg/sparse/gram
 
 [Contract](gram.md) · [Source](../src/sparse/gram.ct)

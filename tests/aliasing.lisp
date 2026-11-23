@@ -213,6 +213,11 @@ expected of each pair that can be one array. An entry of (key :exempt reason) ha
              (lambda (a) (cg-caller:pcg-code (cg:make-cg 4 50) (rf-caller:matrix-operator definite)
                                              (cg-caller:scaled-preconditioner 0.5d0) (first a) (second a) 1d-12))
              '(((0 1) :same)))
+       (list "coalton-linalg/lsqr:lsqr!" #'right-hand-side
+             (lambda (a) (ls-caller:lsqr-code (lsqr:make-lsqr 4 4 50) (rf-caller:matrix-operator unsymmetric)
+                                              (ls-caller:transpose-operator unsymmetric) (first a) (second a)
+                                              0d0 1d-9 0d0))
+             '(((0 1) :same)))
        (list "coalton-linalg/refinement:refine!" #'right-hand-side
              (lambda (a)
                (multiple-value-bind (symbolic values) (alias-arrow-symbolic)

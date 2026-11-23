@@ -56,7 +56,7 @@ read the right entries by accident.
 
 | Call | Pairs that may be one array | Pairs that are refused |
 | --- | --- | --- |
-| `cg!`, `pcg!`, `refine!` | `b` and `x` | |
+| `cg!`, `pcg!`, `refine!`, `lsqr!` | `b` and `x` | |
 | `solve!` of the sparse, dense symmetric, orthogonal and LU factorizations; `solve-cholesky!`, `solve-skipping!`, `solve-transpose!` | the right-hand side and the output | |
 | `matvec!`, `transpose-matvec!` | | the vector and the output |
 | `from-csc`, `from-coo`, `permute` | the two index arrays, which are only read | |
@@ -88,7 +88,7 @@ of a problem by a power of two changes no significand, so every output has one
 right value at every scale: its value at scale 1 times a known power of the
 factor. A factor's `L` does not move, its `D` moves with the matrix, a solution
 of a system whose two sides move together does not move, a Gram matrix moves
-with the square. Each of thirty-four entries runs one small problem at twenty-five scales from
+with the square. Each of thirty-seven entries runs one small problem at twenty-five scales from
 2^-1020 to 2^1020 and states that power for each output. Every run is put in
 one class:
 
@@ -131,6 +131,8 @@ Exponents are of two. "Everywhere" is the whole sweep, 2^-1020 to 2^1020.
 | Sparse LU, solves, growth and bound | everywhere; the bound `:looser` at both ends, infinite at 2^1020 | |
 | Refinement | -800 up | no input below |
 | `cg!`, right-hand side scaled; `cg!`, matrix and right-hand side scaled together; `pcg!`, matrix, preconditioner and right-hand side scaled together | -800 up | no input below |
+| `lsqr!`, damped, right-hand side scaled; `lsqr!`, damped, matrix and damping scaled | -800 up | no input below |
+| `lsqr!`, matrix and right-hand side scaled together | -800 to 1000 | no input below, nor at 2^1020, where its right-hand side cannot be held |
 | Dependent rows, threshold 2^-20 of the entries | -1000 up; a bound `:looser` at -1000, and infinite at 2^1020 where it cannot be held | no input at -1020 |
 | Dependent rows, threshold zero | everywhere | |
 | Damped least squares: the step with a given damping, with the columns' own, and with the residual scaled alone | everywhere | |

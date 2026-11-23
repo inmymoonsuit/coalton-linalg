@@ -94,6 +94,23 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 20: least squares on an operator
+
+The bidiagonalization is that of Golub and Kahan (1965), and its use for least squares,
+with damping carried by a second reflection a step, is the method Paige and Saunders
+published in 1982. Both are known here from the literature. The recurrences, the two
+identities that give the gradient and the residual from the scalars, and the properties
+the contract states were derived in [the design](design-iterative-least-squares.md)
+before any code, from the two relations that define the sequences, and the code was
+written from that page. No paper was opened while it was written, and no implementation
+and no listing at any time. Forming both norms from the operators before a tolerance is
+called met, the rule for the estimate after a confirmation that failed, the divisions by
+powers of two, the lengths formed without a squared norm, and the statuses were chosen
+here. That the method is more reliable than conjugate gradients on the normal equations
+is the published comparison's finding, cited as such and not measured here. The
+reference values in the tests are exact minimizers, residuals and gradients in rational
+arithmetic, and the iteration is recomputed independently and compared bit for bit.
+
 ## Batch 19: dependent sets, and the right null space
 
 No source was opened. That the vectors of the rows left out are the fundamental circuits
