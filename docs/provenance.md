@@ -94,6 +94,20 @@ any form; no numerical-library implementation and no listing in a real programmi
 language is consulted; and each batch names what was read. Every batch before this
 ruling was written without opening a pseudocode box, as its section says.
 
+## Batch 19: dependent sets, and the right null space
+
+No source was opened. That the vectors of the rows left out are the fundamental circuits
+of those rows, and that merging rows whose circuits overlap gives the components of the
+rows as a matroid whatever independent set was kept, is textbook matroid theory, stated
+in the design and checked there in exact arithmetic on four hundred matrices before any
+code. Joining sets through a forest of parents with the paths shortened is the classical
+union-find structure, written from its description. The bound on a stored multiplier's
+distance from the exact one was worked out here, in its second form while building: the
+first, in the design, carried the square of one over the bound proved on the kept rows
+and lost an entry on a consumer's pattern. The cut relative to each vector's largest
+entry is the consumer's own rule, taken as a statement of what to compute. The reference
+values in the tests are exact multipliers and exact components in rational arithmetic.
+
 ## Batch 18d: a refresh on a vector's own rows, and a factor kept
 
 No source was opened. Conjugate gradients with a preconditioner is the classical

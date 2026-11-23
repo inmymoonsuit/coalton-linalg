@@ -601,6 +601,21 @@ function of the exponent that returns the outputs. The run's source is kept, to 
                               (sweep-prefix (rd:multiplier-values kept) (rd:multiplier-count kept 0)) 0)
                    (sweep-out "its gap bound" (rd:gap-bound kept) 1 :kind :bound))))))
 
+     (sweep-entry "supports classed and dependent sets labelled" (rd:class-supports! rd:multiplier-error-bound) 1d-15
+         ((-1020 -1020 :no-input) (-1000 1020 :exact))
+       (lambda (k)
+         (let* ((matrix (sweep-stored (sweep-dependent) k)) (kept (rd:analyze matrix))
+                (floor (sweep-number (scale-float 1d0 -20) k)))
+           (sweep-need (rd:find-kept-rows! kept matrix floor 1d-12) coalton-linalg/sparse/rank-deficient:FindFound)
+           (sweep-need (rd:certify! kept floor floor) coalton-linalg/sparse/rank-deficient:Certified)
+           ;; The cut is relative to each vector's own largest entry, and does not move with the scale.
+           (sweep-need (rd:class-supports! kept 1d-6) coalton-linalg/sparse/rank-deficient:SupportsClassed)
+           (list (sweep-out "how many dependent sets" (rd:dependent-set-count kept) 0)
+                 (sweep-out "the labels" (map '(simple-array double-float (*)) (lambda (label) (coerce label 'double-float))
+                                              (rd:dependent-sets kept))
+                            0)
+                 (sweep-out "the bound on the multipliers' error" (rd:multiplier-error-bound kept 0) 0 :kind :bound)))))
+
      (sweep-entry "bounds on the largest singular value" (rd:largest-singular-bounds!) 1d-15
          ((-1020 1020 :exact))
        (lambda (k)

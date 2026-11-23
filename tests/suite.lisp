@@ -62,6 +62,8 @@
     (assert (and (= 3 (length refreshed)) (= 1d0 (aref refreshed 0)) (<= 0d0 (aref refreshed 1) 1d-8)
                  (<= 1d-6 (aref refreshed 2) 1d0))
             () "The kept-rows refresh example gave ~S." refreshed))
+  (assert (equalp #(0 0 0) (coalton-linalg/examples/kept-rows:kept-sets)) ()
+          "The kept-rows example's dependent sets are ~S." (coalton-linalg/examples/kept-rows:kept-sets))
   (let ((step (coalton-linalg/examples/rank-deficient-step:redundant-step)))
     (assert (and (= 2 (length step)) (<= (abs (+ 2d0 (aref step 0))) 1d-14) (<= 0d0 (aref step 1) 1d-12))
             () "The rank-deficient step example gave ~S." step))

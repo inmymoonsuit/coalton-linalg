@@ -3,8 +3,8 @@
 State: a design, reviewed four times by the consumer that asked for it. The measurement its
 first review asked for is done and is reported below; it changed the design in four
 places, each marked. The certificate, the kept vectors, their refresh and the step are
-built, as [kept rows, the certificate and the step](rank-deficient.md); the supports and
-the bases are not. It follows
+built, as [kept rows, the certificate and the step](rank-deficient.md), and so are the
+supports and the sparse basis; the orthonormal basis is not. It follows
 [dependent rows](dependent-rows.md), whose proofs it reuses.
 
 ## What is asked for
@@ -191,7 +191,11 @@ rows are independent. The computed ones `ŵ_t` differ by
     ŵ_t − w_t = g (J_S J_Sᵀ)⁻¹ ,      g = (a_t − ŵ_t J_S) J_Sᵀ ,
 
 so `‖ŵ_t − w_t‖₂ ≤ ‖g‖₂ / τ²`, with `‖g‖` bounded from the computed product as a product
-bound is. Call that δ. Against two thresholds the caller gives, `lo < hi`, an entry is
+bound is. Call that δ. **As built, δ is tighter and needs no g**: the kept rows being
+independent, `ŵ_t = ŵ_t J_S J_S⁺`, so `ŵ_t − w_t = (ŵ_t J_S − a_t) J_S⁺` and δ is the
+vector's proved residual bound over τ, one power of it. The form above lost an entry
+on one of the consumer's patterns and this one classes it; see the last list of this
+note. Against two thresholds the caller gives, `lo < hi`, an entry is
 
 - **clearly not zero** when `|ŵ| − δ > hi`,
 - **clearly zero** when `|ŵ| + δ < lo`,
@@ -572,7 +576,20 @@ In the sixth, after the refresh was measured along the consumer's drags:
 - **How far a replaced vector is corrected is the caller's argument**, and the step's
   bound is readable in its terms, so that a caller can see what tightening would buy.
 
+In the seventh, on the supports and the bases:
+
+- **One relative cut, not two thresholds.** The consumer's own reader cuts at a fraction
+  of each vector's largest entry, its own 1 included, so the cut is that fraction and
+  the band about it is δ on either side; the units of rows cancel within a vector.
+- **δ is the residual bound over τ**, as said above, and not the form with τ squared.
+- **Labels, not lists and not multipliers**, are what is returned: the reader merges
+  supports into sets and reads nothing else.
+- **The sparse basis of the right null space is the package on the transpose**, and
+  needed no code. The orthonormal one is deferred until a caller that projects onto it
+  exists; its design above stands.
+
 **Built so far:** the search with kept vectors, the reproof, the refresh, the certificate,
 the bounds on the largest singular value, and the step with its two bounds, as
-[kept rows, the certificate and the step](rank-deficient.md). The option of the kept
-rows alone, the supports and the bases are not built.
+[kept rows, the certificate and the step](rank-deficient.md), with the supports, the
+dependent sets and the sparse basis of the right null space. The option of the kept
+rows alone and the orthonormal basis are not built.

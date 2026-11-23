@@ -2,6 +2,21 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.20.0 — 2026-11-23
+
+Added to `coalton-linalg/sparse/rank-deficient`: `class-supports!(kept, cut)`, which
+classes each multiplier of each row left out as in its dependency or out of it, against
+a cut relative to the vector's largest entry and by a proved bound on the multiplier's
+error, refusing where it cannot; and labels every row with its dependent set. With it
+`dependent-sets`, `dependent-set-count`, `support-flags`, `multiplier-error-bound`,
+`supports-classed?`, `undecided-vector` and `undecided-entry`.
+[Contract](docs/rank-deficient.md#dependent-sets) · [record](docs/batch19.md).
+
+Documented and tested, with no change of code: the package applied to a matrix's
+transpose as [a basis of its right null space](docs/rank-deficient.md#the-right-null-space).
+
+No result of 0.19.0 changes.
+
 ## 0.19.0 — 2026-11-23
 
 Changed, in `coalton-linalg/sparse/rank-deficient`:

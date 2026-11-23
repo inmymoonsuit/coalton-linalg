@@ -293,6 +293,16 @@ from 12 to 15 ms to under 2. The refresh's stop target became an argument, and t
 step's bound can be read in its terms. [The record](docs/batch18d.md) has the times and
 the terms.
 
+### Batch 19: dependent sets, and the right null space
+
+**Completed.** `class-supports!` in `coalton-linalg/sparse/rank-deficient`: each
+multiplier of each redundant row classed as in its dependency or out of it against one
+relative cut, by a proved bound on its distance from the exact one, or the call refuses;
+and every row labelled with the set of rows it depends on and is depended on by. The
+right null space needed no code: the package applied to the transpose is a basis of
+it, with a proved bound for each vector, and is now documented and tested as one.
+[The contract](docs/rank-deficient.md#dependent-sets) and [the record](docs/batch19.md).
+
 ### Next
 
 From 2026-11-22 the order is that of a consumer that is moving a nonlinear solver onto
@@ -310,7 +320,9 @@ the library, agreed with it in advance, plan before code:
    The same note covers
    certified bases: the supports of left null vectors, and a right null-space basis with
    a proved residual.
-2. Those bases, as their own batch after the step.
+2. Those bases: the dependent sets and the sparse basis of the right null space are
+   Batch 19. Left: the orthonormal basis, designed, and wanted only once a caller
+   that projects onto it exists.
 3. Least squares with bounds on linear functionals of the unknown, by an active set whose
    rows' rank is proved or refused.
 4. Supernodal or multifrontal factorization, only after measurements say where real

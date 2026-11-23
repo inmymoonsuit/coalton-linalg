@@ -29,7 +29,10 @@
            #:RefreshFactorRefused #:RefreshNonFinite
            #:refresh! #:refresh-to! #:default-refresh-fraction #:refreshed-count
            #:step-norm-term #:step-outside-term
-           #:system-iterations #:system-factor-count #:system-iteration-limit))
+           #:system-iterations #:system-factor-count #:system-iteration-limit
+           #:SupportStatus #:SupportsClassed #:SupportsNoCertificate #:SupportsBadCut #:SupportsUndecided
+           #:class-supports! #:supports-classed? #:dependent-sets #:dependent-set-count #:support-flags
+           #:multiplier-error-bound #:undecided-vector #:undecided-entry))
 (cl:in-package #:coalton-linalg/sparse/rank-deficient)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -108,7 +111,12 @@
     (step (cell:Cell (Optional StepStorage)))
     (spare-starts (arr:LispArray UFix))
     (spare-rows (cell:Cell (arr:LispArray UFix)))
-    (spare-values (cell:Cell (arr:LispArray F64))))
+    (spare-values (cell:Cell (arr:LispArray F64)))
+    (set-labels (arr:LispArray UFix))
+    (parents (arr:LispArray UFix))
+    (in-flags (cell:Cell (arr:LispArray UFix)))
+    (deltas (arr:LispArray F64))
+    (notes (arr:LispArray UFix)))
 
   (repr :transparent)
   (define-type KeptRows
@@ -178,7 +186,10 @@
   ;; The state array: [0] 1 when a kept set and its vectors stand; [1] the rows left out; [2] 1
   ;; when the bounds stand for the values held; [3] 1 when a certificate stands; [4] 1 when the
   ;; factor the symbolic analysis holds is the solve's, for the standing certificate; [5] 1 when a
-  ;; step stands.
+  ;; step stands; [6] 1 when the supports stand classed.
+  ;;
+  ;; The notes: [0] the vector and [1] the entry the latest classing could not decide, the row
+  ;; count and 0 when there was none; [2] the dependent sets it found.
   ;;
   ;; A step's marks: [0] the system of the rows left out: 0 it could not be factored, 1 its factor
   ;; stands, 2 there is none to solve, 4 its factor stands for the vectors of an earlier call and
@@ -225,14 +236,16 @@
     (arr:set! scale 3 -1.0d0)
     (MkKeptRows
      (KeptStorage m n maximum-entries analysis column-starts row-indices row-starts row-columns row-positions
-                  (arr:make entry-total 0.0d0) scale (arr:make 6 (the UFix 0))
+                  (arr:make entry-total 0.0d0) scale (arr:make 7 (the UFix 0))
                   (arr:make m (the UFix 1)) (arr:make (+ m 1) (the UFix 0))
                   (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0))
                   (arr:make m -1.0d0) (arr:make m 0.0d0)
                   (arr:make n 0.0d0) (arr:make n 0.0d0) (arr:make n (the UFix 0)) (arr:make n (the UFix 0))
                   (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0)) (cell:new (arr:make 0 0.0d0))
                   (cell:new None) (cell:new None) (cell:new None)
-                  (arr:make (+ m 1) (the UFix 0)) (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0)))))
+                  (arr:make (+ m 1) (the UFix 0)) (cell:new (arr:make 0 (the UFix 0))) (cell:new (arr:make 0 0.0d0))
+                  (arr:make m (the UFix 0)) (arr:make m (the UFix 0)) (cell:new (arr:make 0 (the UFix 0)))
+                  (arr:make m -1.0d0) (arr:make 3 (the UFix 0)))))
 
   (declare analyze (csc:Matrix -> KeptRows))
   (define (analyze matrix)
@@ -359,9 +372,10 @@
   (inline)
   (declare withdraw-step! (arr:LispArray UFix -> Void))
   (define (withdraw-step! st)
-    "No solve factor and no step stand: a search, a reproof and a certificate each factor over the one, and change what the other was of."
+    "No solve factor, no step and no classed supports stand: a search, a reproof, a refresh and a certificate each factor over the first, and change what the others were of."
     (arr:set! st 4 0)
-    (arr:set! st 5 0))
+    (arr:set! st 5 0)
+    (arr:set! st 6 0))
 
   (declare take-values! (KeptStorage * csc:Matrix -> Void))
   (define (take-values! s matrix)
@@ -1844,4 +1858,155 @@
     (let s = (storage kept))
     (match (cell:read (.step s))
       ((Some ws) (if (== (arr:aref (.state s) 0) 1) (arr:aref (.marks ws) 2) 0))
-      ((None) 0))))
+      ((None) 0)))
+
+  ;;; Supports and dependent sets. See docs/rank-deficient.md, Dependent sets.
+
+  (derive Eq)
+  (repr :enum)
+  (define-type SupportStatus
+    "Outcome of classing every multiplier as in or out of its row's dependency."
+    SupportsClassed
+    "Every multiplier is classed and every row has its label."
+    SupportsNoCertificate
+    "No certificate stands for the values held; nothing was classed."
+    SupportsBadCut
+    "The cut was not above 0 and below 1; nothing was classed."
+    SupportsUndecided
+    "A multiplier could not be put on either side of the cut; undecided-vector and undecided-entry say which. Nothing stands.")
+
+  (declare set-root (arr:LispArray UFix * UFix -> UFix))
+  (define (set-root parents row)
+    "The representative of a row's set, shortening the path to it."
+    (let x = (cell:new row))
+    (for () :while (/= (arr:aref parents (cell:read x)) (cell:read x))
+      (let above = (arr:aref parents (arr:aref parents (cell:read x))))
+      (arr:set! parents (cell:read x) above)
+      (cell:write! x above))
+    (cell:read x))
+
+  (declare class-supports! (KeptRows * F64 -> SupportStatus))
+  (define (class-supports! kept cut)
+    "For the matrix the standing certificate is of: class each multiplier of each row left out as in its dependency or out of it, against cut times the vector's largest entry, its own 1 included, and label every row with its dependent set. A multiplier is in when it exceeds the cut by more than a proved bound on its distance from the exact one, out when it is below by more, and otherwise the call refuses. Needs a standing certificate; allocates only while the kept vectors have grown since the last call. See docs/rank-deficient.md."
+    (let s = (storage kept))
+    (let st = (.state s))
+    (let notes = (.notes s))
+    (let m = (.rows s))
+    (arr:set! st 6 0)
+    (arr:set! notes 0 m)
+    (arr:set! notes 1 0)
+    (arr:set! notes 2 0)
+    (unless (== (arr:aref st 3) 1) (return SupportsNoCertificate))
+    (unless (and (> cut 0.0d0) (< cut 1.0d0)) (return SupportsBadCut))
+    (let d = (arr:aref st 1))
+    (let starts = (.vector-starts s))
+    (let vector-rows = (cell:read (.vector-rows s)))
+    (let vector-values = (cell:read (.vector-values s)))
+    (let left = (rows:left-out-rows (.analysis s)))
+    (let bounds = (.bounds s))
+    (let deltas = (.deltas s))
+    (let tau = (arr:aref (.scale s) 4))
+    ;; Room for a flag at every stored entry.
+    (let held = (arr:aref starts d))
+    (when (< (arr:length (cell:read (.in-flags s))) held)
+      (cell:write! (.in-flags s) (arr:make held (the UFix 0))))
+    (let flags = (cell:read (.in-flags s)))
+    (let margin = (+ 1.0d0 (* 64.0d0 fp:unit-roundoff)))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (let from = (arr:aref starts p))
+      (let to = (arr:aref starts (+ p 1)))
+      ;; The distance of the stored multipliers from the exact ones, in the 2-norm. With w the
+      ;; exact ones, a = w J_S, and the stored ones are themselves times J_S J_S^+, the kept rows
+      ;; being independent: so the difference is the vector's residual times J_S^+, at most its
+      ;; bound over the bound proved on the kept rows.
+      (let delta = (* margin (/ (arr:aref bounds p) tau)))
+      (arr:set! deltas p delta)
+      (let top = (cell:new 1.0d0))
+      (for ((e from (+ e 1))) :while (< e to)
+        (when (> (abs (arr:aref vector-values e)) (cell:read top)) (cell:write! top (abs (arr:aref vector-values e)))))
+      (let lowest = (if (> (- (cell:read top) delta) 1.0d0) (- (cell:read top) delta) 1.0d0))
+      (let highest = (+ (cell:read top) delta))
+      (let in-cut = (* margin (* cut highest)))
+      (let out-cut = (/ (* cut lowest) margin))
+      ;; A kept row the vector does not hold has a stored multiplier of zero.
+      (unless (and (inline (math:finite? delta)) (< delta out-cut))
+        (arr:set! notes 0 p)
+        (arr:set! notes 1 (- to from))
+        (return SupportsUndecided))
+      (for ((e from (+ e 1))) :while (< e to)
+        (let a = (abs (arr:aref vector-values e)))
+        (let is-in = (> (- a delta) in-cut))
+        (let is-out = (< (+ a delta) out-cut))
+        (unless (or is-in is-out)
+          (arr:set! notes 0 p)
+          (arr:set! notes 1 (- e from))
+          (return SupportsUndecided))
+        (arr:set! flags e (if is-in 1 0))))
+    ;; The sets: every row alone, then each row left out joined to the kept rows its vector is
+    ;; classed in at.
+    (let parents = (.parents s))
+    (let set-labels = (.set-labels s))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (arr:set! parents i i)
+      (arr:set! set-labels i m))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (for ((e (arr:aref starts p) (+ e 1))) :while (< e (arr:aref starts (+ p 1)))
+        (when (== (arr:aref flags e) 1)
+          (let one = (set-root parents (arr:aref left p)))
+          (let other = (set-root parents (arr:aref vector-rows e)))
+          (unless (== one other)
+            (arr:set! parents other one)))))
+    ;; A set that holds a row left out is a dependent set and takes the next label; the rows of
+    ;; every other set keep the row count, which says they are in no dependency.
+    (let found = (cell:new (the UFix 0)))
+    (for ((p 0 (+ p 1))) :while (< p d)
+      (let root = (set-root parents (arr:aref left p)))
+      (when (== (arr:aref set-labels root) m)
+        (arr:set! set-labels root (cell:read found))
+        (cell:write! found (+ (cell:read found) 1))))
+    (for ((i 0 (+ i 1))) :while (< i m)
+      (let root = (set-root parents i))
+      (unless (== root i)
+        (arr:set! set-labels i (arr:aref set-labels root))))
+    (arr:set! notes 2 (cell:read found))
+    (arr:set! st 6 1)
+    SupportsClassed)
+
+  (declare supports-classed? (KeptRows -> Boolean))
+  (define (supports-classed? kept)
+    "Whether classed supports stand: the latest class-supports! returned SupportsClassed and neither a search, a reproof, a refresh nor a certificate came since."
+    (== (arr:aref (.state (storage kept)) 6) 1))
+
+  (declare dependent-sets (KeptRows -> arr:LispArray UFix))
+  (define (dependent-sets kept)
+    "Borrowed view as long as the row count, meaningful while classed supports stand: each row's label. Rows that depend on one another have one label, from 0 to dependent-set-count less one; a row in no dependency has the row count."
+    (.set-labels (storage kept)))
+
+  (declare dependent-set-count (KeptRows -> UFix))
+  (define (dependent-set-count kept)
+    "How many dependent sets the standing classing found; 0 when none stands."
+    (let s = (storage kept))
+    (if (== (arr:aref (.state s) 6) 1) (arr:aref (.notes s) 2) 0))
+
+  (declare support-flags (KeptRows -> arr:LispArray UFix))
+  (define (support-flags kept)
+    "Borrowed view, meaningful while classed supports stand and replaced when the vectors grow: beside each entry of multiplier-values, 1 where the multiplier is classed in its row's dependency and 0 where it is classed out."
+    (cell:read (.in-flags (storage kept))))
+
+  (declare multiplier-error-bound (KeptRows * UFix -> F64))
+  (define (multiplier-error-bound kept position)
+    "For the kept vector at this position: the bound the standing classing used on the 2-norm of the difference between its stored multipliers and the exact ones, the multipliers of the row against the kept rows for the matrix as stored. -1 when no classing stands or there is no such vector."
+    (let s = (storage kept))
+    (if (and (== (arr:aref (.state s) 6) 1) (< position (arr:aref (.state s) 1)))
+        (arr:aref (.deltas s) position)
+        -1.0d0))
+
+  (declare undecided-vector (KeptRows -> UFix))
+  (define (undecided-vector kept)
+    "After SupportsUndecided: the position of the vector whose multiplier could not be classed. The row count otherwise."
+    (arr:aref (.notes (storage kept)) 0))
+
+  (declare undecided-entry (KeptRows -> UFix))
+  (define (undecided-entry kept)
+    "After SupportsUndecided: which of that vector's entries, counted from its multiplier-start; or its multiplier-count, when it is a kept row the vector does not hold that could not be classed out."
+    (arr:aref (.notes (storage kept)) 1)))

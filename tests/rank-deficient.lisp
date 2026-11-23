@@ -1219,6 +1219,222 @@ again. The step is the exact step either way."
   (run-refresh-outcome-tests)
   (format t "REFRESH-TESTS-PASS~%"))
 
+;;; ---- Supports, dependent sets, and the right null-space basis ------------------------------
+
+(defun rd-exact-multipliers (a kept m)
+  "For each row left out, in order: its exact multipliers against the kept rows, w with a_t = w J_S, as a list in
+the kept rows' order. The kept rows are independent, so w = (J_S J_S^T)^-1 J_S a_t."
+  (let* ((kept-rows (rd-kept-rows kept m)) (r (length kept-rows)) (n (array-dimension a 1)))
+    (if (zerop r)
+        (loop :repeat (rd:left-out-count kept) :collect '())
+        (let* ((js (dr-rows a kept-rows)) (inverse (rational-inverse (rect-product js (rect-transpose js)))))
+          (loop :for p :below (rd:left-out-count kept)
+                :collect (let* ((own (aref (rd:left-out-rows kept) p))
+                                (b (loop :for k :below r :collect (loop :for j :below n :sum (* (aref js k j) (aref a own j))))))
+                           (loop :for k :below r :collect (loop :for l :below r :for x :in b :sum (* (aref inverse k l) x)))))))))
+
+(defun rd-exact-sets (kept m exact)
+  "The dependent sets from exact multipliers: rows joined wherever a multiplier is not zero. Returns the sets that
+hold a row left out, each a sorted list of rows, sorted; a row in none of them is in no dependency."
+  (let ((parent (make-array m)) (kept-rows (rd-kept-rows kept m)))
+    (dotimes (i m) (setf (aref parent i) i))
+    (labels ((root (i) (if (= (aref parent i) i) i (setf (aref parent i) (root (aref parent i))))))
+      (loop :for p :from 0 :for w :in exact
+            :do (loop :for k :in kept-rows :for x :in w
+                      :unless (zerop x) :do (setf (aref parent (root k)) (root (aref (rd:left-out-rows kept) p)))))
+      (let ((roots (remove-duplicates (loop :for p :below (rd:left-out-count kept) :collect (root (aref (rd:left-out-rows kept) p))))))
+        (sort (loop :for top :in roots :collect (loop :for i :below m :when (= (root i) top) :collect i))
+              #'< :key #'first)))))
+
+(defun rd-labelled-sets (kept m)
+  "The same from the labels the library gives: the rows of each label below the row count."
+  (let ((tags (rd:dependent-sets kept)))
+    (sort (loop :for tag :below (rd:dependent-set-count kept)
+                :collect (loop :for i :below m :when (= (aref tags i) tag) :collect i))
+          #'< :key #'first)))
+
+(defun run-support-exact-tests ()
+  "The sets the library labels are the sets exact multipliers give, the stored multipliers are within the bound it
+states of the exact ones, and a row in no dependency is labelled so."
+  (let ((state (sb-ext:seed-random-state 20261126)) (cases 0) (sets 0) (alone 0) (several 0))
+    (loop :for (bases columns extras) :in '((2 4 1) (3 5 2) (4 6 3) (5 5 4) (6 9 5) (4 4 2) (7 10 6) (8 12 3) (3 6 0))
+          :do (dotimes (repeat 5)
+                (multiple-value-bind (entries m) (rd-redundant-entries state bases columns extras)
+                  (let* ((label (format nil "supports, ~D+~D rows by ~D #~D" bases extras columns repeat))
+                         (matrix (csc-from-entries m columns entries)) (a (dr-dense m columns entries)) (kept (rd:analyze matrix)))
+                    (incf cases)
+                    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+                    (assert (= 1 (rd-caller:support-code kept 1d-6)) () "~A: classed with no certificate." label)
+                    (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                    (assert (= 0 (rd-caller:support-code kept 1d-6)) () "~A: the classing gave ~D, vector ~D entry ~D." label
+                            (rd-caller:support-code kept 1d-6) (rd:undecided-vector kept) (rd:undecided-entry kept))
+                    (assert (and (rd:supports-classed? kept) (= m (rd:undecided-vector kept))))
+                    (let* ((exact (rd-exact-multipliers a kept m)) (kept-rows (rd-kept-rows kept m))
+                           (expected (rd-exact-sets kept m exact)) (found (rd-labelled-sets kept m)))
+                      ;; The bound on each vector's multipliers, exactly.
+                      (loop :for p :from 0 :for w :in exact
+                            :do (let* ((v (rd-vector kept p m)) (bound (rd:multiplier-error-bound kept p))
+                                       (distance (loop :for k :in kept-rows :for x :in w :sum (expt (+ (rational (aref v k)) x) 2))))
+                                  (assert (and (plusp bound) (<= distance (expt (rational bound) 2))) ()
+                                          "~A, vector ~D: its multipliers are ~E from the exact ones, and the bound is ~E." label p
+                                          (sqrt (float distance 1d0)) bound)))
+                      ;; Every stored entry is a real multiplier here, and is classed in.
+                      (dotimes (e (rd:multiplier-start kept (rd:left-out-count kept)))
+                        (assert (= 1 (aref (rd:support-flags kept) e))))
+                      (assert (equal expected found) () "~A: the sets are ~S, and exactly they are ~S." label found expected)
+                      (incf sets (length found))
+                      (when (> (length found) 1) (incf several))
+                      ;; A row in no set carries the row count.
+                      (dotimes (i m)
+                        (let ((inside (some (lambda (set) (member i set)) expected)))
+                          (unless inside (incf alone))
+                          (assert (if inside (< (aref (rd:dependent-sets kept) i) (rd:dependent-set-count kept))
+                                      (= m (aref (rd:dependent-sets kept) i)))
+                                  () "~A: row ~D is labelled ~D." label i (aref (rd:dependent-sets kept) i)))))))))
+    (assert (and (> sets 30) (> alone 20) (> several 3)) ()
+            "The premise: ~D sets in all, ~D rows in no dependency, ~D matrices with more than one set." sets alone several)
+    (format t "SUPPORT-EXACT-PASS cases=~D sets=~D rows-in-no-dependency=~D with-several-sets=~D~%" cases sets alone several)))
+
+(defun run-support-outcome-tests ()
+  (let* ((entries '((0 0 1) (0 1 2) (1 1 1) (1 2 3) (2 0 2) (2 2 1) (3 0 1) (3 1 3) (3 2 3) (4 0 3) (4 1 2) (4 2 4)))
+         (matrix (csc-from-entries 5 3 entries)) (kept (rd:analyze matrix)) (nan (not-a-number)))
+    ;; Before a search, before a certificate, and cuts that cannot be used.
+    (assert (and (= 1 (rd-caller:support-code kept 1d-6)) (not (rd:supports-classed? kept)) (= 0 (rd:dependent-set-count kept))
+                 (= -1d0 (rd:multiplier-error-bound kept 0))))
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+    (assert (= 1 (rd-caller:support-code kept 1d-6)))
+    (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+    (dolist (cut (list 0d0 1d0 -1d-6 2d0 nan))
+      (assert (= 0 (rd-caller:support-code kept 1d-6)))
+      (assert (= 2 (rd-caller:support-code kept cut)) () "A cut of ~S was taken." cut)
+      (assert (and (not (rd:supports-classed? kept)) (= 0 (rd:dependent-set-count kept)) (= -1d0 (rd:multiplier-error-bound kept 0)))))
+    ;; Classed supports do not survive a certificate, a reproof, a refresh or a search.
+    (dolist (undo (list (lambda () (rd-caller:certify-code kept 1d-9 1d-9)) (lambda () (rd-caller:reprove-code kept matrix))
+                        (lambda () (rd-caller:refresh-code kept matrix 1d-9)) (lambda () (rd-caller:find-code kept matrix 1d-6 1d-12))))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:support-code kept 1d-6)))
+      (assert (and (rd:supports-classed? kept) (= 1 (rd:dependent-set-count kept)) (plusp (rd:multiplier-error-bound kept 0))
+                   (= -1d0 (rd:multiplier-error-bound kept 2))))
+      (assert (= 0 (funcall undo)))
+      (assert (and (not (rd:supports-classed? kept)) (= 0 (rd:dependent-set-count kept)))))
+    ;; A multiplier at the cut, above it and below it. Row 2 is row 0 plus a small multiple of row 1.
+    (flet ((mixed (small) (list '(0 0 1) '(1 1 1) '(2 0 1) (list 2 1 small))))
+      (dolist (trial (list (list 1d-3 0 '(0 0 0) 1) (list 1d-6 3 nil nil) (list 1d-9 0 '(0 3 0) 0)))
+        (destructuring-bind (small code tags flag) trial
+          (let* ((entries (mixed small)) (matrix (csc-from-entries 3 2 entries)) (kept (rd:analyze matrix)))
+            (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-15)))
+            (assert (and (= 1 (rd:left-out-count kept)) (= 2 (aref (rd:left-out-rows kept) 0)) (= 2 (rd:multiplier-count kept 0)))
+                    () "The premise: row 2 is left out with two entries; rows ~S, ~D entries."
+                    (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) (rd:multiplier-count kept 0))
+            (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+            (assert (= code (rd-caller:support-code kept 1d-6)) () "A multiplier of ~S against a cut of 1e-6 gave ~D." small
+                    (rd-caller:support-code kept 1d-6))
+            (cond
+              ((= code 3)
+               (assert (and (= 0 (rd:undecided-vector kept)) (= 1 (rd:undecided-entry kept)) (not (rd:supports-classed? kept)))
+                       () "Undecided at vector ~D, entry ~D." (rd:undecided-vector kept) (rd:undecided-entry kept)))
+              (t
+               (assert (and (equalp (coerce tags 'vector) (rd:dependent-sets kept)) (= 1 (rd:dependent-set-count kept))
+                            (= 1 (aref (rd:support-flags kept) 0)) (= flag (aref (rd:support-flags kept) 1)))
+                       () "A multiplier of ~S: labels ~S, flags ~S." small (rd:dependent-sets kept)
+                       (subseq (rd:support-flags kept) 0 2))))))))
+    ;; The cut is against the vector's largest entry with its own 1 counted. Row 2 is a thousandth
+    ;; of row 0 plus a hundred-millionth of row 1: beside its own 1 the second multiplier is below
+    ;; a millionth, and out; beside the first multiplier alone it would be above, and in.
+    (let* ((entries (list (list 0 0 1) (list 1 1 1) (list 2 0 1d-3) (list 2 1 1d-8)))
+           (matrix (csc-from-entries 3 2 entries)) (kept (rd:analyze matrix)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-15)))
+      (assert (and (= 1 (rd:left-out-count kept)) (= 2 (aref (rd:left-out-rows kept) 0)) (= 2 (rd:multiplier-count kept 0))))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:support-code kept 1d-6)))
+      (assert (and (equalp #(0 3 0) (rd:dependent-sets kept)) (= 1 (aref (rd:support-flags kept) 0))
+                   (= 0 (aref (rd:support-flags kept) 1)))
+              () "Small multipliers: labels ~S, flags ~S." (rd:dependent-sets kept) (subseq (rd:support-flags kept) 0 2)))
+    ;; Kept rows a part in a million apart: the bound on the multipliers is the vector's residual
+    ;; over the bound proved on the kept rows, here near 1e-8. A cut above it classes everything;
+    ;; a cut below it cannot class out a kept row the vector does not hold, and the entry named
+    ;; is the vector's count.
+    (let* ((close (list (list 0 0 1) (list 0 1 1) (list 1 0 1) (list 1 1 1.000001d0) (list 2 0 2) (list 2 1 2.000001d0)))
+           (matrix (csc-from-entries 3 2 close)) (kept (rd:analyze matrix)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-7 1d-12)))
+      (assert (and (= 2 (rd:kept-count kept)) (= 0 (rd-caller:certify-code kept 1d-12 1d-10))) ()
+              "The premise: two rows a part in a million apart are kept and certified; ~D kept." (rd:kept-count kept))
+      (assert (= 0 (rd-caller:support-code kept 1d-6)))
+      (assert (and (equalp #(0 0 0) (rd:dependent-sets kept)) (<= 1d-12 (rd:multiplier-error-bound kept 0) 1d-6)) ()
+              "Rows a part in a million apart: labels ~S, a bound of ~S." (rd:dependent-sets kept) (rd:multiplier-error-bound kept 0))
+      (dolist (cut '(1d-12 1d-15))
+        (assert (= 3 (rd-caller:support-code kept cut)) () "A cut of ~S gave ~D." cut (rd-caller:support-code kept cut))
+        (assert (and (= 0 (rd:undecided-vector kept)) (= (rd:multiplier-count kept 0) (rd:undecided-entry kept))
+                     (not (rd:supports-classed? kept)))
+                () "Undecided at vector ~D, entry ~D of ~D." (rd:undecided-vector kept) (rd:undecided-entry kept)
+                (rd:multiplier-count kept 0))))
+    ;; A row of zeros and a row with no entry are each a dependent set of one; a row no vector
+    ;; holds is in none.
+    (let* ((entries '((0 0 1) (0 1 2) (2 0 0) (2 1 0) (3 0 2) (3 1 4) (4 1 5)))
+           (matrix (csc-from-entries 5 2 entries)) (kept (rd:analyze matrix)))
+      (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+      (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+      (assert (= 0 (rd-caller:support-code kept 1d-6)))
+      (assert (and (= 3 (rd:dependent-set-count kept)) (equalp #(2 0 1 2 5) (rd:dependent-sets kept))) ()
+              "An empty row and a row of zeros: ~D sets, labels ~S." (rd:dependent-set-count kept) (rd:dependent-sets kept)))
+    ;; The same matrix at other scales: the same labels and the same bound.
+    (flet ((at (power)
+             (let* ((matrix (csc-from-entries 5 3 (mapcar (lambda (entry)
+                                                            (list (first entry) (second entry)
+                                                                  (scale-float (coerce (third entry) 'double-float) power)))
+                                                          entries)))
+                    (kept (rd:analyze matrix)) (floor (scale-float 1d-6 power)))
+               (assert (= 0 (rd-caller:find-code kept matrix floor 1d-12)))
+               (assert (= 0 (rd-caller:certify-code kept floor floor)))
+               (assert (= 0 (rd-caller:support-code kept 1d-6)))
+               (list (copy-seq (rd:dependent-sets kept)) (rd:multiplier-error-bound kept 0) (rd:multiplier-error-bound kept 1)))))
+      (let ((reference (at 0)))
+        (dolist (power '(-900 -300 300 900))
+          (assert (equalp reference (at power)) () "At 2^~D the labels and bounds are ~S; at scale 1 ~S." power (at power) reference))))
+    ;; Steady state: a reproof, a certificate and a classing allocate nothing.
+    (assert (= 0 (rd-caller:find-code kept matrix 1d-6 1d-12)))
+    (assert (= 0 (rd-caller:support-loop kept matrix 1d-9 1d-6 1)))
+    (allocation-check "kept-rows-support-loop" (lambda () (assert (= 0 (rd-caller:support-loop kept matrix 1d-9 1d-6 1)))))
+    (format t "SUPPORT-OUTCOMES-PASS~%")))
+
+(defun run-null-basis-tests ()
+  "The handle on the transpose is a basis of the right null space. For a matrix whose columns depend on one
+another, the kept vectors of its transpose are one vector for each column left out, with 1 at that column and 0
+at every other column left out, so they are independent; there are as many as the column count less the rank;
+and the bound of each holds for the exact product of the matrix with it."
+  (let ((state (sb-ext:seed-random-state 20261127)) (cases 0) (vectors 0))
+    (loop :for (bases rows extras) :in '((2 4 1) (3 5 2) (5 7 4) (6 6 3) (4 9 2))
+          :do (dotimes (repeat 5)
+                ;; A matrix of ROWS rows whose columns are BASES seeded vectors and EXTRAS combinations of them.
+                (multiple-value-bind (transposed n) (rd-redundant-entries state bases rows extras)
+                  (let* ((entries (mapcar (lambda (entry) (list (second entry) (first entry) (third entry))) transposed))
+                         (j (dr-dense rows n entries)) (rank (dr-rank j))
+                         (transpose (csc-from-entries n rows transposed)) (kept (rd:analyze transpose)))
+                    (incf cases)
+                    (assert (= 0 (rd-caller:find-code kept transpose 1d-6 1d-12)))
+                    (assert (and (= rank (rd:kept-count kept)) (= (- n rank) (rd:left-out-count kept))) ()
+                            "~D columns of rank ~D: ~D basis vectors." n rank (rd:left-out-count kept))
+                    (assert (= 0 (rd-caller:certify-code kept 1d-9 1d-9)))
+                    (let ((left (coerce (subseq (rd:left-out-rows kept) 0 (rd:left-out-count kept)) 'list)))
+                      (dotimes (p (rd:left-out-count kept))
+                        (let* ((z (rd-vector kept p n)) (bound (rd:residual-bound kept p))
+                               ;; J z, exactly, by the matrix itself.
+                               (product (loop :for i :below rows
+                                              :sum (expt (loop :for c :below n :sum (* (aref j i c) (rational (aref z c)))) 2))))
+                          (incf vectors)
+                          (assert (<= product (expt (rational bound) 2)) ()
+                                  "A basis vector's product has norm ~E and its bound is ~E." (sqrt (float product 1d0)) bound)
+                          (loop :for column :in left :for q :from 0
+                                :do (assert (= (if (= q p) 1d0 0d0) (aref z column)) ()
+                                            "Basis vector ~D holds ~S at the column of vector ~D." p (aref z column) q)))))))))
+    (format t "NULL-BASIS-PASS cases=~D vectors=~D~%" cases vectors)))
+
+(defun run-support-tests ()
+  (run-support-exact-tests)
+  (run-support-outcome-tests)
+  (run-null-basis-tests)
+  (format t "SUPPORT-TESTS-PASS~%"))
+
 (defun run-rank-deficient-tests ()
   (run-rank-deficient-exact-tests)
   (run-rank-deficient-reprove-tests)
@@ -1227,5 +1443,6 @@ again. The step is the exact step either way."
   (run-rank-deficient-outcome-tests)
   (run-step-tests)
   (run-refresh-tests)
+  (run-support-tests)
   (run-rank-deficient-encapsulation-tests)
   (format t "RANK-DEFICIENT-TESTS-PASS~%"))

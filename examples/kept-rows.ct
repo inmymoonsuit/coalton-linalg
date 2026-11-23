@@ -3,7 +3,7 @@
   (:local-nicknames (#:arr #:coalton/lisparray)
                     (#:csc #:coalton-linalg/sparse/csc)
                     (#:rd #:coalton-linalg/sparse/rank-deficient))
-  (:export #:kept-of-three #:kept-bounds #:kept-refreshed))
+  (:export #:kept-of-three #:kept-bounds #:kept-refreshed #:kept-sets))
 (cl:in-package #:coalton-linalg/examples/kept-rows)
 
 (coalton-toplevel
@@ -120,4 +120,22 @@ is replaced before the certificate would refuse."
     (unless (== (rd:certify! kept 1.0d-6 1.0d-6) rd:Certified)
       (return (arr:make 0 0.0d0)))
     (arr:set! out 2 (rd:proved-lower-bound kept))
-    out))
+    out)
+
+  (declare kept-sets (Void -> arr:LispArray UFix))
+  (define (kept-sets)
+    "The label of each of the three constraints' dependent set: [0, 0, 0], one set of all three, since each is made from the other two. An empty vector if a call refused.
+
+A multiplier is classed in its row's dependency when it is above a millionth of the
+vector's largest entry by more than a proved bound on its error, and the rows joined
+through such multipliers are one set. A constraint that no other is made from, and that
+is made from no other, would carry the row count, 3, in place of a label."
+    (let matrix = (constraints 1.0d0))
+    (let kept = (rd:analyze matrix))
+    (unless (== (rd:find-kept-rows! kept matrix 1.0d-6 1.0d-12) rd:FindFound)
+      (return (arr:make 0 (the UFix 0))))
+    (unless (== (rd:certify! kept 1.0d-6 1.0d-6) rd:Certified)
+      (return (arr:make 0 (the UFix 0))))
+    (unless (== (rd:class-supports! kept 1.0d-6) rd:SupportsClassed)
+      (return (arr:make 0 (the UFix 0))))
+    (rd:dependent-sets kept)))

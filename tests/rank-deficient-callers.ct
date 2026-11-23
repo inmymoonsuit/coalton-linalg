@@ -5,7 +5,8 @@
                     (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
                     (#:err #:coalton-linalg/errors))
   (:export #:find-code #:reprove-code #:certify-code #:bounds-code #:analysis-code #:kept-loop
-           #:step-code #:step-loop #:refresh-code #:refresh-to-code #:refresh-loop))
+           #:step-code #:step-loop #:refresh-code #:refresh-to-code #:refresh-loop
+           #:support-code #:support-loop))
 (cl:in-package #:coalton-linalg/tests/rank-deficient-callers)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety 1)))
 
@@ -162,4 +163,28 @@
     (for ((k 0 (+ k 1))) :while (< k repeats)
       (cell:write! failures (+ (cell:read failures) (refresh-turn kept other floor r out)))
       (cell:write! failures (+ (cell:read failures) (refresh-turn kept one floor r out))))
+    (cell:read failures))
+
+  (declare support-code (rd:KeptRows * F64 -> UFix))
+  (define (support-code kept cut)
+    "Exhaustively matched outcome: classed 0, no certificate 1, bad cut 2, undecided 3."
+    (match (rd:class-supports! kept cut)
+      ((rd:SupportsClassed) 0)
+      ((rd:SupportsNoCertificate) 1)
+      ((rd:SupportsBadCut) 2)
+      ((rd:SupportsUndecided) 3)))
+
+  (declare support-loop (rd:KeptRows * csc:Matrix * F64 * F64 * UFix -> UFix))
+  (define (support-loop kept matrix floor cut repeats)
+    "A real external caller, as a reader of the dependent sets is: prove the bounds for the values, certify, class the supports; count what goes wrong, and add the sets found."
+    (let failures = (cell:new (the UFix 0)))
+    (for ((k 0 (+ k 1))) :while (< k repeats)
+      (unless (== (rd:reprove! kept matrix) rd:Reproved)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (rd:certify! kept floor floor) rd:Certified)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (unless (== (rd:class-supports! kept cut) rd:SupportsClassed)
+        (cell:write! failures (+ (cell:read failures) 1)))
+      (when (== (rd:dependent-set-count kept) 0)
+        (cell:write! failures (+ (cell:read failures) 1))))
     (cell:read failures)))

@@ -283,6 +283,15 @@ A search withdraws the earlier set and its bounds. After the analysis only
 | `system-iterations` | KeptRows -> UFix; preconditioned iterations the standing step made on the system of the rows left out |
 | `system-factor-count` | KeptRows -> UFix; factorizations of that system since the search, the search's included |
 | `system-iteration-limit` | UFix; 8 |
+| `SupportStatus` | Outcome type of class-supports! |
+| `SupportsClassed`, `SupportsNoCertificate`, `SupportsBadCut`, `SupportsUndecided` | SupportStatus values |
+| `class-supports!` | KeptRows * F64 -> SupportStatus; a cut relative to each vector's largest entry |
+| `supports-classed?` | KeptRows -> Boolean |
+| `dependent-sets` | KeptRows -> I; borrowed, each row's label; the row count for a row in no dependency |
+| `dependent-set-count` | KeptRows -> UFix |
+| `support-flags` | KeptRows -> I; borrowed, beside multiplier-values: 1 classed in, 0 classed out |
+| `multiplier-error-bound` | KeptRows * UFix -> F64; proved bound on the 2-norm of a vector's stored multipliers less the exact ones, otherwise -1 |
+| `undecided-vector`, `undecided-entry` | KeptRows -> UFix; what the latest classing could not decide |
 | `correction-limit` | UFix; 8 |
 | `solve-growth`, `solve-backward-bound`, `predicted-rate` | KeptRows -> F64; diagnostics of the factor the steps solve with, otherwise -1 |
 

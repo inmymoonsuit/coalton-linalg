@@ -1,11 +1,11 @@
 # Kept rows and the certificate
 
 State: implemented in Batches 18a, the kept rows and the certificate, 18b, the step, and
-18c and 18d, the refresh of kept vectors. The package is
+18c and 18d, the refresh of kept vectors, and 19, the dependent sets. The package is
 `coalton-linalg/sparse/rank-deficient`. [The design](design-rank-deficient-step.md) has
 the mathematics and the measurements that shaped it. The batch records,
-[18a](batch18a.md), [18b](batch18b.md), [18c](batch18c.md) and [18d](batch18d.md), have
-the evidence.
+[18a](batch18a.md), [18b](batch18b.md), [18c](batch18c.md), [18d](batch18d.md) and
+[19](batch19.md), have the evidence.
 
 ## What it is for
 
@@ -59,6 +59,10 @@ from it.
   adds to the first. `step-taken?`, `step-corrections`, `correction-limit`.
 - `system-iterations`, `system-factor-count`, `system-iteration-limit`: what the system
   of the rows left out cost the standing step, and since the search.
+- `class-supports!(kept, cut) -> SupportStatus`: each multiplier classed as in its row's
+  dependency or out of it, and every row labelled with its dependent set;
+  `dependent-sets`, `dependent-set-count`, `support-flags`, `multiplier-error-bound`,
+  `supports-classed?`, `undecided-vector`, `undecided-entry`.
 - `solve-growth`, `solve-backward-bound`, `predicted-rate`: diagnostics of the factor the
   steps solve with, −1 when there is none.
 - `largest-singular-bounds!(matrix, steps, work-columns, work-rows, out)`: a lower and an
@@ -368,6 +372,83 @@ of a step do not use it.
 its own, and the step is multiplied back by the two. A step at any scale the format holds
 is the step at ordinary scale, bit for bit, and the bounds are those times the scale.
 
+## Dependent sets
+
+Which rows depend on which is read from the kept vectors: the vector of a row left out
+holds a multiplier at each kept row that row is made from. **A multiplier computed in
+floating point is never exactly zero or not**, so the question is put with a cut, and
+answered only where it can be proved.
+
+`class-supports!(kept, cut)` works on the matrix the standing certificate is of. For the
+vector of each row left out:
+
+- δ bounds the 2-norm of the difference between the stored multipliers ŵ and the exact
+  ones w, the multipliers of the row against the kept rows for the matrix as stored. Since
+  the kept rows are independent, `ŵ − w = (ŵ J_S − a) J_S⁺`, the vector's residual times
+  the pseudo-inverse of the kept rows, so **δ is the vector's proved residual bound over
+  the bound the certificate proved on the kept rows**. `multiplier-error-bound` returns it.
+- The cut is relative to the vector's own largest entry, its own 1 included, which lies
+  between `top_lo = max(1, top − δ)` and `top_hi = top + δ` for the exact vector. So the
+  units of the rows cancel within a vector.
+- A stored multiplier is **in** when `|ŵ| − δ > cut · top_hi` and **out** when
+  `|ŵ| + δ < cut · top_lo`. A kept row the vector does not hold, having never been reached
+  or having been dropped by the search, is out when `δ < cut · top_lo`.
+- **Anything else is a refusal**, `SupportsUndecided`, with the vector and the entry
+  readable: a multiplier wrongly classed would join two sets or part one.
+
+Then every row is given a label. Rows are joined through every multiplier classed in;
+**each set that holds a row left out is a dependent set**, a row left out with nothing
+classed in being a set of one, as a row of zeros is; and a kept row that no vector holds
+is in no dependency. The sets do not depend on which rows the search happened to keep:
+they are the connected components of the rows as a matroid.
+
+- `dependent-sets(kept)`: a borrowed array as long as the row count. Rows with one label
+  depend on one another; the labels run from 0 to `dependent-set-count` less one, and
+  **a row in no dependency has the row count as its label**.
+- `support-flags(kept)`: beside each entry of `multiplier-values`, 1 where it is classed
+  in and 0 where out.
+- `undecided-vector`, `undecided-entry`: after a refusal, the position of the vector and
+  which of its entries; an entry equal to the vector's `multiplier-count` means a kept row
+  it does not hold could not be classed out, which is δ being too large for the cut.
+
+| SupportStatus | Meaning |
+| --- | --- |
+| SupportsClassed | Every multiplier is classed and every row has its label |
+| SupportsNoCertificate | No certificate stands for the values held; nothing was classed |
+| SupportsBadCut | The cut was not above 0 and below 1; nothing was classed |
+| SupportsUndecided | A multiplier could not be put on either side of the cut; nothing stands |
+
+Classed supports stand until the next search, reproof, refresh or certificate. The call
+allocates only when the kept vectors have grown since it last ran.
+
+"Out" means below the cut for the matrix as stored. A multiplier that is exactly zero in
+a model and 10⁻¹⁷ in the stored matrix is classed out only because 10⁻¹⁷ is below the cut;
+no computation on rounded data proves more.
+
+## The right null space
+
+**The package applied to the transpose gives a basis of the right null space**, with
+nothing added. Let `K = analyze(Jᵀ)` and search it. Its rows are J's columns, so:
+
+- the rows it leaves out are the columns of J that depend on the others, n less the rank
+  of them;
+- the kept vector of each is a vector z over J's columns with 1 at that column, its
+  stored values at kept columns and zero elsewhere, and its `residual-bound` is a proved
+  bound on `‖J z‖₂`;
+- the vectors are independent, each having 1 where every other has 0, so they are a
+  basis of what J sends to within those bounds of zero;
+- `certify!(K, lower-floor, upper-floor)` is the same certificate for the singular
+  values, which J and its transpose share: with it, exactly as many singular values as
+  kept columns are above the upper floor, and the basis has the dimension of the null
+  space at that floor.
+
+The basis is sparse where the multipliers are and **not orthonormal**. An orthonormal one,
+for a caller that projects onto it, is designed in
+[the design](design-rank-deficient-step.md#a-basis-of-the-right-null-space) and not built.
+`reprove!` and `refresh!` keep the basis for new values as they keep any kept vectors.
+Two handles, one on J and one on its transpose, share nothing and may be used at
+different times.
+
 ## Bounds on the largest singular value
 
 `largest-singular-bounds!` writes two numbers with `out[0] ≤ σ₁ ≤ out[1]`.
@@ -393,10 +474,12 @@ each later matrix of the pattern:
     gap above floor after a refresh: the rank has changed; search again
     step!(kept, r, p)                               StepTaken: p is the step
     step-bound(kept)                                compare with the solver's own gate
+    class-supports!(kept, 1e-6)                     when the dependent sets are wanted
 ```
 
 [The first example](../examples/kept-rows.ct) finds a redundant row, proves its bound
-again for other values, reads what the certificate proved, and refreshes the vector.
+again for other values, reads what the certificate proved, refreshes the vector, and
+labels the dependent sets.
 [The second](../examples/rank-deficient-step.ct) takes the step on two equal rows and
 reads its bound.
 
