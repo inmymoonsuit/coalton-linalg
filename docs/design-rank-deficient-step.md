@@ -1,8 +1,9 @@
 # Design: a step on a rank-deficient matrix, and certified bases
 
-State: a design, reviewed by the consumer that asked for it and agreed with the terms
-recorded at its end. Nothing here is built, and one measurement is owed before any of it
-is. It follows [dependent rows](dependent-rows.md), whose proofs it reuses.
+State: a design, reviewed twice by the consumer that asked for it. The measurement its
+first review asked for is done and is reported below; it changed the design in four
+places, each marked. Nothing here is built. It follows
+[dependent rows](dependent-rows.md), whose proofs it reuses.
 
 ## What is asked for
 
@@ -42,10 +43,19 @@ t as a row vector. Then
                             [ W ],         [ E_T ],
 
 W the d-by-r matrix of the rows `w_t`, and row t of `E_T` the residual `Jᵀ v_t`, of norm
-at most `ε_t`. **W is exactly the stored doubles of the computed multipliers**, the ones
-the null vectors carry. Then `J = C J_S + E` is an identity about the stored matrices,
-with E the exact residuals of those vectors, which are what the bounds bound; and C is
-the matrix actually used when the step is solved for. So
+at most `ε_t`. **W is exactly the stored doubles of the multipliers that are used**, and
+the bounds are proved for the vectors that carry them. Then `J = C J_S + E` is an
+identity about the stored matrices, with E the exact residuals of those vectors; and C
+is the matrix actually used when the step is solved for.
+
+**The multipliers that are used are not all the ones computed** (changed by the
+measurement). A dependent row depends on a few rows, three to four on the patterns
+measured, and its computed vector has an entry at nearly every kept row the factor
+reaches: up to 5.7 million entries where 6,500 are real, the rest below 10⁻¹³ with
+nothing between there and 0.1. A multiplier below a drop tolerance is set to zero, and
+the bound of the reduced vector is proved again by the product bound. That costs no
+proof anything: the decomposition is about whatever W is used, and E is whatever that W
+leaves. On the patterns the bound moved by under two percent. So
 
     ‖E‖₂ ≤ ‖E‖_F ≤ γ := ( Σ ε_t² )^½ ,
 
@@ -64,8 +74,10 @@ satisfy `σ_{i+j−1}(A + B) ≤ σᵢ(A) + σⱼ(B)` (Weyl's inequality for sin
 one cannot lower any eigenvalue (Weyl's monotonicity theorem), and the singular values
 are the roots of those eigenvalues. No correction for C is needed.
 
-**(c) A lower bound τ on `σ_r(J_S)`.** Two proofs are available, and which is used is
-what the measurement below decides.
+**(c) A lower bound τ on `σ_r(J_S)`.** Two proofs are available. **The step is built on
+the second** (decided by the measurement): both proved the same τ to three figures on
+every pattern, and they differ in cost, by a factor of a thousand where the kept rows'
+Gram matrix is dense.
 
 - *On the squared matrix.* `σ_r(J_S)² = λ_min(J_S J_Sᵀ)`. The
   [Cholesky-form factorization](cholesky-form.md) of `J_S J_Sᵀ − c I` that runs to
@@ -100,7 +112,17 @@ for J itself:
 Then by (a) and (b) exactly r singular values of J are above every possible `φ s`, the
 truncation keeps exactly r, and none lies strictly between γ and τ, an interval that
 contains every possible `φ s`. **There is no further factor β**: the band is the gap
-between the two proved bounds, and each is proved against exact arithmetic. What is not
+between the two proved bounds, and each is proved against exact arithmetic.
+
+**The search's threshold is not the floor** (changed by the measurement). The search is
+run at a rank tolerance well inside the gap, and the certificate is then asked for
+whatever floor the caller needs. They are two arguments. Run at a floor of 2e-8 of the
+scale the search is at its own resolution, and on two of the seven patterns it kept two
+rows that depend on the others; both proofs of (c) then fail, as they must, and the
+certificate refuses. Run at 1e-6 it kept the right rows on all seven and the certificate
+held at 2e-8 and at 1e-6 alike. Searching at one tolerance and certifying at a lower
+floor is safe by construction: a row left out whose distance lies between the two makes
+γ at least `φ s`, and the certificate refuses. What is not
 covered is another computation's own rounding. A singular value decomposition computed
 elsewhere agrees on which values are above the floor whenever its error is smaller than
 the distance from its floor to γ and to τ, and this design proves nothing about that
@@ -222,40 +244,136 @@ By name, and distinct:
 | Bad reference scale | s not finite or not positive |
 | Bound not reached | `4γ/τ ≥ 1`, or a solve whose refinement did not converge: the step is returned by no call |
 | Support undecided | an entry between the two thresholds, with its row and position |
+| Kept vectors out of date | a kept vector's bound, proved again for the current values and refined, still does not come under the floor: the kept set is no longer right, and the caller searches again |
 
 The existing refusals of the search and of the factorizations pass through under their
 own names. **A bound that is reached is returned however wide it is.** How wide a bound
 is acceptable is the caller's to say, and a returned bound holds as stated; the library
 takes no argument for it.
 
-## Cost, and what will be timed
+## Keeping the vectors from one call to the next
 
-With d rows left out: d null vectors, each one sparse triangular solve and up to four
-refinement steps; W, d by r, held densely or by rows; one dense factorization of order d;
-then two sparse solves a step. For d in the hundreds the dense system is cubic in d and
-is expected to be the smaller part; that is a prediction and will be measured, on the
-patterns the consumer names: a lattice of n by n rectangles with every shared edge
-carrying a coincident pair and a duplicated horizontal or vertical condition, at n = 15
-and 21, and a wheel with a redundant distance on every spoke.
+(Added in the second review.) Finding a null vector costs 0.5 to 1.8 milliseconds, by
+refinement, and a matrix with 1,640 redundant rows has 1,640 of them: 2 to 2.5 seconds a
+call, where the solver calling this takes milliseconds a step. So the vectors are found
+once and kept.
 
-## The measurement owed before code
+- A vector found for one matrix is kept with its row, its multipliers and its bound.
+- At each later call, on a matrix of the same pattern, **its bound is proved again
+  against the current values**, by the product bound, and nothing else is recomputed.
+  Where the rows of a dependency do not change with the values, as rows that state that
+  two things coincide or are level do not, the exact multipliers are constant, the kept
+  vector is still the right one, and only the product is paid.
+- A vector whose bound, proved again, fails the certificate is refined from where it
+  stands, and only that one. A row whose own entries change at each call, a distance for
+  instance, is the case.
+- The kept set is the search's and is kept with them. If a re-proved bound cannot be
+  brought under the floor the kept set is no longer right for these values: the call
+  refuses by name, and the caller searches again.
 
-The floor a nonlinear solver cuts its step at can be as low as 2e-8 of `σ₁`, and two
-limits of this design sit near that figure: the search resolves about 1.5e-8 of a row,
-and the first proof of (c) cannot certify a τ much below 5e-7 of `σ₁` at a thousand rows.
-For rows that are redundant exactly, γ is near the unit roundoff times the matrix and is
-not the concern. τ is. A refusal there is safe, since it costs time and not agreement,
-but how often it would happen decides which proof (c) is built on.
+γ is then the root of the sum of the bounds as proved for the current values, and τ comes
+from one signed factorization of the current kept rows. Nothing a certificate rests on
+is carried over from an earlier matrix; only the work of finding the vectors is.
 
-So before any of this is built, on the two timing patterns and on one well-constrained
-matrix, at floors of 2e-8 and of 1e-6:
+W changes only where a vector was refined, and the system of order d below is factored
+again only then.
 
-- `γ / s` and `τ / s`, with τ from each of the two proofs;
-- how often each refusal would fire, and for "band not separated" which side fails;
-- how often the width of the default scale interval alone is what fails it.
+## The system of order d
 
-If τ from the squared proof is the binding side at 2e-8 on ordinary matrices, the step is
-built on the proof on the matrix itself, and this note is changed to say so.
+(Measured in the second review.) `I + W Wᵀ` is as sparse as W, and W, once the entries
+that are rounding are dropped, has three to four entries a row. On the lattices the
+product has about 2,000 entries at d = 812 and 4,000 at d = 1,640, and its sparse
+factorization takes a tenth of a millisecond. The same matrix handed to the dense
+symmetric factorization takes 0.08 s at 812 and about 1.3 s at 1,640. On the wheels one
+dependency touches every spoke, the product is dense at d = 400, and either
+factorization takes about 0.02 s.
+
+So it is factored sparsely, by the [Gram product](gram.md) of W and the
+[positive-pivot factorization](spd-ldlt.md), and it is not the cubic cost a dense W would
+have made it.
+
+## An option: the kept rows alone
+
+(Put by the reviewer; checked and measured here.) Let `x_S = J_S⁺ r_S`, the minimum-norm
+solve on the kept rows with nothing from the rows left out. Since `B⁺ = J_S⁺ C⁺` and
+`C⁺ C = I`, `x_S = B⁺ (C r_S)`, so
+
+    x − x_S = B⁺ [ 0 ; r_T − W r_S ] ,        ‖x − x_S‖₂ ≤ ‖r_T − W r_S‖₂ / τ .
+
+With `e = r_T − J_T x_S`, one product that needs no W, and `J_T = W J_S + E_T`,
+`J_S x_S = r_S`:
+
+    ‖r_T − W r_S‖₂ ≤ ‖e‖₂ + γ ‖x_S‖₂ ,   so   ‖x − x_S‖₂ ≤ ( ‖e‖₂ + γ ‖x_S‖₂ ) / τ .
+
+The bound from x to x* adds to it. The identity and both inequalities were checked
+numerically on three hundred small cases before being written here.
+
+**It is as good as the residual on the rows left out is consistent.** Measured on the
+seven patterns, with a residual in the range of J, and with noise of 10⁻⁹ and of 10⁻³ of
+its size added to every row. Figures are over the norm of the step:
+
+| Residual | The step's own bound to x* | Kept rows alone: bound to the step | Kept rows alone: measured |
+| --- | --- | --- | --- |
+| in the range | 5e-10 to 6e-8 | 1e-10 to 2e-8 | 1e-15 to 1e-11 |
+| noise of 1e-9 | 5e-10 to 6e-8 | 4e-7 to 3e-5 | 1e-9 to 2e-7 |
+| noise of 1e-3 | 6e-10 to 2e-7 | 0.4 to 26 | 1e-3 to 0.2 |
+
+The step's own bound does not depend on how far r is from the range, because it solves
+the least squares problem; the kept rows alone ignore the part of r on the rows left out,
+and their bound says so. And with W sparse **the option saves little**: on these
+patterns the full solve takes 1.4 to 3.5 milliseconds and the kept rows alone 0.3 to 1.5,
+in a prototype whose products are not the library's.
+
+It is offered as an option, with its bound returned, for a caller whose residual on the
+rows left out is known to be consistent. **Whether a step that differs from the
+truncated answer by a stated bound is acceptable is the caller's to decide**, and the
+full step stays the default.
+
+## What was measured
+
+Seven patterns from the consumer: a wheel of 400 spokes and lattices of 15 by 15 and 21
+by 21 rectangles, each well constrained, with redundant conditions, and with redundant
+conditions and too few; 1,604 to 8,698 rows. A scratch driver over the library's
+existing calls, on a machine otherwise idle unless said.
+
+**The certificate**, with the search at 1e-6 of the scale's upper bound:
+
+| Pattern | Rows by columns | Kept, left out | γ over the scale | τ over the scale |
+| --- | --- | --- | --- | --- |
+| wheel, well constrained | 1,604 by 1,602 | 1,602, 2 | 4.3e-14 | 1.2e-5 |
+| wheel, redundant | 2,004 by 1,602 | 1,602, 402 | 3.8e-13 | 1.2e-5 |
+| wheel, redundant and loose | 1,803 by 1,602 | 1,404, 399 | 3.8e-13 | 1.8e-4 |
+| lattice 15, redundant | 4,414 by 3,600 | 3,600, 814 | 7.1e-14 | 1.3e-4 |
+| lattice 15, redundant and loose | 4,384 by 3,600 | 3,572, 812 | 6.7e-14 | 4.9e-4 |
+| lattice 21, redundant | 8,698 by 7,056 | 7,056, 1,642 | 9.9e-14 | 9.3e-5 |
+| lattice 21, redundant and loose | 8,656 by 7,056 | 7,016, 1,640 | 9.6e-14 | 4.1e-4 |
+
+The kept counts are the ranks the consumer's singular value decompositions give where it
+has them, and the column counts where the columns are independent. The band from γ to τ
+contains 2e-8 and 1e-6 on every pattern, by eight decades in all. Both proofs of (c)
+gave the τ shown. Their own resolution, read from what they need to succeed, is about
+5e-7 to 3e-6 of the scale for the squared proof and 2e-8 to 3e-7 for the other: neither
+would certify kept rows that really sat near 2e-8, and none of these do. The default
+scale interval was 1.13 to 1.94 wide and refused nothing.
+
+**The parts of a call:**
+
+| | Wheels, d about 400 | Lattice 15, d about 812 | Lattice 21, d about 1,640 |
+| --- | --- | --- | --- |
+| The search | 0.19 to 0.24 s | under 0.01 s | under 0.01 s |
+| Every null vector found afresh | 0.63 to 0.73 s | 0.44 to 0.54 s | 1.9 to 2.5 s |
+| Every bound proved again | 0.004 to 0.009 s | 0.023 s | 0.09 s |
+| Multipliers computed, and real | 15,000 to 75,000; 3 to 4 a row | 1.4 million; 4.0 to 4.4 a row | 5.7 million; 4.0 to 4.2 a row |
+| `I + W Wᵀ`, sparse | 0.02 s | 0.0001 s | 0.0002 s |
+| The same, dense | 0.02 s | 0.08 s | 1.3 s, beside another job |
+| τ, one signed factorization | under 0.001 s | under 0.001 s | under 0.001 s |
+
+The search is slow on the wheels because their `J Jᵀ` is dense. "Every bound proved
+again" used the library's product bound once a vector, over the whole matrix; a product
+over only the rows a vector touches would cost in proportion to its four entries and is
+not built. The squared proof of (c) took 0.18 s a factorization on the wheels. The two
+rows left out of the well-constrained wheel are the exception to "three to four": each
+depends on some two hundred rows.
 
 ## Decided in review
 
@@ -269,3 +387,16 @@ built on the proof on the matrix itself, and this note is changed to say so.
 - **The supports are per entry**, in three classes against two thresholds the caller
   gives, and are what the dependent sets are formed from.
 - **No factor β**: the band is the gap between two proved bounds.
+
+In the second review, after the measurement:
+
+- **The search's threshold and the certified floor are two arguments.**
+- **The step is built on the proof on the matrix itself**, with t = τ; with t the
+  largest entry it certified nothing on the lattices. The squared proof is the stated
+  alternative. A new analysis when the kept set changes is accepted: the kept set is a
+  matter of structure and changes only when the rank does.
+- **Multipliers below a drop tolerance are set to zero** and the bounds proved again.
+- **The vectors are kept from call to call** and their bounds proved again each time.
+- **The system of order d is factored sparsely.**
+- **The kept rows alone are an option**, with the bound stated; whether a caller may use
+  it is the caller's decision.

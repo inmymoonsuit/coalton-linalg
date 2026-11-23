@@ -257,8 +257,8 @@ the library, agreed with it in advance, plan before code:
    truncated singular value decomposition gives at a relative floor, with a certificate
    that no singular value lies in a band about the floor, or a refusal by name. Built on
    [dependent rows](docs/dependent-rows.md). **[The design](docs/design-rank-deficient-step.md)
-   is reviewed and agreed; nothing of it is built, and a measurement it names is owed
-   first.** The same note covers
+   is reviewed and measured, and carries what the measurement changed; nothing of it is
+   built.** The same note covers
    certified bases: the supports of left null vectors, and a right null-space basis with
    a proved residual.
 2. That step, then those bases, each as its own batch.
