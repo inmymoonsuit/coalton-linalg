@@ -1,8 +1,8 @@
 # Design: a step on a rank-deficient matrix, and certified bases
 
-State: a design for review. Nothing here is built. It is written for the consumer that
-asked for it, whose terms are answered where they apply, and it follows
-[dependent rows](dependent-rows.md), whose proofs it reuses.
+State: a design, reviewed by the consumer that asked for it and agreed with the terms
+recorded at its end. Nothing here is built, and one measurement is owed before any of it
+is. It follows [dependent rows](dependent-rows.md), whose proofs it reuses.
 
 ## What is asked for
 
@@ -15,7 +15,9 @@ reference scale s, keep the singular values above `φ s` and solve in their subs
 
 That is the minimum-norm least squares solution of the truncated matrix, whether or not r
 is in its range. s is J's own largest singular value unless the caller gives another, as
-it does when one floor is to cut several coupled matrices alike.
+it does when one floor is to cut several coupled matrices alike. **The caller gives it as
+an interval `[s_lo, s_hi]`**: a largest singular value over several matrices is known to
+it only through bounds, and a scale taken as exact would claim more than is known.
 
 Three things are wanted, each **holding as stated or refused by name**:
 
@@ -40,7 +42,10 @@ t as a row vector. Then
                             [ W ],         [ E_T ],
 
 W the d-by-r matrix of the rows `w_t`, and row t of `E_T` the residual `Jᵀ v_t`, of norm
-at most `ε_t`. So
+at most `ε_t`. **W is exactly the stored doubles of the computed multipliers**, the ones
+the null vectors carry. Then `J = C J_S + E` is an identity about the stored matrices,
+with E the exact residuals of those vectors, which are what the bounds bound; and C is
+the matrix actually used when the step is solved for. So
 
     ‖E‖₂ ≤ ‖E‖_F ≤ γ := ( Σ ε_t² )^½ ,
 
@@ -59,13 +64,24 @@ satisfy `σ_{i+j−1}(A + B) ≤ σᵢ(A) + σⱼ(B)` (Weyl's inequality for sin
 one cannot lower any eigenvalue (Weyl's monotonicity theorem), and the singular values
 are the roots of those eigenvalues. No correction for C is needed.
 
-**(c) A lower bound τ on `σ_r(J_S)`.** `σ_r(J_S)² = λ_min(J_S J_Sᵀ)`. The
-[Cholesky-form factorization](cholesky-form.md) of `J_S J_Sᵀ − c I` that runs to
-completion proves, by the theorem that page states, that the matrix factored is positive
-definite once c is lowered by the page's rounding allowance, and so `λ_min > τ²` for the
-τ that allowance leaves. This is the proof the consumer already uses for a full-rank
-Gram matrix; here it is applied to the kept rows. The kept rows' Gram matrix is formed
-on the divided matrix, as the search is.
+**(c) A lower bound τ on `σ_r(J_S)`.** Two proofs are available, and which is used is
+what the measurement below decides.
+
+- *On the squared matrix.* `σ_r(J_S)² = λ_min(J_S J_Sᵀ)`. The
+  [Cholesky-form factorization](cholesky-form.md) of `J_S J_Sᵀ − c I` that runs to
+  completion proves, by the theorem that page states, that the matrix factored is positive
+  definite once c is lowered by the page's rounding allowance, and so `λ_min > τ²` for the
+  τ that allowance leaves. It costs one factorization on the pattern the search already
+  analyzed. Its limit is that the allowance is a multiple of the unit roundoff times the
+  size of `J_S J_Sᵀ`, so it cannot prove a τ much below `(n u)^½ σ₁`: about 5e-7 of
+  `σ₁` at a thousand rows.
+- *On the matrix itself.* [The rank certificate from the inertia](quasidefinite.md#a-rank-certificate-from-the-inertia)
+  proves that every singular value of a matrix exceeds `(s t)^½` from one signed
+  factorization of `[[t I, J_Sᵀ], [J_S, s I]]` and its measured backward bound, without
+  forming `J_S J_Sᵀ`. Its resolution is that backward bound, a multiple of the unit
+  roundoff times the matrix's own size and the growth measured, so it can reach a τ far
+  below the first proof's where growth allows. It costs an analysis and a factorization of
+  the larger matrix.
 
 **(d) Bounds on `σ₁(J)`**, needed only when the caller gives no reference scale. From
 below, `‖J e‖₂ / ‖e‖₂` for any vector, and a few steps of the power method on `Jᵀ J`
@@ -76,8 +92,8 @@ above, `σ₁ ≤ (‖J‖₁ ‖J‖_∞)^½`, which costs one pass, or the sam
 
 ## The certificate
 
-With a reference scale known to lie in `[s_lo, s_hi]`, both ends the caller's s when one
-is given:
+With the reference scale in `[s_lo, s_hi]`, the caller's interval or the one (d) gives
+for J itself:
 
     γ < φ s_lo        and        τ > φ s_hi .
 
@@ -137,7 +153,9 @@ is. `x*` minimizes the residual of `J_r`, so `‖ρ‖ ≤ ‖r − J_r x‖ ≤
 from the computed x. And `‖x*‖ ≤ ‖x‖ + ‖x − x*‖`, which puts the bound on both sides
 of one scalar inequality; it is solved once, and has a solution when `4γ/τ < 1`. Where it
 has none the call refuses. To this is added the rounding of the two solves, bounded by
-their refinements' final residuals over τ.
+their refinements' final residuals over τ. **Each of those is a proved residual**, formed
+with its [product bound](dependent-rows.md#what-is-proved) as the null vectors' are, and
+not a residual computed in floating point and taken at its word.
 
 ## Supports of left null vectors
 
@@ -159,6 +177,18 @@ below `lo` for the matrix as stored. A multiplier that is exactly zero in the mo
 1e-17 in the stored matrix is classed zero only because 1e-17 is below `lo`; no
 computation on rounded data proves more.
 
+**The supports give the dependent sets.** A caller that wants the groups of rows that
+depend on one another merges rows whose supports overlap. Each vector here is the
+fundamental circuit of its row with respect to the kept set, and a reduced echelon basis
+of the left null space is the set of fundamental circuits with respect to another
+independent set, the rows that are not its pivots. Merging by overlap gives, from
+either, the connected components of the rows as a matroid, which do not depend on the
+independent set chosen. That was checked in exact rational arithmetic on four hundred
+small matrices, a hundred and twenty of them with two or more components, before being
+written here. What a floating-point computation adds is only the classing of entries
+above: a multiplier wrongly classed joins or parts two groups, which is why an entry
+that cannot be classed is a refusal.
+
 ## A basis of the right null space
 
 Dependent rows applied to `Jᵀ` finds the columns of J that depend on the others, n less
@@ -173,7 +203,10 @@ The n − r vectors are independent, since each has a 1 where the others have 0,
 a basis that is sparse where the multipliers are, and **not orthonormal**. An orthonormal
 one is Q from a Householder factorization `Z = Q R`: `σ_min(Z) ≥ 1` for the same reason
 as for C, so `‖R⁻¹‖₂ ≤ 1` and `‖J Q‖_F ≤ ‖J Z‖_F`, to which the factorization's own
-rounding is added. Q is dense, n by n − r.
+rounding is added. Q is dense, n by n − r. **Both are offered**: Z always, with a bound
+for each vector, being cheap and certified as it stands; Q on request, with one bound
+for all, for a caller that projects onto the basis and steps along unit directions. Its
+`n (n − r)²` operations are less than such a caller spends re-solving once a direction.
 
 The same floor and reference scale apply: the basis is certified when the certificate
 for `Jᵀ` holds, which is the certificate above with the transposed search's γ and τ.
@@ -191,7 +224,9 @@ By name, and distinct:
 | Support undecided | an entry between the two thresholds, with its row and position |
 
 The existing refusals of the search and of the factorizations pass through under their
-own names.
+own names. **A bound that is reached is returned however wide it is.** How wide a bound
+is acceptable is the caller's to say, and a returned bound holds as stated; the library
+takes no argument for it.
 
 ## Cost, and what will be timed
 
@@ -203,16 +238,34 @@ patterns the consumer names: a lattice of n by n rectangles with every shared ed
 carrying a coincident pair and a duplicated horizontal or vertical condition, at n = 15
 and 21, and a wheel with a redundant distance on every spoke.
 
-## Questions for the reviewer
+## The measurement owed before code
 
-1. **Which basis?** The sparse Z with a bound for each vector, or the dense orthonormal Q
-   with one bound for all, or both. Q costs `n (n − r)²` operations and `n (n − r)`
-   numbers.
-2. **The bound on `‖x − x*‖`** contains `‖ρ‖/τ²`. For an r far outside the range and a τ
-   near the floor it can exceed `‖x‖` itself. Is a step returned with such a bound of
-   use, or should a bound above a caller's fraction of `‖x‖` be a refusal?
-3. **The reference scale as an interval.** When the caller gives s it is taken as exact.
-   When it does not, `[s_lo, s_hi]` from (d) widens the band that must be clear by
-   `s_hi / s_lo`. Is a default built on the cheap upper bound acceptable, at the price of
-   refusing some floors a tighter bound would pass, or is the factorization for the tight
-   one worth its cost here?
+The floor a nonlinear solver cuts its step at can be as low as 2e-8 of `σ₁`, and two
+limits of this design sit near that figure: the search resolves about 1.5e-8 of a row,
+and the first proof of (c) cannot certify a τ much below 5e-7 of `σ₁` at a thousand rows.
+For rows that are redundant exactly, γ is near the unit roundoff times the matrix and is
+not the concern. τ is. A refusal there is safe, since it costs time and not agreement,
+but how often it would happen decides which proof (c) is built on.
+
+So before any of this is built, on the two timing patterns and on one well-constrained
+matrix, at floors of 2e-8 and of 1e-6:
+
+- `γ / s` and `τ / s`, with τ from each of the two proofs;
+- how often each refusal would fire, and for "band not separated" which side fails;
+- how often the width of the default scale interval alone is what fails it.
+
+If τ from the squared proof is the binding side at 2e-8 on ordinary matrices, the step is
+built on the proof on the matrix itself, and this note is changed to say so.
+
+## Decided in review
+
+- **The reference scale is an interval the caller gives**; J's own, from (d), is the
+  default. The default uses the cheap upper bound and the power method's lower bound. If
+  the measurement shows its width refusing real matrices, the tight bound is a retry the
+  caller can make, not a cost every call pays.
+- **Both bases**: the sparse one always, the orthonormal one on request.
+- **A bound that is reached is returned**, however wide; "bound not reached" stays for
+  `4γ/τ ≥ 1` and for a solve whose refinement did not converge.
+- **The supports are per entry**, in three classes against two thresholds the caller
+  gives, and are what the dependent sets are formed from.
+- **No factor β**: the band is the gap between two proved bounds.
