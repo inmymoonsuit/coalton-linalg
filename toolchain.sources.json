@@ -13,7 +13,7 @@
   },
   "coalton": {
     "repository": "https://github.com/coalton-lang/coalton.git",
-    "revision": "b6e284bdd91ef9ba0fb303e0798c9818b9b3e268",
+    "revision": "deb300be5a51ad4ed903d23e6fe510acb34e9138",
     "checkout_configuration": {
       "core.autocrlf": "true",
       "core.eol": "crlf"

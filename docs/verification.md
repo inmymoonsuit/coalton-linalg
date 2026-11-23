@@ -19,8 +19,10 @@ Run serially from this repository, with the ignored local configuration pointing
 to installed dependencies. The checked-in example configuration contains no
 desktop-specific paths. Command-line settings override that configuration.
 
-Measured 2026-11-19 on Windows x86-64: SBCL 2.6.10, Coalton commit
-`b6e284bdd91ef9ba0fb303e0798c9818b9b3e268`, release mode, Python 3.13.13.
+Measured on Windows x86-64 with SBCL 2.6.10, release mode, Python 3.13.13. The Coalton
+compiler was commit `b6e284bdd91ef9ba0fb303e0798c9818b9b3e268` from 2026-11-19 to 2026-11-22,
+and is commit `deb300be5a51ad4ed903d23e6fe510acb34e9138` since: [the record of the
+move](batch14.md#the-pin-afterwards) says why and what was run on the new one.
 The Python verifier uses only the standard library. The initial migration recorded
 versions only; Batch 1 added [toolchain.lock.json](../toolchain.lock.json) and
 [source/resolution checks](toolchain.md), verified through a fresh-cache build.

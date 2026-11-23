@@ -2,6 +2,14 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.13.3 — 2026-11-22
+
+Changed: the pinned Coalton compiler moves from `b6e284b` to `deb300be`, which fixes the
+miscompilation of a cell-holding function inlined from another package. No source of
+the library changes and no result changes; `toolchain.lock.json` and
+`toolchain.sources.json` describe the new compiler, and a build against the old one no
+longer matches the lock. [Record](docs/batch14.md#the-pin-afterwards).
+
 ## 0.13.2 — 2026-11-22
 
 Fixed, by an outside audit contributed as pull request 1 (Robert Smith), each with a

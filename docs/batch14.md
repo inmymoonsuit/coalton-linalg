@@ -106,6 +106,28 @@ exactly what the earlier code did.
 | A ratio of inner products ignores their separate exponents | yes |
 | A direction is prepared after the last step allowed | yes |
 
+## The pin, afterwards
+
+The defect was already fixed upstream. On the day of the audit its author changed the
+compiler so that a local variable that is assigned is no longer treated as a constant
+when an inlined body is propagated, which is what had left the assignment with no
+target. **The pinned compiler was then moved**, from `b6e284b` to `deb300be`, the head of
+the upstream repository on 2026-11-22, which contains that change.
+
+- The pull request's sources **as sent**, helpers in the separate package, were built
+  with the new compiler under the warning guard: no warning, all eight of its tests
+  pass, and nothing is allocated. With the old compiler that same tree is refused.
+- Both complete checks pass on the new compiler at safety 1 and safety 0, with a cache
+  that has held only this compiler's output and with the content lock rewritten for it:
+  every Coalton file's hash, and the list of systems the build loads, which is one
+  shorter, since the compiler no longer depends on `source-error`. The old compiler's
+  checkout no longer matches the lock and is refused by the content check.
+- The helpers stay where the integration put them. That arrangement is right under both
+  compilers, and the guard stays whatever the compiler.
+
+The old compiler's checkout is left in place beside the new one, since other work on the
+same host is pinned to it.
+
 ## Limits
 
 - **No planted controls were written for the dense changes**, in the indefinite
@@ -116,9 +138,11 @@ exactly what the earlier code did.
 - **The scaled-arithmetic helpers do not end on an argument that is zero or not finite.**
   Every caller excludes both before calling, by checks that are in the source for other
   reasons; nothing in the helpers themselves enforces it.
-- **The compiler defect is worked around, not fixed**, and is known here only through
-  this one case. The guard catches a warning; a miscompilation that produced none would
-  be caught only by a test.
+- **The compiler defect is known here only through this one case.** It is fixed in the
+  compiler now pinned. The guard catches a warning; a miscompilation that produced none
+  would be caught only by a test.
+- **The new compiler is the upstream head of one day**, chosen because it holds the fix
+  and verified by this library's own checks and nothing else. It is not a release.
 - The tests added are at the edges the audit chose. That the same code is right
   everywhere between them rests on the earlier rosters passing unchanged.
 - One host and finite rosters establish neither universal behaviour nor portability beyond
