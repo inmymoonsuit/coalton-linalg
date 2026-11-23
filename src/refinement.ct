@@ -38,6 +38,7 @@
     (residual (arr:LispArray F64))
     (correction (arr:LispArray F64))
     (best (arr:LispArray F64))
+    (saved-rhs (arr:LispArray F64))
     (norms (arr:LispArray F64))
     (state (arr:LispArray UFix)))
 
@@ -52,9 +53,10 @@
 
   (declare make-refiner (UFix * UFix -> Refiner))
   (define (make-refiner dimension step-limit)
-    "A refiner for vectors of this dimension that takes at most this many correction steps a call. Its storage is three vectors and one norm a step."
+    "A refiner for vectors of this dimension that takes at most this many correction steps a call. Its storage is four vectors and one norm a step."
     (MkRefiner (RefinerStorage dimension step-limit
                                (arr:make dimension 0.0d0) (arr:make dimension 0.0d0) (arr:make dimension 0.0d0)
+                               (arr:make dimension 0.0d0)
                                (arr:make (+ step-limit 1) 0.0d0) (arr:make 3 (the UFix 0)))))
 
   (declare dimension (Refiner -> UFix))
@@ -133,9 +135,13 @@
     (let correction = (.correction held))
     (let best = (.best held))
     (let norms = (.norms held))
+    (let rhs = (cond ((unsafe-pointer-eq? b x)
+                      (copy-into! b (.saved-rhs held))
+                      (.saved-rhs held))
+                     (True b)))
     (copy-into! x best)
     (arr:set! state 2 1)
-    (unless (residual-into! apply b x residual norms 0)
+    (unless (residual-into! apply rhs x residual norms 0)
       (return RefineNonFinite))
     (let lowest = (cell:new (arr:aref norms 0)))
     (for ((k 1 (+ k 1))) :while (<= k (.limit held))
@@ -156,7 +162,7 @@
         (return RefineNonFinite))
       (arr:set! state 0 k)
       (arr:set! state 2 (+ k 1))
-      (unless (residual-into! apply b x residual norms k)
+      (unless (residual-into! apply rhs x residual norms k)
         (copy-into! best x)
         (return RefineNonFinite))
       (when (< (arr:aref norms k) (cell:read lowest))

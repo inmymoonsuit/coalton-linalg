@@ -93,14 +93,17 @@ norms and the number of steps."
     ;; The reported norm is that of the residual formed from the operator, and is within the
     ;; tolerance; the exact residual of the vector returned agrees with it to rounding.
     (let* ((reported (cg:residual-norm workspace))
-           (exact (sqrt (float (exact-residual-squared dense b x) 1d0)))
+           (exact-square (exact-residual-squared dense b x))
            (rounding (* 64 n double-float-epsilon
                         (loop :for i :below n
                               :maximize (+ (abs (aref b i))
                                            (loop :for j :below n :sum (abs (* (aref dense i j) (aref x j)))))))))
       (assert (<= 0d0 reported tolerance) () "~A: converged with a reported residual of ~S against ~S." label reported
               tolerance)
-      (assert (<= (abs (- reported exact)) rounding) () "~A: reported residual ~S, exact ~S." label reported exact))
+      (assert (<= (expt (max 0 (- (rational reported) (rational rounding))) 2)
+                  exact-square
+                  (expt (+ (rational reported) (rational rounding)) 2))
+              () "~A: reported residual ~S, exact squared residual ~S." label reported exact-square))
     ;; The iteration recomputed: every running norm and the returned vector, bit for bit.
     (multiple-value-bind (iterates norms reference-steps)
         (reference-cg matrix b start (or reference-precondition (lambda (r z) (replace z r))) limit tolerance)
@@ -348,7 +351,56 @@ norms and the number of steps."
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "CG-LIFETIME-PASS rejected=~D public-control=1~%" (length *cg-encapsulation-probes*)))
 
+(defun check-iterative-shared-rhs ()
+  (let ((times-two (cg-caller:scaling-operator 2d0)) (half (cg-caller:scaled-preconditioner 0.5d0)))
+    (dolist (method '(:cg :pcg :refine))
+      (let ((v (doubles 2d0)))
+        (assert (zerop (ecase method
+                         (:cg (cg-caller:cg-code (cg:make-cg 1 2) times-two v v 0.5d0))
+                         (:pcg (cg-caller:pcg-code (cg:make-cg 1 2) times-two half v v 0.5d0))
+                         (:refine (rf-caller:refine-code (rf:make-refiner 1 2) times-two half v v 0.5d0 1d0)))))
+        (assert (= 1d0 (aref v 0)))))))
+
+(defun check-cg-tiny-residual ()
+  (let ((op (cg-caller:scaling-operator 1d0)))
+    (dolist (b (list (scale-float 1d0 -530) (scale-float 1d0 -600) least-positive-double-float))
+      (let ((w (cg:make-cg 1 0)) (x (doubles 0d0)))
+        (assert (= 1 (cg-caller:cg-code w op (doubles b) x 0d0)))
+        (assert (= b (cg:residual-norm w))))
+      (let ((w (cg:make-cg 1 2)) (x (doubles 0d0)))
+        (assert (= 0 (cg-caller:cg-code w op (doubles b) x 0d0)))
+        ;; Do not round the square to F64 before testing the tolerance.
+        (assert (zerop (exact-residual-squared (rows-matrix '((1))) (doubles b) x)))
+        (assert (= 1 (cg:step-count w))))))
+  ;; Exercise the recurrence as well as a one-step solve on tiny data.
+  (let* ((s (scale-float 1d0 -600)) (tol (scale-float s -45)) (b (doubles s (* 2 s))) (x (zeros 2))
+         (w (cg:make-cg 2 4)) (op (cg-caller:diagonal-operator (doubles 1d0 2d0))))
+    (assert (zerop (cg-caller:cg-code w op b x tol)))
+    (assert (>= (cg:step-count w) 2))
+    (assert (<= (exact-residual-squared (rows-matrix '((1 0) (0 2))) b x) (expt (rational tol) 2))))
+  ;; Unlike the identity, the products in these step lengths have different bands.
+  (let ((b (doubles (scale-float 1d0 -600))) (w (cg:make-cg 1 2)) (start (zeros 1)) (x (zeros 1)))
+    (dolist (power '(300 -300))
+      (let ((op (cg-caller:scaling-operator (scale-float 1d0 power))))
+        (fill x 0d0)
+        (assert (zerop (cg-caller:cg-code w op b x 0d0)))
+        (assert (= (aref x 0) (scale-float (aref b 0) (- power))))
+        (allocation-check "cg-tiny-products"
+                          (lambda () (assert (zerop (cg-caller:cg-loop w op b start x 0d0 1)))))))))
+
+(defun check-pcg-last-preconditioner ()
+  (let* ((w (cg:make-cg 2 1)) (x (zeros 2)) (calls (indices 0))
+         (pre (rf-caller:refusing-solver (cg-caller:scaled-preconditioner 1d0) 1 calls)))
+    (assert (= 1 (cg-caller:pcg-code w (cg-caller:diagonal-operator (doubles 1d0 3d0))
+                                      pre (doubles 1d0 1d0) x 0d0)))
+    (assert (= 1 (aref calls 0)))
+    (assert (equalp x (doubles 0.5d0 0.5d0)))
+    (assert (= (sqrt 0.5d0) (cg:residual-norm w)))))
+
 (defun run-cg-tests ()
+  (check-iterative-shared-rhs)
+  (check-cg-tiny-residual)
+  (check-pcg-last-preconditioner)
   (run-cg-convergence-tests)
   (run-cg-outcome-tests)
   (run-cg-lifetime-tests)

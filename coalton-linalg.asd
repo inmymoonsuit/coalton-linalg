@@ -11,7 +11,7 @@
           (sb-ext:*block-compile-default* :specified))
       (funcall compile)))
   :components ((:module "src" :serial t
-                :components ((:ct-file "errors") (:ct-file "numeric") (:ct-file "refinement")
+                :components ((:ct-file "errors") (:ct-file "float") (:ct-file "numeric") (:ct-file "refinement")
                              (:ct-file "conjugate-gradient")
                              (:module "sparse" :serial t
                               :components ((:ct-file "csc") (:ct-file "limits") (:ct-file "ordering")

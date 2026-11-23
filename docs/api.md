@@ -71,7 +71,8 @@ Constructors and transforming operations return owned storage.
 | `step-count`, `best-step`, `residual-count` | Refiner -> UFix; of the latest call |
 | `residual-norms` | Refiner -> V; infinity norms of the latest call's residuals |
 
-The solution array holds the best iterate seen on every return. A call allocates nothing.
+The solution array holds the best iterate seen on every return. It may also be the
+right-hand side on entry. A call allocates nothing.
 
 ## coalton-linalg/conjugate-gradient
 
@@ -91,7 +92,7 @@ The solution array holds the best iterate seen on every return. A call allocates
 | `recurrence-norms` | CgWorkspace -> V; 2-norms of the latest call's running residual |
 
 The operator must be symmetric positive definite and the tolerance is absolute, in the
-2-norm. A call allocates nothing.
+2-norm. The right-hand side and solution may share one array. A call allocates nothing.
 
 ## coalton-linalg/sparse/gram
 

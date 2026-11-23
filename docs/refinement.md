@@ -29,7 +29,7 @@ Two uses in this library:
 ## Interface
 
 - `make-refiner(dimension, step-limit) -> Refiner` allocates the workspace once: three
-  vectors of the dimension and one number a step.
+  working vectors, one vector for a shared right-hand side, and the norm history.
 - `refine!(refiner, apply, solve, b, x, tolerance, stall) -> RefineStatus`.
   - `apply` is a function of two arrays, `(v, out)`, that **writes A v into out**. The
     library forms `r = b − A x` itself, in working precision, so every caller's residual
@@ -38,7 +38,8 @@ Two uses in this library:
     of `A c = r` into out and **returns whether it could**. Any solve will do: `solve!`,
     `solve-cholesky!`, a dense factor's, or the caller's own.
   - `b` is the right-hand side. `x` holds the starting vector on entry, commonly zeros or
-    a first solve, and **the best iterate seen on return**, in every outcome.
+    a first solve, and **the best iterate seen on return**, in every outcome. They may
+    be the same array; residuals still use the right-hand side as it was on entry.
   - `tolerance` is absolute and is compared with the **infinity norm** of the residual.
   - `stall` is the caller's factor: a step that leaves the residual norm at or above
     `stall` times the previous one ends the call. 1 demands only that the norm fall; 1/2

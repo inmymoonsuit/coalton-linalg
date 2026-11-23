@@ -1,7 +1,7 @@
 (cl:defpackage #:coalton-linalg/conjugate-gradient
   (:use #:coalton #:coalton-prelude)
   (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell)
-                    (#:math #:coalton/math))
+                    (#:math #:coalton/math) (#:fp #:coalton-linalg/internal/float))
   (:export #:CgWorkspace #:make-cg #:dimension #:step-limit
            #:CgStatus #:CgConverged #:CgLimit #:CgNotPositive #:CgNonFinite #:CgPreconditionerRefused
            #:CgBadSize #:CgBadTolerance
@@ -39,8 +39,11 @@
     (preconditioned (arr:LispArray F64))
     (direction (arr:LispArray F64))
     (image (arr:LispArray F64))
+    (saved-rhs (arr:LispArray F64))
     (norms (arr:LispArray F64))
     (scalars (arr:LispArray F64))
+    (products (arr:LispArray F64))
+    (bands (arr:LispArray IFix))
     (state (arr:LispArray UFix)))
 
   (repr :transparent)
@@ -54,11 +57,13 @@
 
   (declare make-cg (UFix * UFix -> CgWorkspace))
   (define (make-cg dimension step-limit)
-    "A workspace for vectors of this dimension that takes at most this many steps a call. Its storage is four vectors and one norm a step."
+    "A workspace for vectors of this dimension that takes at most this many steps a call. Its storage is five vectors and one norm a step."
     (MkCgWorkspace (CgStorage dimension step-limit
                               (arr:make dimension 0.0d0) (arr:make dimension 0.0d0)
                               (arr:make dimension 0.0d0) (arr:make dimension 0.0d0)
+                              (arr:make dimension 0.0d0)
                               (arr:make (+ step-limit 1) 0.0d0) (arr:make 2 -1.0d0)
+                              (arr:make 2 0.0d0) (arr:make 2 (the IFix 0))
                               (arr:make 2 (the UFix 0)))))
 
   (declare dimension (CgWorkspace -> UFix))
@@ -91,14 +96,47 @@
     "Borrowed view: the 2-norm of the running residual after each step of the latest call, entry 0 for the starting vector; step-count + 1 entries are meaningful."
     (.norms (storage workspace)))
 
-  (inline)
-  (declare dot (arr:LispArray F64 * arr:LispArray F64 -> F64))
-  (define (dot a b)
-    "The sum of the products, in index order."
+  (declare dot! (CgStorage * UFix * arr:LispArray F64 * arr:LispArray F64 -> Void))
+  (define (dot! s slot a b)
+    "Store the dot product as products[slot] times 2^(256 * bands[slot]). Ordinary sums have band zero."
     (let sum = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i (arr:length a))
       (cell:write! sum (+ (cell:read sum) (* (arr:aref a i) (arr:aref b i)))))
-    (cell:read sum))
+    (arr:set! (.bands s) slot 0)
+    (when (< (abs (cell:read sum)) fp:least-normal)
+      ;; A positive product can vanish before its ratio is taken. Sum at the
+      ;; exponent of the largest *paired* terms, not the separate vector maxima.
+      ;; Each operand has a band between -5 and 3.
+      (let largest = (cell:new (the IFix -11)))
+      (cell:write! sum 0.0d0)
+      (for ((i 0 (+ i 1))) :while (< i (arr:length a))
+        (let x = (arr:aref a i))
+        (let y = (arr:aref b i))
+        (unless (or (== x 0.0d0) (== y 0.0d0))
+          (let ex = (fp:magnitude-band x))
+          (let ey = (fp:magnitude-band y))
+          (let e = (+ ex ey))
+          (when (> e (cell:read largest))
+            (cell:write! sum (fp:shift-bands (cell:read sum) (- (cell:read largest) e)))
+            (cell:write! largest e))
+          (let term = (* (fp:shift-bands x (- 0 ex)) (fp:shift-bands y (- 0 ey))))
+          (cell:write! sum (+ (cell:read sum) (fp:shift-bands term (- e (cell:read largest)))))))
+      (arr:set! (.bands s) slot (cell:read largest)))
+    (arr:set! (.products s) slot (cell:read sum)))
+
+  (inline)
+  (declare product-ratio (CgStorage * UFix * UFix -> F64))
+  (define (product-ratio s numerator denominator)
+    (let a = (arr:aref (.products s) numerator))
+    (let b = (arr:aref (.products s) denominator))
+    (let delta = (- (arr:aref (.bands s) numerator) (arr:aref (.bands s) denominator)))
+    (cond
+      ((== delta 0) (/ a b))
+      (True
+       (let ea = (fp:magnitude-band a))
+       (let eb = (fp:magnitude-band b))
+       (fp:shift-bands (/ (fp:shift-bands a (- 0 ea)) (fp:shift-bands b (- 0 eb)))
+                       (+ delta (- ea eb))))))
 
   (declare unpreconditioned (arr:LispArray F64 * arr:LispArray F64 -> Boolean))
   (define (unpreconditioned r z)
@@ -111,14 +149,14 @@
                            * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64 * arr:LispArray F64
                            * arr:LispArray F64 -> Void))
   (define (form-residual! apply b x image residual scalars)
-    "residual = b - A x through the operator, and its squared 2-norm into scalars[1]."
+    "residual = b - A x through the operator, and its 2-norm into scalars[1]."
     (apply x image)
     (let sum = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i (arr:length b))
       (let r = (- (arr:aref b i) (arr:aref image i)))
       (arr:set! residual i r)
       (cell:write! sum (+ (cell:read sum) (* r r))))
-    (arr:set! scalars 1 (cell:read sum)))
+    (arr:set! scalars 1 (inline (fp:norm-from-squares residual (cell:read sum)))))
 
   (declare cg! (CgWorkspace * (arr:LispArray F64 * arr:LispArray F64 -> Void)
                 * arr:LispArray F64 * arr:LispArray F64 * F64 -> CgStatus))
@@ -145,30 +183,37 @@
     (let p = (.direction s))
     (let q = (.image s))
     (let norms = (.norms s))
-    (form-residual! apply b x q r scalars)
+    (let rhs = (cond ((unsafe-pointer-eq? b x)
+                      (let saved = (.saved-rhs s))
+                      (for ((i 0 (+ i 1))) :while (< i n)
+                        (arr:set! saved i (arr:aref b i)))
+                      saved)
+                     (True b)))
+    (form-residual! apply rhs x q r scalars)
     (unless (inline (math:finite? (arr:aref scalars 1))) (return CgNonFinite))
-    (arr:set! norms 0 (math:sqrt (arr:aref scalars 1)))
-    (let rho = (cell:new 0.0d0))
+    (arr:set! norms 0 (arr:aref scalars 1))
     ;; True while the residual held was formed from the operator and no direction is set.
     (let fresh = (cell:new True))
     (let k = (cell:new (the UFix 0)))
     (for () :while (< (cell:read k) (.limit s))
       (when (cell:read fresh)
-        (when (<= (math:sqrt (arr:aref scalars 1)) tolerance)
-          (arr:set! scalars 0 (math:sqrt (arr:aref scalars 1)))
+        (when (<= (arr:aref scalars 1) tolerance)
+          (arr:set! scalars 0 (arr:aref scalars 1))
           (return CgConverged))
         (unless (precondition r z) (return CgPreconditionerRefused))
-        (cell:write! rho (dot r z))
-        (unless (inline (math:finite? (cell:read rho))) (return CgNonFinite))
-        (unless (> (cell:read rho) 0.0d0) (return CgNotPositive))
+        (dot! s 0 r z)
+        (let rho = (arr:aref (.products s) 0))
+        (unless (inline (math:finite? rho)) (return CgNonFinite))
+        (unless (> rho 0.0d0) (return CgNotPositive))
         (for ((i 0 (+ i 1))) :while (< i n)
           (arr:set! p i (arr:aref z i)))
         (cell:write! fresh False))
       (apply p q)
-      (let curvature = (dot p q))
+      (dot! s 1 p q)
+      (let curvature = (arr:aref (.products s) 1))
       (unless (inline (math:finite? curvature)) (return CgNonFinite))
       (unless (> curvature 0.0d0) (return CgNotPositive))
-      (let alpha = (/ (cell:read rho) curvature))
+      (let alpha = (product-ratio s 0 1))
       (unless (inline (math:finite? alpha)) (return CgNonFinite))
       (let sum = (cell:new 0.0d0))
       (for ((i 0 (+ i 1))) :while (< i n)
@@ -179,30 +224,33 @@
       (unless (inline (math:finite? (cell:read sum))) (return CgNonFinite))
       (cell:write! k (+ (cell:read k) 1))
       (arr:set! st 0 (cell:read k))
-      (arr:set! scalars 1 (cell:read sum))
-      (arr:set! norms (cell:read k) (math:sqrt (cell:read sum)))
+      (let norm = (inline (fp:norm-from-squares r (cell:read sum))))
+      (arr:set! norms (cell:read k) norm)
       ;; When the running residual says the tolerance is met: it is a recurrence and can have
       ;; drifted from b - A x, so the residual is formed from the operator and the test is
       ;; made on that at the top of the next round; if it fails there, the method starts
       ;; again from the residual just formed.
-      (let met = (<= (math:sqrt (cell:read sum)) tolerance))
+      (let met = (<= norm tolerance))
       (when met
-        (form-residual! apply b x q r scalars)
+        (form-residual! apply rhs x q r scalars)
         (unless (inline (math:finite? (arr:aref scalars 1))) (return CgNonFinite))
         (cell:write! fresh True)
         (arr:set! st 1 (+ (arr:aref st 1) 1)))
-      (unless met
+      (unless (or met (== (cell:read k) (.limit s)))
         (unless (precondition r z) (return CgPreconditionerRefused))
-        (let next = (dot r z))
+        (dot! s 1 r z)
+        (let next = (arr:aref (.products s) 1))
         (unless (inline (math:finite? next)) (return CgNonFinite))
         (unless (> next 0.0d0) (return CgNotPositive))
-        (let beta = (/ next (cell:read rho)))
-        (cell:write! rho next)
+        (let beta = (product-ratio s 1 0))
+        (unless (inline (math:finite? beta)) (return CgNonFinite))
+        (arr:set! (.products s) 0 next)
+        (arr:set! (.bands s) 0 (arr:aref (.bands s) 1))
         (for ((i 0 (+ i 1))) :while (< i n)
           (arr:set! p i (+ (arr:aref z i) (* beta (arr:aref p i)))))))
     ;; The limit. What is reported is the residual formed from the operator.
     (unless (cell:read fresh)
-      (form-residual! apply b x q r scalars)
+      (form-residual! apply rhs x q r scalars)
       (unless (inline (math:finite? (arr:aref scalars 1))) (return CgNonFinite)))
-    (arr:set! scalars 0 (math:sqrt (arr:aref scalars 1)))
+    (arr:set! scalars 0 (arr:aref scalars 1))
     (if (<= (arr:aref scalars 0) tolerance) CgConverged CgLimit)))

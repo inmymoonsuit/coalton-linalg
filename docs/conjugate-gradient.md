@@ -10,7 +10,7 @@ record](batch13.md) holds the controls.
 A system `A x = b` whose matrix is symmetric positive definite and is available only as
 something that multiplies a vector: a matrix too large to factor, a product of matrices
 that is never formed, such as `J (Jᵀ v)`, or a matrix-free operator. The method needs
-nothing of the matrix but its product with a vector, four vectors of storage, and, to be
+nothing of the matrix but its product with a vector, five vectors of storage, and, to be
 fast, an approximate solve to precondition it with. The factorizations of this library
 are the tool where they fit in memory and time; this is the tool where they do not, and
 the two combine, since any of their solves is a preconditioner.
@@ -18,18 +18,20 @@ the two combine, since any of their solves is a preconditioner.
 ## Interface
 
 - `make-cg(dimension, step-limit) -> CgWorkspace` allocates the workspace once: four
-  vectors of the dimension and one number a step.
+  working vectors, one vector for a shared right-hand side, and the norm history.
 - `cg!(workspace, apply, b, x, tolerance) -> CgStatus`.
   - `apply` is a function of two arrays, `(v, out)`, that **writes A v into out**.
   - `b` is the right-hand side. `x` holds the starting vector on entry, commonly zeros,
-    and the last iterate on return.
+    and the last iterate on return. They may be the same array: the original right-hand
+    side is saved before the first product.
   - `tolerance` is absolute and is compared with the **2-norm** of the residual
     `b − A x`.
 - `pcg!(workspace, apply, precondition, b, x, tolerance) -> CgStatus`: the same with a
   preconditioner, a function of two arrays, `(r, z)`, that writes into z an approximate
   solution of `A z = r` and **returns whether it could**. It must itself act as a
   symmetric positive definite matrix on r: `solve!` with a factor of a nearby matrix, a
-  division by the diagonal, any fixed combination of such.
+  division by the diagonal, any fixed combination of such. It is called only to prepare
+  a step that can still be taken, never to prepare one beyond the limit.
 - `step-count(workspace)`: steps the latest call took. Each applies the operator once.
 - `residual-norm(workspace)`: the 2-norm of `b − A x` for the vector returned, **formed
   from the operator**, after a call that ended `CgConverged` or `CgLimit`; −1 otherwise.
@@ -89,9 +91,12 @@ at which the value arose and may itself hold one.
 - **`CgNotPositive` is a finding about the direction met, not a test of the operator.** A
   call can converge on an indefinite operator without meeting such a direction, and an
   operator that is not symmetric is not detected at all.
-- **The tolerance is the caller's**, absolute, in the 2-norm, which is formed as the root
-  of a plain sum of squares and so overflows for vectors of magnitude near 10¹⁵⁴; such a
-  system is scaled first.
+- **The tolerance is the caller's**, absolute, in the 2-norm. If the sum of squares is
+  zero or subnormal, the norm is recomputed from lifted components; a nonzero residual
+  does not meet zero tolerance just because its square underflowed. Tiny recurrence
+  inner products likewise retain a separate binary exponent until their ratio is taken.
+  The ordinary sums can still overflow for vectors of magnitude near 10¹⁵⁴; scale such
+  a system first. This is not compensated summation.
 
 ## The method
 
