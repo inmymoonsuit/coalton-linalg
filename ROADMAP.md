@@ -36,9 +36,9 @@ numeric operations, supplies typed errors, and bounds the current analysis bitma
 The complete serial checks passed at both safety policies with unchanged numerical
 artifacts. The exact-singular regression demonstrates the computed-pivot contract.
 
-## Batches 3 through 13
+## Batches 3 through 14
 
-Batches 3 through 13 are completed, Batch 3 in four steps 3a through 3d, with one addition,
+Batches 3 through 14 are completed, Batch 3 in four steps 3a through 3d, with one addition,
 [6a](docs/batch6a.md): a Cholesky-form numeric entry for positivity proofs. Batches 7 and
 8 were set by a consuming application's measurements; what follows is listed under
 *Next*. [The batch record](docs/batch3a.md)
@@ -201,6 +201,19 @@ or a preconditioned residual that shows the operator or the preconditioner not p
 definite ends the call by name. [The batch record](docs/batch13.md) holds the controls;
 [the contract](docs/conjugate-gradient.md) says what a converged call does and does not
 establish.
+
+### Batch 14: an outside audit at the extremes of the range
+
+**Completed.** An audit contributed as a pull request found eight defects at the ends of
+the floating-point range and at an aliasing the tests had not offered: a right-hand side
+overwritten when it shares the iterate's array, convergence declared on a residual whose
+square underflowed, a dense two-by-two pivot solve that returned zeros at large scale, a
+small singular value reported as zero, a reflector wrong for a subnormal column, an
+unchecked overflowing multiplier in sparse LU, and two smaller ones. Each came with a
+test that fails on the earlier sources. Integrating it showed that the pinned compiler
+miscompiles a function holding a cell when inlined from another package; the code was
+arranged to avoid that and the build now fails on a compiler warning.
+[The record](docs/batch14.md) has each finding and how it was confirmed.
 
 ### Next
 

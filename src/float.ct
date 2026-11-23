@@ -1,7 +1,6 @@
 (cl:defpackage #:coalton-linalg/internal/float
   (:use #:coalton #:coalton-prelude)
-  (:local-nicknames (#:arr #:coalton/lisparray) (#:cell #:coalton/cell) (#:math #:coalton/math))
-  (:export #:least-normal #:magnitude-band #:shift-bands #:norm-from-squares))
+  (:export #:least-normal))
 (cl:in-package #:coalton-linalg/internal/float)
 (cl:declaim (cl:optimize (cl:speed 3) (cl:safety #.(cl:if (cl:member :coalton-linalg-safety-zero cl:*features*) 0 1))))
 
@@ -9,54 +8,4 @@
   (declare least-normal F64)
   (define least-normal
     "Smallest positive normal F64."
-    (lisp (-> F64) () cl:least-positive-normalized-double-float))
-
-  ;; Only used when an inner product is tiny. Coarse powers avoid boxing
-  ;; dynamic SCALE-FLOAT arguments and leave room for products and their sum.
-  (declare band-up F64)
-  (define band-up (lisp (-> F64) () (cl:scale-float 1d0 256)))
-  (declare band-down F64)
-  (define band-down (/ 1.0d0 band-up))
-
-  (inline)
-  (declare magnitude-band (F64 -> IFix))
-  (define (magnitude-band x)
-    "For nonzero finite x, the k for which |x| / 2^(256k) is in [1, 2^256)."
-    (let magnitude = (cell:new (abs x)))
-    (let k = (cell:new (the IFix 0)))
-    (for () :while (>= (cell:read magnitude) band-up)
-      (cell:write! magnitude (* (cell:read magnitude) band-down))
-      (cell:write! k (+ (cell:read k) 1)))
-    (for () :while (< (cell:read magnitude) 1.0d0)
-      (cell:write! magnitude (* (cell:read magnitude) band-up))
-      (cell:write! k (- (cell:read k) 1)))
-    (cell:read k))
-
-  (inline)
-  (declare shift-bands (F64 * IFix -> F64))
-  (define (shift-bands x k)
-    "Multiply by 2^(256k) without constructing a possibly unrepresentable multiplier."
-    (let v = (cell:new x))
-    (for ((i 0 (+ i 1))) :while (< i k)
-      (cell:write! v (* (cell:read v) band-up)))
-    (for ((i k (+ i 1))) :while (< i 0)
-      (cell:write! v (* (cell:read v) band-down)))
-    (cell:read v))
-
-  (declare square-lift F64)
-  (define square-lift (lisp (-> F64) () (cl:scale-float 1d0 600)))
-
-  (inline)
-  (declare norm-from-squares (arr:LispArray F64 * F64 -> F64))
-  (define (norm-from-squares vector squares)
-    "Root of the vector's accumulated sum of squares. Remeasure a tiny sum before its rounding loses the norm."
-    (cond
-      ((< squares least-normal)
-       ;; Even the least subnormal times 2^600 has a normal square. Every
-       ;; entry here was small, so no lifted square or sum can overflow.
-       (let total = (cell:new 0.0d0))
-       (for ((i 0 (+ i 1))) :while (< i (arr:length vector))
-         (let v = (* (arr:aref vector i) square-lift))
-         (cell:write! total (+ (cell:read total) (* v v))))
-       (/ (math:sqrt (cell:read total)) square-lift))
-      (True (math:sqrt squares)))))
+    (lisp (-> F64) () cl:least-positive-normalized-double-float)))

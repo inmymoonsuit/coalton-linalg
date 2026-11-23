@@ -83,6 +83,15 @@ no new array representation or numerical dependency is introduced. Independent
 rational dot products and adversarial calling-contract tests verify the new entry
 points without relying only on the allocating versions as a reference.
 
+## Batch 14: an outside audit
+
+The changes of this batch were written by Robert Smith and contributed to this
+repository as pull request 1; the commits carry his name. They are his own work on this
+library's sources, contributed under the repository's licence. What was added here is
+the placement of three helpers in the file that uses them, a guard in the build script,
+the planted controls, and the record. No numerical-library implementation and no
+algorithm listing was opened here in integrating it.
+
 ## Batch 13: conjugate gradients
 
 The method of conjugate gradients is that of Hestenes and Stiefel (1952), and its

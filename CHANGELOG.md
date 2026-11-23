@@ -2,7 +2,10 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
-## Unreleased
+## 0.13.2 — 2026-11-22
+
+Fixed, by an outside audit contributed as pull request 1 (Robert Smith), each with a
+test that fails on the earlier sources. [Record](docs/batch14.md).
 
 - `cg!`, `pcg!`, and `refine!` preserve the original right-hand side when it shares
   the iterate's array. CG no longer mistakes an underflowed square for convergence;
@@ -12,6 +15,10 @@ Changes a caller can meet. Each release's evidence is in the batch record it lin
   orthogonal reflectors even for columns of subnormal entries.
 - Sparse LU refuses nonfinite multipliers. Augmented analysis refuses an insufficient
   entry budget before copying the input pattern.
+
+`make-cg` and `make-refiner` each allocate one more vector than before. On data away
+from the ends of the floating-point range every result is the same, bit for bit. The
+build now fails on a compiler warning in the library.
 
 ## 0.13.1 — 2026-11-20
 
