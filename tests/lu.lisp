@@ -390,7 +390,16 @@ refused as singular, after checking that it is; the handle otherwise."
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "LU-LIFETIME-PASS rejected=~D public-control=1~%" (length *lu-encapsulation-probes*)))
 
+(defun check-lu-multiplier-overflow ()
+  (let* ((a (csc:from-csc 2 2 (indices 0 2 3) (indices 0 1 1)
+                          (doubles 0.5d0 (scale-float 1d0 1023) 1d0)))
+         (f (lu:make-lu-with-order 2 (indices 0 1) 4)))
+    (assert (= 0 (lu-caller:observe-factor f a 1d0)))
+    (assert (eq (coalton:coalton lu:LuNonFinite) (lu:factor! f a (scale-float 1d0 -1024))))
+    (assert (not (lu:lu-ready? f)))))
+
 (defun run-lu-tests ()
+  (check-lu-multiplier-overflow)
   (run-lu-exact-tests)
   (run-lu-outcome-tests)
   (run-lu-lifetime-tests)

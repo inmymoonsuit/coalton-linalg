@@ -656,7 +656,20 @@ FIRST-MARGIN replaces the first guess at the margin, which is otherwise a 2^-44 
     (format t "QUASIDEFINITE-CERTIFICATE-PASS cases=~D issued=~D withheld-though-true=~D withheld-false=~D~%"
             cases issued withheld-true withheld-false)))
 
+(defun check-augmented-budget-preflight ()
+  ;; A budget refusal may allocate its condition, not another copy of this CSC.
+  (let* ((n 16384) (p (make-array (1+ n) :element-type '(unsigned-byte 62)))
+         (rows (make-array n :element-type '(unsigned-byte 62) :initial-element 0)))
+    (dotimes (i (length p)) (setf (aref p i) i))
+    (let ((a (csc:from-csc 1 n p rows (make-array n :element-type 'double-float :initial-element 0d0))))
+      (flet ((refuse () (assert (= 8 (qd-caller:analysis-error a 0 (1+ (* 2 n)))))))
+        (refuse)
+        (let ((before (sb-ext:get-bytes-consed)))
+          (dotimes (i 16) (refuse))
+          (assert (< (- (sb-ext:get-bytes-consed) before) (* 16 n))))))))
+
 (defun run-quasidefinite-tests ()
+  (check-augmented-budget-preflight)
   (run-quasidefinite-exact-tests)
   (run-quasidefinite-identity-tests)
   (format t "QUASIDEFINITE-BACKWARD-BOUND largest backward error over its reported bound=~,3E~%"

@@ -80,6 +80,8 @@ With a threshold of 1 this is partial pivoting, with ties going to the diagonal:
 multiplier exceeds 1 in magnitude. A smaller threshold keeps the diagonal where it is
 nearly as good, which preserves sparsity for a matrix whose order was chosen with its
 diagonal in mind, and allows multipliers up to `1 / threshold`.
+A threshold so small that a chosen multiplier overflows returns `LuNonFinite`; no
+partial factor is made ready.
 
 **Singular means exactly singular in the arithmetic performed.** `LuSingular` is returned
 when every remaining entry of a column is exactly zero, a column with no entries

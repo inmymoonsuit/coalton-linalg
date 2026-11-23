@@ -77,7 +77,7 @@ In `coalton-linalg/sparse/augmented`:
   the lower CSC pattern of K, of order n + m with n + nnz(A) + m stored entries: every
   diagonal, and A's entries below the leading block. Stored zeros of A stay structural.
   The budget counts those entries; `AnalysisStorageExceeded` and `AnalysisLimitExceeded`
-  are raised as elsewhere.
+  are raised as elsewhere. The entry budget is checked before copying the source pattern.
 - `dimension(plan)` is n + m; `leading-dimension(plan)` is n, the argument
   `analyze-quasidefinite` wants; `column-pointers`, `row-indices` and `entry-count` give
   the pattern for `ldlt:Pattern`.

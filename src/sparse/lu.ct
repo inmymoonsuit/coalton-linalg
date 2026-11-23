@@ -344,6 +344,7 @@
         (let i = (arr:aref cand c))
         (unless (== i row)
           (let multiplier = (/ (arr:aref x i) pivot))
+          (unless (inline (math:finite? multiplier)) (return LuNonFinite))
           (arr:set! li-now (cell:read lnz) i)
           (arr:set! lx-now (cell:read lnz) multiplier)
           (cell:write! lnz (+ (cell:read lnz) 1))

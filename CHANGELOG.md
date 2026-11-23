@@ -2,6 +2,17 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## Unreleased
+
+- `cg!`, `pcg!`, and `refine!` preserve the original right-hand side when it shares
+  the iterate's array. CG no longer mistakes an underflowed square for convergence;
+  PCG reports the final residual without asking for a step beyond the limit.
+- Dense indefinite block solves no longer divide by an overflowed determinant scale.
+  Jacobi SVD retains rank across the former square-underflow boundary, and QR forms
+  orthogonal reflectors even for columns of subnormal entries.
+- Sparse LU refuses nonfinite multipliers. Augmented analysis refuses an insufficient
+  entry budget before copying the input pattern.
+
 ## 0.13.1 — 2026-11-20
 
 Fixed, in `coalton-linalg/sparse/scaling`, after a held-back review:
