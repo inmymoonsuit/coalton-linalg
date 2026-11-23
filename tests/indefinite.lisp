@@ -475,7 +475,30 @@
   (assert (= 1 (il-caller:budget-error 1 0)))
   (format t "INDEFINITE-LIFETIME-PASS~%"))
 
+(defun check-large-two-pivot ()
+  (let* ((h most-positive-double-float) (a (/ h 4)) (f (il:make-factor 2)) (x (doubles 0d0 0d0)))
+    (assert (= 0 (il-caller:observe-factor f (doubles a h 0d0 (- a)) 0d0)))
+    (assert (= 0 (il-caller:observe-solve f (doubles (/ h 2) 0d0) x)))
+    (assert (close-vector-p x (doubles (float 2/17 1d0) (float 8/17 1d0)))))
+  ;; Dividing the RHS by the off-diagonal first can overflow even when its
+  ;; product with the inverse block is representable.
+  (let* ((h (/ most-positive-double-float 8)) (rhs (* 7 h)) (f (il:make-factor 2)) (x (doubles 0d0 0d0)))
+    (assert (= 0 (il-caller:observe-factor f (doubles 0.375d0 0.75d0 0d0 -0.375d0) 0d0)))
+    (assert (= 0 (il-caller:observe-solve f (doubles rhs 0d0) x)))
+    (assert (close-vector-p x (doubles (float (* 8/15 (rational rhs)) 1d0)
+                                      (float (* 16/15 (rational rhs)) 1d0))))
+    (assert (= 0 (il-caller:observe-factor f (doubles 0.625d0 1.25d0 0d0 -0.625d0) 0d0)))
+    (assert (= 0 (il-caller:observe-solve f (doubles rhs rhs) x)))
+    (assert (close-vector-p x (doubles (float (* 24/25 (rational rhs)) 1d0)
+                                      (float (* 8/25 (rational rhs)) 1d0)))))
+  ;; The third row exercises the same block inverse while constructing L.
+  (let* ((h most-positive-double-float) (a (/ h 4)) (f (il:make-factor 3)))
+    (assert (= 0 (il-caller:observe-factor f (doubles a h (/ h 2) 0d0 (- a) 0d0 0d0 0d0 a) 0d0)))
+    (assert (close-vector-p (doubles (aref (il:factor-lower f) 2) (aref (il:factor-lower f) 5))
+                            (doubles (float 2/17 1d0) (float 8/17 1d0))))))
+
 (defun run-indefinite-tests ()
+  (check-large-two-pivot)
   (run-indefinite-exact-tests)
   (run-indefinite-inertia-tests)
   (run-indefinite-identity-tests)

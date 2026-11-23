@@ -497,7 +497,17 @@ entry is checked as it is computed, so this is the only place the case can be re
       (assert (= infinity (norm infinity 0d0 0d0)))))
   (format t "ORTHOGONAL-NORM-PASS~%"))
 
+(defun check-subnormal-reflector ()
+  (let ((s least-positive-double-float))
+    (dolist (n '(2 4))
+      (let ((f (og:make-decomposition n 1)) (x (zero-vector n)))
+        (assert (= 0 (og-caller:observe-factor f (make-array n :element-type 'double-float :initial-element s))))
+        (setf (aref x 0) 1d0)
+        (assert (eq (coalton:coalton og:SolveSuccess) (og:apply-q! f x)))
+        (loop :for v :across x :do (assert (< (abs (+ v (/ 1d0 (sqrt (float n 1d0))))) 1d-14)))))))
+
 (defun run-orthogonal-tests ()
+  (check-subnormal-reflector)
   (run-orthogonal-norm-tests)
   (run-orthogonal-exact-tests)
   (run-orthogonal-rank-tests)

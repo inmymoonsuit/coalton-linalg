@@ -120,9 +120,10 @@ refusal. Underflow follows F64 and is not diagnosed.
 
 A 2-by-2 block `[[a, b], [b, c]]` is inverted in the form divided by b: its scaled
 determinant `(a/b)(c/b) - 1` lies strictly between -(1 + α²) and -(1 - α²), since the two
-diagonals may differ in sign, and is computed without forming
-b², so matrices scaled by any power of two that keeps their entries representable give
-the same pivots and the same L, bit for bit.
+diagonals may differ in sign. At the ends of the exponent range, a common power of two
+scales b and the trailing entries or right-hand side before the divisions. This avoids
+both an overflowed denominator and a prematurely overflowed right-hand side divided
+by b, even on perfectly conditioned blocks with representable solutions.
 
 Storage is dense: n² doubles for L plus O(n). Work is about n³/3 multiply-adds for the
 factorization, plus the pivot search described below, and n² for a solve. The code is a

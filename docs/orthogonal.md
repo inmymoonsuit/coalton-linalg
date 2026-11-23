@@ -114,9 +114,10 @@ Arithmetic is IEEE double with traps disabled. A sum of squares is formed unscal
 its largest entry lies between 2⁻⁵⁰⁰ and 2⁵⁰⁰ and otherwise after an exact scaling by
 2^±600, so a matrix scaled by a power of two gives the same pivoting and the same
 reflectors bit for bit as long as its entries stay well inside the representable range.
-A column whose norm exceeds half the largest double may be refused although the norm itself
-is finite, because the reflector's divisor adds the head's magnitude to the norm. A column norm that overflows is a
-refusal. No scaling or equilibration of rows or columns is applied, and the result
+The reflector's head and tail are scaled together at the extremes, before its
+dimensionless coefficient and tail are computed. Only the stored diagonal is rounded
+back to the input's scale. A column norm that overflows is a refusal. No equilibration
+of rows or columns is applied, and the result
 depends on column scaling, as pivoting by column norm does.
 
 Work is about 2 m n² − 2n³/3 multiply-adds for the factorization when m ≥ n. The norms

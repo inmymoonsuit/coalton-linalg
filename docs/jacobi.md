@@ -113,10 +113,14 @@ places. The complete nullspace basis of a wide matrix is what the direct orienta
 
 ## Numerical assumptions and limits
 
-Arithmetic is IEEE double with traps disabled. Both routines first scale the matrix by an
-exact power of two when its largest entry is above 2⁵⁰⁰ or below 2⁻⁵⁰⁰, and scale the values
-back. For singular values that keeps sums of squares representable; entries more than
-about 500 binary orders below the largest are lost to underflow. For eigenvalues it keeps
+Arithmetic is IEEE double with traps disabled. For the SVD pair products, the largest
+nonzero input magnitude is brought into [2⁻³⁸⁴, 2³⁸⁴] by a power of two. At the
+supported dimensions, squared norms of columns above the rotation floor then fit in
+the normal range. Small matrices are lifted before rotating; large entries are scaled
+down only for inner products, so this scaling cannot erase an untouched small column.
+Each final column is normalized at its own scale before rounding its singular value.
+
+The eigenvalue routine scales when the largest entry is above 2⁵⁰⁰ or below 2⁻⁵⁰⁰. This keeps
 the difference of two diagonal entries and every rotated entry representable: a symmetric
 matrix with any finite entries is accepted, and the only overflow left is an eigenvalue
 that is itself too large to represent, which is `JacobiNonFinite`. Scaling a matrix by a

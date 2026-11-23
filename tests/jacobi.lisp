@@ -397,7 +397,23 @@
               "Storage constructor ~A must exist and remain internal; visibility is ~S." name visibility)))
   (format t "JACOBI-ENCAPSULATION-PASS rejected=~D public-control=1~%" (length *jacobi-encapsulation-probes*)))
 
+(defun check-svd-scale-boundary ()
+  (let* ((f (jc:make-svd 2 2)) (a (scale-float 1d0 -500)) (b (scale-float 1d0 -538)))
+    (assert (= 0 (jc-caller:observe-svd f (doubles a 0d0 0d0 b))))
+    (assert (= b (aref (jc:singular-values f) 1)))
+    (assert (= 2 (jc:rank-above f (/ b 2))))
+    ;; This pair must rotate as well as getting both final norms right.
+    (assert (= 0 (jc-caller:observe-svd f (doubles a 0d0 b b))))
+    (let ((u (jc:left-vectors f)))
+      (assert (< (abs (+ (* (aref u 0) (aref u 2)) (* (aref u 1) (aref u 3)))) 1d-13)))
+    (assert (= 2 (jc:rank-above f (/ b 2))))
+    ;; Scaling the pair's inner products must not erase an untouched column.
+    (let ((large (scale-float 1d0 400)) (small (scale-float 1d0 -380)))
+      (assert (= 0 (jc-caller:observe-svd f (doubles large 0d0 0d0 small))))
+      (assert (= small (aref (jc:singular-values f) 1))))))
+
 (defun run-jacobi-tests ()
+  (check-svd-scale-boundary)
   (run-jacobi-eigen-tests)
   (run-jacobi-svd-tests)
   (run-jacobi-identity-tests)

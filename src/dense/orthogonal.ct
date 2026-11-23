@@ -194,11 +194,25 @@
   (declare make-reflector! (arr:LispArray F64 * UFix * UFix * UFix * UFix -> F64))
   (define (make-reflector! w head start count stride)
     "Turn (head, tail) into (beta, reflector tail) with an implicit leading 1; return tau. See docs/orthogonal.md."
-    (let alpha = (arr:aref w head))
-    (let sigma = (segment-norm w start count stride))
+    (let original = (arr:aref w head))
+    (let tail = (segment-norm w start count stride))
     (cond
-      ((== sigma 0.0d0) 0.0d0)
+      ((== tail 0.0d0) 0.0d0)
       (True
+       ;; Form the dimensionless reflector before rounding beta to the input's
+       ;; grid. In particular, recompute the tail norm, not its rounded subnormal.
+       (let peak = (max (abs original) tail))
+       (let factor = (cond ((< peak norm-floor) scale-up)
+                           ((> peak norm-ceiling) scale-down)
+                           (True 1.0d0)))
+       (let alpha = (* original factor))
+       (let sigma = (cond
+                      ((== factor 1.0d0) tail)
+                      (True
+                       (for ((q 0 (+ q 1))) :while (< q count)
+                         (let i = (+ start (* q stride)))
+                         (arr:set! w i (* (arr:aref w i) factor)))
+                       (segment-norm w start count stride))))
        (let top = (max (abs alpha) sigma))
        (let ra = (/ alpha top))
        (let rs = (/ sigma top))
@@ -208,7 +222,7 @@
        (let divisor = (- alpha beta))
        (for ((q 0 (+ q 1))) :while (< q count)
          (arr:set! w (+ start (* q stride)) (/ (arr:aref w (+ start (* q stride))) divisor)))
-       (arr:set! w head beta)
+       (arr:set! w head (/ beta factor))
        (/ (- beta alpha) beta))))
 
   (declare apply-reflector! (F64 * arr:LispArray F64 * UFix * UFix * arr:LispArray F64 * UFix * UFix * UFix * UFix -> Void))
