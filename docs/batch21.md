@@ -1,9 +1,10 @@
 # Batch 21: an independent review, and what it found
 
-State: **in progress.** Parts 1 to 4, the kept rows of a rank-deficient matrix, dependent
-rows, damped least squares and conjugate gradients, are fixed and verified at safety 1 and safety 0 on 2026-11-23,
-Windows/x86-64, SBCL 2.6.10 and the pinned Coalton compiler. The other parts are listed under [what is still open](#what-is-still-open)
-with what was reproduced of each: **those defects are in this release.**
+State: **in progress.** Parts 1 to 5, the kept rows of a rank-deficient matrix, dependent
+rows, damped least squares, conjugate gradients and least squares on an operator, are
+fixed and verified at safety 1 and safety 0 on 2026-11-23,
+Windows/x86-64, SBCL 2.6.10 and the pinned Coalton compiler. No defect the review found in the numerical packages is known to remain
+open; what is left is in [the two rosters and the style rules](#what-is-still-open).
 
 ## What this is
 
@@ -193,20 +194,69 @@ Both complete serial checks pass on the tree of this part.
 Two planted defects, each putting one of the two behaviours back, both caught; the
 restored source passes. Both complete serial checks pass on the tree of this part.
 
+## Part 5: `coalton-linalg/lsqr`
+
+The newest package, Batch 20, had been reviewed by no one but its author. Two reviewers
+read it, one the code and one the mathematics. The recurrences, both identities for the
+estimates, the reflections, the minimum norm and the end of the sequences were re-derived
+and checked at eighty digits and in rational arithmetic, and held. What did not:
+
+| Finding | Before | Now |
+| --- | --- | --- |
+| A right-hand side with entries more than 2^1022 apart | The identity, `b = (2^100, 2^-980)`, tolerances of zero: `(2^100, 0)`, `LsqrResidualMet`, a residual of 0. The residual was formed from the right-hand side as divided, which had lost the small entry | `LsqrExhausted`, a residual of 2^-980 and a gradient of 2^-980, both exact. The residual is formed from b as given, entry by entry, and measured at its own power of two; a second call on it finds the rest |
+| A norm whose sum of squares is above the largest number | `LsqrNonFinite` on problems with nothing non-finite in them: a column 2^-512 of the other, in one case with the exact answer already written into x; a row 2^512 above the other; `A = [1; 0]` with `b = (2^-512, 1)`, of condition number 1 | Measured again with the entries lowered, as a sum too small was already measured again with them lifted. All are solved. The iterate's norm is formed only under a damping |
+| A gradient brought to the caller's units one factor at a time | Operator at 2^-500, right-hand side at 2^500: a gradient of 2^-601 reported as 0 and `LsqrGradientMet`, where the same problem at scale 1 is `LsqrLimit` with 2^-601. The running estimates late in a run were zeroed the same way, and bought confirmations | The two powers together where their product is a number the format holds. One problem at three scales gives one history, entry for entry, and the same confirmations |
+| The gradient's two parts in one fixed unit | Not reached before, but the new residual made it reachable: an image and a damped term of very different sizes | Formed in the units of the larger, the other brought to them |
+| A right-hand side the transpose sends to zero, under a large damping | `[1; 0]`, `b = (0, 3)`, damping 8 is `LsqrGradientMet`; all three times 2^500 was `LsqrOutOfRange` | `LsqrGradientMet` at every scale: zero solves it whatever the damping, and the ceiling is not asked |
+
+**Three sentences that were false, with the code as it was.**
+
+- The operator norm estimate was said to stay below the Frobenius norm "while the method
+  has taken no more steps than it would in exact arithmetic". It exceeds it as soon as a
+  singular value has converged and is counted again: at the fourth step of forty on a
+  matrix with one singular value of 1000 and the rest between 1 and 2, and by a factor of
+  3.46 at the fortieth. The test that held the claim used matrices with no dominant
+  value. The contract says what is true, and a test holds the counterexample.
+- "Neither the residual without the damped term nor the gradient is monotone." The
+  residual is: the objective does not rise and the norm does not fall. The monotone test
+  now measures it, on all 466 iterates.
+- "A wrong estimate does not cost two products a step." A tolerance below what rounding
+  lets the gradient reach does: 35 confirmations in forty steps at 5 × 10⁻¹⁵ on a matrix
+  whose gradient stops at 7 × 10⁻¹⁵. That is measured, stated, and not changed.
+
+### Verification of part 5
+
+Both complete serial checks pass on the tree of this part.
+
+- **Each fix by a test seen to fail first**, every norm compared with the exact one as
+  squares in rational arithmetic, so that no small one is lost on the way: the five rows
+  of the table at twenty inputs, among them the second call that finds what the first
+  could not see, and a damped problem whose iterate has an entry of 2^520.
+- **The suite of Batch 20 passes as it was**: 120 problems against exact arithmetic with
+  the same worst distance, 4.507 × 10⁻¹¹, every status, the scale tests, zero bytes a
+  call. The recomputation in the test language was brought to the changed iteration and
+  agrees bit for bit throughout.
+- **Planted source defects.** Ten edits to the source, each applied alone with the package's suite run, each putting one of the old behaviours back or breaking one part of the new residual and gradient. Every planted source compiled and every one failed a test at once. The restored source passes. The thirty-two edits of Batch 20 were not
+  made again: the lines most of them changed are as they were.
+- The aliasing roster and the scale sweep pass with their counts unchanged.
+
+### Left as it was, in part 5
+
+- **A tolerance below what rounding allows costs a confirmation at nearly every step**, as
+  above. Nothing recognizes a stall.
+- **The powers of two are still the right-hand side's and the first image's.** Where b is
+  all but orthogonal to the operator's range the iterate is held far below its unit and
+  can lose digits, and a problem can be `LsqrOutOfRange` that another choice would have
+  served: `[1; 0]`, `b = (2^-501, 1)` under a damping of 1.
+- **The last step allowed makes a transpose product the iterate does not need**, and a
+  value in it that is not finite ends the call with a finished iterate.
+- **A tolerance of infinity meets a norm of infinity.**
+- Three of eight ways to `LsqrNonFinite` have a test; the others are reached by reading.
+
 ## What is still open
 
-Reproduced through the public interface and **not fixed in this release**:
+No finding in a numerical package is open. Not yet acted on:
 
-- **Least squares on an operator**: a false `LsqrResidualMet` for a right-hand side whose
-  entries are more than 2^1022 apart, `A = I` and `b = (2^100, 2^-980)` at tolerances of
-  zero returning `(2^100, 0)`;
-  `LsqrNonFinite` for solvable problems whose iterates or vectors exceed 2^512 in the
-  iteration's units, in one case with the answer written into x; a gradient the format
-  holds reported as zero and called met, where one scale factor is small and the other
-  large; a right-hand side orthogonal to the range refused under a damping above 2^500
-  in the caller's units. Its operator norm estimate exceeds the Frobenius norm after four
-  steps on a matrix with one dominant singular value, where the contract says it stays
-  below until past the rank.
 - **The two rosters** miss a call that returns nothing and holds its numbers in a handle,
   count any condition as a refusal, and hold three outputs to expectations that cannot
   fail.

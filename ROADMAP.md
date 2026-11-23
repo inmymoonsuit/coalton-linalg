@@ -341,9 +341,10 @@ the library, agreed with it in advance, plan before code:
    problems spend their time.
 
 **An independent review of Batches 15 to 20 is being acted on as Batch 21.** Its first
-four parts, the kept rows of a rank-deficient matrix, dependent rows, damped least
-squares and conjugate gradients, are fixed; [the record](docs/batch21.md) lists what is
-still open, with the inputs: false statuses in least squares on an operator. Those come before
+five parts are fixed: the kept rows of a rank-deficient matrix, dependent rows, damped
+least squares, conjugate gradients and least squares on an operator.
+[The record](docs/batch21.md) has each finding with its input. Left: what the review
+found in the two rosters and against the style rules. Those come before
 anything new.
 
 Kept on the roadmap for the library's own users, though that consumer has no use for it:

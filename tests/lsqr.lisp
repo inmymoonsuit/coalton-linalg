@@ -22,7 +22,19 @@
         (declare (type double-float total))
         (loop :for value :across vector :do (let ((v (* value lift))) (incf total (* v v))))
         (/ (sqrt total) lift))
-      (sqrt sum)))
+      (if (and (= sum sum) (< sum sb-ext:double-float-positive-infinity))
+          (sqrt sum)
+          (let ((total 0d0) (lift (scale-float 1d0 600)))
+            (declare (type double-float total))
+            (loop :for value :across vector :do (let ((v (/ value lift))) (incf total (* v v))))
+            (* (sqrt total) lift)))))
+
+(defun ls-twice-scaled (value first second)
+  "VALUE times two powers of two, by their product where that is a normal number and one after the other where not."
+  (let ((together (* first second)))
+    (if (and (>= together least-positive-normalized-double-float) (< together sb-ext:double-float-positive-infinity))
+        (* value together)
+        (* (* value first) second))))
 
 (defun ls-hypotenuse (a b)
   (let* ((x (abs a)) (y (abs b)) (large (if (> x y) x y)) (small (if (> x y) y x)))
@@ -43,7 +55,7 @@ every iterate in the caller's units, oldest first."
     (declare (type double-float sum))
     (dotimes (i m)
       (let ((value (* (aref b i) b-down)))
-        (setf (aref rhs i) value (aref u i) value)
+        (setf (aref rhs i) (aref b i) (aref u i) value)
         (incf sum (* value value))))
     (let ((beta-one (ls-norm u sum)))
       (when (= beta-one 0d0)
@@ -68,24 +80,41 @@ every iterate in the caller's units, oldest first."
               (let ((value (/ (aref v j) alpha-one)))
                 (setf (aref v j) value (aref w j) value))))
           (push (* beta-one b-up) residuals)
-          (push (* (* (* alpha-one beta-one) a-up) b-up) gradients)
+          (push (ls-twice-scaled (* alpha-one beta-one) a-up b-up) gradients)
           (push (ls-scaled-copy x back) iterates)
           (labels ((confirm ()
                      (csc:matvec! matrix x p)
-                     (setf sum 0d0)
-                     (dotimes (i m)
-                       (let ((value (- (aref rhs i) (* (aref p i) a-down))))
-                         (setf (aref p i) value)
-                         (incf sum (* value value))))
-                     (setf divided-r (ls-norm p sum))
-                     (csc:transpose-matvec! matrix p q)
-                     (setf sum 0d0)
-                     (dotimes (j n)
-                       (let ((value (- (* (aref q j) a-down) (* damp (* damp (aref x j))))))
-                         (setf (aref q j) value)
-                         (incf sum (* value value))))
-                     (setf divided-g (ls-norm q sum))
-                     (setf formed-r (* divided-r b-up) formed-g (* (* divided-g a-up) b-up))
+                     (let ((largest 0d0))
+                       (dotimes (i m)
+                         (let ((value (- (aref rhs i) (* (aref p i) back))))
+                           (setf (aref p i) value)
+                           (when (> (abs value) largest) (setf largest (abs value)))))
+                       (let* ((r-up (ls-binade largest)) (r-down (/ 1d0 r-up)) (image-top 0d0) (pulled-top 0d0))
+                         (setf sum 0d0)
+                         (dotimes (i m)
+                           (let ((value (* (aref p i) r-down)))
+                             (setf (aref p i) value)
+                             (incf sum (* value value))))
+                         (setf divided-r (ls-norm p sum))
+                         (csc:transpose-matvec! matrix p q)
+                         (dotimes (j n)
+                           (let ((image (* (aref q j) a-down)) (pulled (abs (* damp (* damp (aref x j))))))
+                             (setf (aref q j) image)
+                             (when (> (abs image) image-top) (setf image-top (abs image)))
+                             (when (> pulled pulled-top) (setf pulled-top pulled))))
+                         (let ((image-led (>= (ls-twice-scaled image-top r-up b-down) pulled-top)))
+                           (setf sum 0d0)
+                           (dotimes (j n)
+                             (let* ((pulled (* damp (* damp (aref x j))))
+                                    (value (cond ((= pulled 0d0)
+                                                  (if image-led (aref q j) (ls-twice-scaled (aref q j) r-up b-down)))
+                                                 (image-led (- (aref q j) (ls-twice-scaled pulled b-up r-down)))
+                                                 (t (- (ls-twice-scaled (aref q j) r-up b-down) pulled)))))
+                               (setf (aref q j) value)
+                               (incf sum (* value value))))
+                           (setf divided-g (ls-norm q sum))
+                           (setf formed-r (* divided-r r-up)
+                                 formed-g (ls-twice-scaled divided-g a-up (if image-led r-up b-up))))))
                      (incf confirmations))
                    (within (reported divided tolerance)
                      (and (<= reported tolerance) (or (> tolerance 0d0) (= divided 0d0))))
@@ -142,11 +171,13 @@ every iterate in the caller's units, oldest first."
                   (setf alpha alpha-new)
                   (incf k)
                   (setf estimate (* (sqrt frobenius) a-up))
-                  (let* ((pull (* damp (sqrt sum)))
+                  (let* ((pull (* damp (cond ((= damp 0d0) 0d0)
+                                             ((< sum sb-ext:double-float-positive-infinity) (sqrt sum))
+                                             (t (ls-norm x sum)))))
                          (left-over (- (+ (* phi-bar phi-bar) damped) (* pull pull))))
                     (push (* (cond ((= damp 0d0) (abs phi-bar)) ((> left-over 0d0) (sqrt left-over)) (t 0d0)) b-up)
                           residuals)
-                    (push (* (* (* (* alpha-new beta) (/ (abs phi) rho)) a-up) b-up) gradients))
+                    (push (ls-twice-scaled (* (* alpha-new beta) (/ (abs phi) rho)) a-up b-up) gradients))
                   (push (ls-scaled-copy x back) iterates)
                   (when (or (= beta 0d0) (= alpha-new 0d0) (= rho-bar 0d0)) (setf ended t)))))
             (unless confirmed (confirm))
@@ -308,7 +339,14 @@ rounding level is not compared."
                       (float (second earlier) 1d0) (float (second later) 1d0))
               (when (> (third earlier) floor)
                 (assert (<= (third later) (* (third earlier) slack)) () "~A: the distance rose from ~E to ~E." label
-                        (float (third earlier) 1d0) (float (third later) 1d0))))))
+                        (float (third earlier) 1d0) (float (third later) 1d0)))
+              ;; The residual alone: the objective less the damped term. It does not rise either, since
+              ;; the objective does not rise and the norm does not fall.
+              (let ((before (- (first earlier) (* shift (second earlier)))) (after (- (first later) (* shift (second later))))
+                    (resolved (* (expt 2 -70) (+ 1 (ls-squares (mapcar #'rational (coerce b 'list)))))))
+                (when (> before resolved)
+                  (assert (<= after (+ (* before slack) resolved)) () "~A: the residual rose from ~E to ~E." label
+                          (float before 1d0) (float after 1d0)))))))
 
 (defparameter *lsqr-shapes*
   '((6 4 4) (4 4 4) (4 6 4) (7 5 3) (5 7 3) (5 5 2) (3 1 1) (1 3 1) (8 6 6) (6 6 1)
@@ -690,6 +728,148 @@ bit for bit. Returns the code, the vector and the workspace."
      "(declare probe (coalton-linalg/lsqr:LsqrStatus -> coalton-linalg/conjugate-gradient:CgStatus))
       (define (probe status) status)")))
 
+(defun ls-range-run (rows b damping residual-tolerance gradient-tolerance limit)
+  "Solve with the matrix whose rows are given, and measure the vector returned exactly. Returns the code, the
+vector, the workspace, and the exact squared norms of its residual and gradient."
+  (let* ((m (length rows)) (n (length (first rows)))
+         (a (make-array (list m n) :initial-contents rows)) (matrix (ls-csc a)) (exact (ls-stored a))
+         (rhs (coerce b '(simple-array double-float (*))))
+         (workspace (lsqr:make-lsqr m n limit)) (x (make-array n :element-type 'double-float :initial-element 9d0))
+         (code (ls-caller:lsqr-code workspace (rf-caller:matrix-operator matrix) (ls-caller:transpose-operator matrix)
+                                    rhs x damping residual-tolerance gradient-tolerance))
+         (finite (every (lambda (value) (< (abs value) sb-ext:double-float-positive-infinity)) x))
+         (residual (and finite (ls-exact-residual exact rhs x))))
+    (values code x workspace (and finite (ls-squares residual))
+            (and finite (ls-squares (ls-exact-gradient exact residual x damping))))))
+
+(defun ls-reported-p (reported exact-square)
+  "Whether a norm reported is the exact one to a part in 2^40, compared as squares so that none is lost."
+  (let ((square (expt (rational reported) 2)))
+    (<= (abs (- square exact-square)) (* exact-square (expt 2 -39)))))
+
+(defun run-lsqr-range-tests ()
+  "Sizes inside one problem that one power of two for the right-hand side, and one for the operator taken from
+its first image, do not carry. What a status says, and what is reported, is of the vector returned."
+  (flet ((two (power) (scale-float 1d0 power)))
+    ;; An entry of the right-hand side more than 2^1022 below its largest is not seen by the iteration.
+    ;; It is seen when the residual is formed: neither tolerance is met, and both reports are exact.
+    (dolist (b (list (list (two 100) (two -980)) (list 1d308 1d-17)))
+      (multiple-value-bind (code x workspace residual gradient) (ls-range-run '((1d0 0d0) (0d0 1d0)) b 0d0 0d0 0d0 10)
+        (assert (and (member code '(2 3)) (= (first b) (aref x 0)) (= 0d0 (aref x 1))) ()
+                "b = ~S: outcome ~D and x = ~S." b code x)
+        (assert (and (plusp residual) (ls-reported-p (lsqr:residual-norm workspace) residual)
+                     (ls-reported-p (lsqr:gradient-norm workspace) gradient))
+                () "b = ~S: a residual of ~S and a gradient of ~S are reported; exactly their squares are ~S and ~S." b
+                (lsqr:residual-norm workspace) (lsqr:gradient-norm workspace) (float residual 1d0) (float gradient 1d0))
+        ;; A second call on that residual, which the contract gives for an answer to improve, finds the rest.
+        (let ((rest-b (list (- (first b) (aref x 0)) (- (second b) (aref x 1)))))
+          (multiple-value-bind (rest-code rest-x) (ls-range-run '((1d0 0d0) (0d0 1d0)) rest-b 0d0 0d0 0d0 10)
+            (assert (and (= 0 rest-code) (= 0d0 (aref rest-x 0)) (= (second b) (aref rest-x 1))) ()
+                    "b = ~S: the second call's outcome is ~D and its vector ~S." b rest-code rest-x)))))
+    ;; A column far below the other: the answer's second entry is 1/s, and a sum of its squares
+    ;; that nothing reads without damping is above the largest number.
+    (dolist (power '(-511 -512 -520 -600))
+      (let ((s (two power)))
+        (multiple-value-bind (code x workspace residual)
+            (ls-range-run (list (list 1d0 0d0) (list 1d0 0d0) (list 0d0 s) (list 0d0 s)) '(1d0 1d0 1d0 1d0) 0d0 1d-12 0d0 20)
+          (assert (and (= 0 code) (<= (abs (- (aref x 0) 1d0)) 1d-12) (<= (abs (- (* (aref x 1) s) 1d0)) 1d-12)
+                       (<= residual (expt (rational 1d-12) 2)) (<= (lsqr:residual-norm workspace) 1d-12))
+                  () "A column of 2^~D: outcome ~D, x = ~S, a residual of ~S." power code x (lsqr:residual-norm workspace)))))
+    ;; The same under a damping far below the small column: the iterate's norm, which the damped
+    ;; residual's estimate reads, has a square above the largest number.
+    (let ((s (two -520)))
+      (multiple-value-bind (code x workspace residual)
+          (ls-range-run (list (list 1d0 0d0) (list 1d0 0d0) (list 0d0 s) (list 0d0 s)) '(1d0 1d0 1d0 1d0) (two -600) 1d-12 0d0 20)
+        (assert (and (= 0 code) (<= (abs (- (aref x 0) 1d0)) 1d-12) (<= (abs (- (* (aref x 1) s) 1d0)) 1d-12)
+                     (<= residual (expt (rational 1d-12) 2)))
+                () "A column of 2^-520 under a damping of 2^-600: outcome ~D, x = ~S, a residual of ~S." code x
+                (lsqr:residual-norm workspace))))
+    ;; A row far above the other: the second left vector has an entry of L before it is made a unit.
+    (dolist (power '(511 512 600))
+      (let ((big (two power)))
+        (multiple-value-bind (code x workspace residual)
+            (ls-range-run (list (list big big 0d0 0d0) (list 0d0 0d0 1d0 1d0)) (list (/ (two 400) big) (two 400)) 0d0
+                          (two 360) 0d0 20)
+          (declare (ignorable x))
+          (assert (and (= 0 code) (<= residual (expt (rational (two 360)) 2)) (<= (lsqr:residual-norm workspace) (two 360))) ()
+                  "A row of 2^~D: outcome ~D, a residual of ~S." power code (lsqr:residual-norm workspace)))))
+    ;; A right-hand side all but orthogonal to the range: the transpose's first image is 2^-512 of
+    ;; the operator, and the second left vector 2^512 before it is made a unit.
+    (multiple-value-bind (code x workspace residual gradient)
+        (ls-range-run '((1d0) (0d0)) (list (two -512) 1d0) 0d0 0d0 (two -572) 10)
+      (assert (and (= 1 code) (= (two -512) (aref x 0)) (= 1 residual) (= 0 gradient)
+                   (= 1d0 (lsqr:residual-norm workspace)) (= 0d0 (lsqr:gradient-norm workspace)))
+              () "b = (2^-512, 1) on the first unit vector: outcome ~D, x = ~S, reports ~S and ~S." code x
+              (lsqr:residual-norm workspace) (lsqr:gradient-norm workspace)))
+    ;; The two scale factors of the gradient are of opposite size, and their product is 1: the
+    ;; gradient of the first iterate is 2^-601, as it is for the same problem at scale 1, and is
+    ;; above a tolerance of 2^-700.
+    (flet ((at (matrix-power)
+             (let ((entry (two matrix-power)) (b (make-list 4 :initial-element (two (- matrix-power)))))
+               (multiple-value-bind (code x workspace residual gradient)
+                   (ls-range-run (list (list entry) (list entry) (list entry) (list (- entry))) b
+                                 (two (- matrix-power 300)) 0d0 (two -700) 1)
+                 (declare (ignore residual))
+                 (assert (and (= 3 code) (= (expt 2 -1202) gradient) (= (two -601) (lsqr:gradient-norm workspace))
+                              (= (two (1- (* -2 matrix-power))) (aref x 0)))
+                         () "The operator at 2^~D: outcome ~D, x = ~S, a gradient of ~S whose exact square is ~S."
+                         matrix-power code x (lsqr:gradient-norm workspace) (float gradient 1d0))
+                 (aref (lsqr:recurrence-gradient-norms workspace) 1)))))
+      (let ((plain (at 0)) (low (at -500)) (high (at 400)))
+        (assert (and (plusp plain) (= plain low high)) ()
+                "The gradient's estimate after one step is ~S at scale 1, ~S and ~S elsewhere." plain low high)))
+    ;; The gradient's running estimates late in a run are far below 1, and with the operator at
+    ;; 2^-500 and the right-hand side at 2^500 one factor alone takes them below every number. They
+    ;; are the estimates at scale 1, every one, and so are the confirmations they trigger.
+    (flet ((history (matrix-power)
+             (let ((rows (mapcar (lambda (row) (mapcar (lambda (value) (* value (two matrix-power))) row))
+                                 '((4d0 1d0 0d0) (1d0 3d0 1d0) (0d0 1d0 2d0) (1d0 0d0 1d0))))
+                   (b (mapcar (lambda (value) (* value (two (- matrix-power)))) '(1d0 2d0 3d0 4d0))))
+               (multiple-value-bind (code x workspace) (ls-range-run rows b 0d0 0d0 0d0 40)
+                 (declare (ignore x))
+                 (list code (lsqr:step-count workspace) (lsqr:confirmation-count workspace)
+                       (copy-seq (subseq (lsqr:recurrence-gradient-norms workspace) 0 (1+ (lsqr:step-count workspace)))))))))
+      (let ((plain (history 0)) (low (history -500)) (high (history 400)))
+        (assert (and (equalp plain low) (equalp plain high) (some #'plusp (fourth plain))
+                     (< 0d0 (reduce #'min (remove 0d0 (fourth plain))) (two -530)))
+                () "The gradient's estimates at three scales of one problem: ~S, ~S and ~S." plain low high)))
+    ;; A right-hand side the transpose sends to zero is solved by zero whatever the damping, at any scale.
+    (dolist (power '(0 500 -500))
+      (multiple-value-bind (code x workspace residual gradient)
+          (ls-range-run (list (list (two power)) (list 0d0)) (list 0d0 (* 3d0 (two power))) (* 8d0 (two power)) 0d0 0d0 10)
+        (declare (ignore residual))
+        (assert (and (= 1 code) (= 0d0 (aref x 0)) (= 0 gradient) (= (* 3d0 (two power)) (lsqr:residual-norm workspace))) ()
+                "A right-hand side orthogonal to the range at 2^~D: outcome ~D, x = ~S, a residual of ~S." power code x
+                (lsqr:residual-norm workspace))))
+    ;; The operator norm estimate is not a bound once a singular value has converged, which a
+    ;; dominant one does within a few steps: here it is above the Frobenius norm before the sixth
+    ;; step of forty.
+    (let* ((n 40) (values (loop :for i :below n :collect (if (= i 0) 1000d0 (+ 1d0 (/ (float (1- i) 1d0) 38d0)))))
+           (rows (loop :for i :below n :collect (loop :for j :below n :collect (if (= i j) (elt values i) 0d0))))
+           (b (loop :for i :below n :collect (+ 1d0 (* 0.37d0 (sin (float (* 7 (1+ i)) 1d0))))))
+           (frobenius (sqrt (loop :for value :in values :sum (* value value)))))
+      (multiple-value-bind (code x workspace) (ls-range-run rows b 0d0 0d0 0d0 6)
+        (declare (ignore x))
+        (assert (and (= 3 code) (= 6 (lsqr:step-count workspace)) (> (lsqr:operator-norm-estimate workspace) (* 1.2d0 frobenius)))
+                () "One dominant singular value: after ~D steps the estimate is ~S and the Frobenius norm ~S."
+                (lsqr:step-count workspace) (lsqr:operator-norm-estimate workspace) frobenius)))
+    ;; Both tolerances at once: the status names one that the exact norm meets, the residual's first.
+    (dolist (case (list (list '((4d0 1d0 0d0) (1d0 3d0 1d0) (0d0 1d0 2d0) (1d0 0d0 1d0)) '(1d0 2d0 3d0 4d0) 0d0 1d-9 1d-9 1)
+                        (list '((4d0 1d0 0d0) (1d0 3d0 1d0) (0d0 1d0 2d0)) '(5d0 5d0 3d0) 0d0 1d-9 1d-9 0)
+                        (list '((4d0 1d0 0d0) (1d0 3d0 1d0) (0d0 1d0 2d0) (1d0 0d0 1d0)) '(1d0 2d0 3d0 4d0) 0.5d0 1d-9 1d-9 1)))
+      (destructuring-bind (rows b damping residual-tolerance gradient-tolerance expected) case
+        (multiple-value-bind (code x workspace residual gradient)
+            (ls-range-run rows b damping residual-tolerance gradient-tolerance 60)
+          (declare (ignore x workspace))
+          (assert (and (= expected code)
+                       (if (= code 0)
+                           (<= residual (expt (rational residual-tolerance) 2))
+                           (and (> residual (expt (rational residual-tolerance) 2))
+                                (<= gradient (expt (rational gradient-tolerance) 2)))))
+                  () "Both tolerances, damping ~S: outcome ~D with exact squares ~S and ~S." damping code
+                  (float residual 1d0) (float gradient 1d0))))))
+  (format t "LSQR-RANGE-PASS~%"))
+
 (defun run-lsqr-lifetime-tests ()
   (let ((state (sb-ext:seed-random-state 80)))
     (multiple-value-bind (a b) (ls-case state 5 5 5)
@@ -725,5 +905,6 @@ bit for bit. Returns the code, the vector and the workspace."
   (run-lsqr-exact-tests)
   (run-lsqr-outcome-tests)
   (run-lsqr-scale-tests)
+  (run-lsqr-range-tests)
   (run-lsqr-lifetime-tests)
   (format t "LSQR-TESTS-PASS~%"))

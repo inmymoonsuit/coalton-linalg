@@ -2,12 +2,30 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.22.1 — 2026-11-23
+
+Fixes in `coalton-linalg/lsqr` from an independent review.
+[Record](docs/batch21.md#part-5-coalton-linalglsqr). With this release no defect the
+review found in a numerical package is known to be open.
+
+- `lsqr!` no longer reports `LsqrResidualMet` with a residual of 0 for a right-hand side
+  whose entries are more than 2^1022 apart. It reports the residual that is there, and a
+  second call on that residual finds the rest.
+- Problems with a column, a row or a right-hand side that takes a vector of the iteration
+  above 2^512 are solved; they ended as `LsqrNonFinite`.
+- `gradient-norm` and `recurrence-gradient-norms` are no longer zero for a value in range
+  where the operator's scale is small and the right-hand side's large; a false
+  `LsqrGradientMet` followed from it.
+- A right-hand side the transpose sends to zero is never `LsqrOutOfRange`.
+- **`operator-norm-estimate` is not a lower estimate.** The contract said it stays below
+  the Frobenius norm until past the rank; it can exceed it within a few steps. The code
+  is unchanged.
+
 ## 0.22.0 — 2026-11-23
 
 `coalton-linalg/sparse/damped` divides each column by its own power of two, after an
 independent review. [Contract](docs/damped.md) · [record](docs/batch21.md#part-3-coalton-linalgsparsedamped),
-which still lists **defects found in least squares on an operator and not yet fixed in
-this release.**
+which then still listed defects in least squares on an operator, fixed in 0.22.1.
 
 - **New status `DampedZeroDamping`** of `factor!`: the columns' own damping with a floor of
   zero, a positive μ, and a column of zeros in the standing matrix. It was

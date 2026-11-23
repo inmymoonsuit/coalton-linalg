@@ -66,7 +66,10 @@
   ;; images are divided by and [5] its reciprocal, [6] the operator norm estimate, [7] the damping
   ;; divided as the operator is, [8] the power of two the iterate is multiplied back by,
   ;; [10] and [11] the residual and gradient norms as last formed, in the caller's units,
-  ;; [12] and [13] the same two divided. -1 in [0], [1] and [6] where there is nothing to report.
+  ;; [12] and [13] the same two in the units they were formed in, which are zero only where the
+  ;; norm is; [14] the power of two at the largest entry of the residual last formed and [15] its
+  ;; reciprocal. -1 in [0], [1] and [6] where there is nothing to report. The right-hand side is
+  ;; held as it was given.
   ;; state: [0] steps, [1] confirmations.
 
   (declare make-lsqr (UFix * UFix * UFix -> LsqrWorkspace))
@@ -76,7 +79,7 @@
                                   (arr:make rows 0.0d0) (arr:make rows 0.0d0) (arr:make rows 0.0d0)
                                   (arr:make columns 0.0d0) (arr:make columns 0.0d0) (arr:make columns 0.0d0)
                                   (arr:make (+ step-limit 1) 0.0d0) (arr:make (+ step-limit 1) 0.0d0)
-                                  (arr:make 14 -1.0d0) (arr:make 2 (the UFix 0)))))
+                                  (arr:make 16 -1.0d0) (arr:make 2 (the UFix 0)))))
 
   (declare rows (LsqrWorkspace -> UFix))
   (define (rows workspace)
@@ -115,7 +118,7 @@
 
   (declare operator-norm-estimate (LsqrWorkspace -> F64))
   (define (operator-norm-estimate workspace)
-    "The Frobenius norm of the bidiagonal matrix the latest call reached, or before its first step the norm of the transpose's image of the normalized right-hand side: an estimate of the operator's norm from below, which proves nothing. -1 where no product was made."
+    "The Frobenius norm of the bidiagonal matrix the latest call reached, or before its first step the norm of the transpose's image of the normalized right-hand side: an estimate of the operator's norm that proves nothing in either direction: it exceeds the Frobenius norm once a singular value has converged and is counted again. -1 where no product was made."
     (arr:aref (.scalars (storage workspace)) 6))
 
   (declare recurrence-residual-norms (LsqrWorkspace -> arr:LispArray F64))
@@ -143,7 +146,7 @@
   (inline)
   (declare norm-from-squares (arr:LispArray F64 * F64 -> F64))
   (define (norm-from-squares vector squares)
-    "Root of the vector's accumulated sum of squares, measured again with its entries lifted where the sum is too small to have kept them."
+    "Root of the vector's accumulated sum of squares, measured again with its entries lifted where the sum is too small to have kept them, and with them lowered where the sum is above the largest number. Infinity, or not a number, only where the norm itself is."
     (cond
       ((< squares fp:least-normal)
        (let total = (cell:new 0.0d0))
@@ -151,7 +154,13 @@
          (let v = (* (arr:aref vector i) square-lift))
          (cell:write! total (+ (cell:read total) (* v v))))
        (/ (math:sqrt (cell:read total)) square-lift))
-      (True (math:sqrt squares))))
+      ((inline (math:finite? squares)) (math:sqrt squares))
+      (True
+       (let total = (cell:new 0.0d0))
+       (for ((i 0 (+ i 1))) :while (< i (arr:length vector))
+         (let v = (/ (arr:aref vector i) square-lift))
+         (cell:write! total (+ (cell:read total) (* v v))))
+       (* (math:sqrt (cell:read total)) square-lift))))
 
   (inline)
   (declare hypotenuse (F64 * F64 -> F64))
@@ -165,6 +174,15 @@
         0.0d0
         (let ((q (/ small large)))
           (* large (math:sqrt (+ 1.0d0 (* q q)))))))
+
+  (inline)
+  (declare twice-scaled (F64 * F64 * F64 -> F64))
+  (define (twice-scaled value first second)
+    "value times two powers of two: by their product where that is a number the format holds to full precision, which rounds nothing; one after the other where it is not, the value then being what brings the result into range."
+    (let together = (* first second))
+    (if (and (>= together fp:least-normal) (inline (math:finite? together)))
+        (* value together)
+        (* (* value first) second)))
 
   (inline)
   (declare within? (F64 * F64 * F64 -> Boolean))
@@ -184,34 +202,66 @@
                      * (arr:LispArray F64 * arr:LispArray F64 -> Void)
                      * arr:LispArray F64 -> Boolean))
   (define (confirm! s apply apply-transpose x)
-    "Form b - A x and A^T (b - A x) - damping^2 x from the operators, for x in the iteration's own units, and write their norms into scalars[10] to [13]. False when either is not finite as formed."
+    "Form b - A x and A^T (b - A x) - damping^2 x from the operators, for x in the iteration's own units and b as it was given, and write their norms into scalars[10] to [13]. The residual is formed entry by entry in the caller's units and measured at its own power of two, so that an entry of b the iteration could not see is seen here. False when an entry of either is not finite."
     (let sc = (.scalars s))
     (let r = (.left-work s))
     (let g = (.right-work s))
-    (let rhs = (.rhs s))
-    (let down = (arr:aref sc 5))
-    (let damping = (arr:aref sc 7))
+    (let given = (.rhs s))
+    (let b-up = (arr:aref sc 2))
+    (let b-down = (arr:aref sc 3))
+    (let a-up = (arr:aref sc 4))
+    (let a-down = (arr:aref sc 5))
+    (let damp = (arr:aref sc 7))
+    (let back = (arr:aref sc 8))
     (apply x r)
+    (let largest = (cell:new 0.0d0))
+    (let sound = (cell:new True))
+    (for ((i 0 (+ i 1))) :while (< i (arr:length r))
+      (let v = (- (arr:aref given i) (* (arr:aref r i) back)))
+      (arr:set! r i v)
+      (unless (inline (math:finite? v)) (cell:write! sound False))
+      (when (> (abs v) (cell:read largest)) (cell:write! largest (abs v))))
+    (unless (cell:read sound) (return False))
+    (fp:binade! (cell:read largest) sc 14)
+    (let r-up = (arr:aref sc 14))
+    (let r-down = (arr:aref sc 15))
     (let sum = (cell:new 0.0d0))
     (for ((i 0 (+ i 1))) :while (< i (arr:length r))
-      (let v = (- (arr:aref rhs i) (* (arr:aref r i) down)))
+      (let v = (* (arr:aref r i) r-down))
       (arr:set! r i v)
       (cell:write! sum (+ (cell:read sum) (* v v))))
-    (unless (inline (math:finite? (cell:read sum))) (return False))
     (let residual = (inline (norm-from-squares r (cell:read sum))))
+    ;; The transpose is given the residual at unit size. Its image, in the operator's units, and
+    ;; the damped term are two parts of the gradient that need not be of one size: the gradient is
+    ;; formed in the units of the larger, the other brought to them.
     (apply-transpose r g)
+    (let image-top = (cell:new 0.0d0))
+    (let pulled-top = (cell:new 0.0d0))
+    (for ((j 0 (+ j 1))) :while (< j (arr:length g))
+      (let image = (* (arr:aref g j) a-down))
+      (arr:set! g j image)
+      (unless (inline (math:finite? image)) (cell:write! sound False))
+      (when (> (abs image) (cell:read image-top)) (cell:write! image-top (abs image)))
+      (let pulled = (abs (* damp (* damp (arr:aref x j)))))
+      (when (> pulled (cell:read pulled-top)) (cell:write! pulled-top pulled)))
+    (unless (cell:read sound) (return False))
+    (let image-led = (>= (inline (twice-scaled (cell:read image-top) r-up b-down)) (cell:read pulled-top)))
     (cell:write! sum 0.0d0)
     (for ((j 0 (+ j 1))) :while (< j (arr:length g))
-      (let v = (- (* (arr:aref g j) down) (* damping (* damping (arr:aref x j)))))
+      (let pulled = (* damp (* damp (arr:aref x j))))
+      (let v = (cond
+                 ((== pulled 0.0d0)
+                  (if image-led (arr:aref g j) (inline (twice-scaled (arr:aref g j) r-up b-down))))
+                 (image-led (- (arr:aref g j) (inline (twice-scaled pulled b-up r-down))))
+                 (True (- (inline (twice-scaled (arr:aref g j) r-up b-down)) pulled))))
       (arr:set! g j v)
       (cell:write! sum (+ (cell:read sum) (* v v))))
-    (unless (inline (math:finite? (cell:read sum))) (return False))
     (let gradient = (inline (norm-from-squares g (cell:read sum))))
+    (unless (inline (math:finite? gradient)) (return False))
     (arr:set! sc 12 residual)
     (arr:set! sc 13 gradient)
-    (arr:set! sc 10 (* residual (arr:aref sc 2)))
-    ;; The two factors one at a time: their product need not be a number the format holds.
-    (arr:set! sc 11 (* (* gradient (arr:aref sc 4)) (arr:aref sc 2)))
+    (arr:set! sc 10 (* residual r-up))
+    (arr:set! sc 11 (inline (twice-scaled gradient a-up (if image-led r-up b-up))))
     True)
 
   (declare hand-back! (LsqrStorage * arr:LispArray F64 -> Boolean))
@@ -271,8 +321,9 @@
     (let gradients = (.gradient-history s))
     (let sum = (cell:new 0.0d0))
     (let largest = (cell:new 0.0d0))
-    ;; The right-hand side, divided by the power of two at its largest entry. It is read here and
-    ;; not again, so it may be the array the solution is written to.
+    ;; The right-hand side is kept as it was given, for the residuals formed from the operators,
+    ;; and the iteration starts from it divided by the power of two at its largest entry. It is
+    ;; read here and not again, so it may be the array the solution is written to.
     (for ((i 0 (+ i 1))) :while (< i m)
       (let magnitude = (abs (arr:aref b i)))
       (when (> magnitude (cell:read largest)) (cell:write! largest magnitude)))
@@ -281,7 +332,7 @@
     (let b-down = (arr:aref sc 3))
     (for ((i 0 (+ i 1))) :while (< i m)
       (let value = (* (arr:aref b i) b-down))
-      (arr:set! rhs i value)
+      (arr:set! rhs i (arr:aref b i))
       (arr:set! u i value)
       (cell:write! sum (+ (cell:read sum) (* value value))))
     (unless (inline (math:finite? (cell:read sum))) (return LsqrNonFinite))
@@ -316,7 +367,10 @@
     (let alpha-one = (inline (norm-from-squares v (cell:read sum))))
     (let damp = (* damping a-down))
     (let back = (* b-up a-down))
-    (unless (and (<= damp damping-ceiling) (and (inline (math:finite? back)) (>= back fp:least-normal)))
+    ;; A right-hand side the transpose sends to zero is solved by zero whatever the damping: the
+    ;; operator has shown no size for the damping to be large beside.
+    (unless (or (== alpha-one 0.0d0)
+                (and (<= damp damping-ceiling) (and (inline (math:finite? back)) (>= back fp:least-normal))))
       (return LsqrOutOfRange))
     (arr:set! sc 7 damp)
     (arr:set! sc 8 back)
@@ -330,7 +384,7 @@
         (arr:set! v j value)
         (arr:set! w j value)))
     (arr:set! residuals 0 (* beta-one b-up))
-    (arr:set! gradients 0 (* (* (* alpha-one beta-one) a-up) b-up))
+    (arr:set! gradients 0 (inline (twice-scaled (* alpha-one beta-one) a-up b-up)))
     (let alpha = (cell:new alpha-one))
     (let rho-bar = (cell:new alpha-one))
     (let phi-bar = (cell:new beta-one))
@@ -374,8 +428,8 @@
           (let value = (- (* (arr:aref p i) a-down) (* alpha-now (arr:aref u i))))
           (arr:set! u i value)
           (cell:write! sum (+ (cell:read sum) (* value value))))
-        (unless (inline (math:finite? (cell:read sum))) (return (abandon! s x)))
         (let beta = (inline (norm-from-squares u (cell:read sum))))
+        (unless (inline (math:finite? beta)) (return (abandon! s x)))
         (let alpha-next = (cell:new 0.0d0))
         (unless (== beta 0.0d0)
           (for ((i 0 (+ i 1))) :while (< i m)
@@ -387,8 +441,8 @@
             (let value = (- (* (arr:aref q j) a-down) (* beta (arr:aref v j))))
             (arr:set! v j value)
             (cell:write! sum (+ (cell:read sum) (* value value))))
-          (unless (inline (math:finite? (cell:read sum))) (return (abandon! s x)))
           (cell:write! alpha-next (inline (norm-from-squares v (cell:read sum))))
+          (unless (inline (math:finite? (cell:read alpha-next))) (return (abandon! s x)))
           (unless (== (cell:read alpha-next) 0.0d0)
             (let divisor = (cell:read alpha-next))
             (for ((j 0 (+ j 1))) :while (< j n)
@@ -417,7 +471,12 @@
           (arr:set! x j value)
           (cell:write! sum (+ (cell:read sum) (* value value)))
           (arr:set! w j (- (arr:aref v j) (* carry (arr:aref w j)))))
-        (unless (inline (math:finite? (cell:read sum))) (return (abandon! s x)))
+        ;; The iterate's norm is wanted only under a damping, and is measured again where the sum
+        ;; of its squares is above the largest number and no entry is.
+        (let reach = (cond ((== damp 0.0d0) 0.0d0)
+                           ((inline (math:finite? (cell:read sum))) (math:sqrt (cell:read sum)))
+                           (True (inline (norm-from-squares x (cell:read sum))))))
+        (unless (inline (math:finite? reach)) (return (abandon! s x)))
         (cell:write! alpha alpha-new)
         (cell:write! k (+ (cell:read k) 1))
         (arr:set! st 0 (cell:read k))
@@ -425,14 +484,15 @@
         ;; The estimates of this iterate. Without damping the residual's is the one number the
         ;; reduction left; with it, what the reduction left less the damped term, which is a
         ;; difference of squares. The gradient's is a product.
-        (let pull = (* damp (math:sqrt (cell:read sum))))
+        (let pull = (* damp reach))
         (let left-over = (- (+ (* (cell:read phi-bar) (cell:read phi-bar)) (cell:read damped)) (* pull pull)))
         (arr:set! residuals (cell:read k)
                   (* (cond ((== damp 0.0d0) (abs (cell:read phi-bar)))
                            ((> left-over 0.0d0) (math:sqrt left-over))
                            (True 0.0d0))
                      b-up))
-        (arr:set! gradients (cell:read k) (* (* (* (* alpha-new beta) (/ (abs phi) rho)) a-up) b-up))
+        (arr:set! gradients (cell:read k)
+                  (inline (twice-scaled (* (* alpha-new beta) (/ (abs phi) rho)) a-up b-up)))
         ;; A diagonal entry that has vanished ends the sequences as a vanished norm does.
         (when (or (== beta 0.0d0) (or (== alpha-new 0.0d0) (== (cell:read rho-bar) 0.0d0)))
           (cell:write! ended True))))

@@ -1,7 +1,8 @@
 # Design: least squares on an operator, by bidiagonalization
 
-State: **built as Batch 20**; [the contract](lsqr.md) is the description of what exists
-and [the record](batch20.md) says where building departed from this page. The text below
+State: **built as Batch 20**, and corrected in [Batch 21](batch21.md#part-5-coalton-linalglsqr)
+after a review; [the contract](lsqr.md) is the description of what exists and
+[the record](batch20.md) says where building departed from this page. The text below
 is the design as it was written, before any code, kept for its derivation. It answers the
 roadmap item "iterative least squares and minimum norm on an operator, with damping". No
 consumer asked for it; it is for the library's own users, and it changes no existing

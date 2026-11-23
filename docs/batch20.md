@@ -165,6 +165,15 @@ step is two products either way. On the wide problem both end at the rank, 1,999
 not sooner. Neither problem is conditioned badly enough to separate the two methods in
 accuracy, and none was looked for that would.
 
+## Corrected 2026-11-23
+
+An independent review of this batch found five defects and three false sentences, which
+[Batch 21](batch21.md#part-5-coalton-linalglsqr) fixes and lists. Of this record: the
+operator norm estimate exceeds the Frobenius norm well inside the steps exact arithmetic
+would take, not only past them; "vectors and norms far from unit size" were held on the
+small side only, and the large side ended a solvable call; and the scale tests could not
+see a gradient lost between two scale factors of opposite size.
+
 ## Limits
 
 - **No bound on the error.** A gradient within tolerance says nothing of the distance to

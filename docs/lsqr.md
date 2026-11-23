@@ -55,10 +55,10 @@ where they fit; this is the tool where they do not.
 | --- | --- |
 | LsqrResidualMet | `‖b − A x‖`, formed from the operator, is within the residual tolerance |
 | LsqrGradientMet | The gradient, formed from the operators, is within its tolerance, and the residual is not within its own |
-| LsqrExhausted | The method's sequences ended, so that in exact arithmetic x is the solution, and neither norm as formed is within its tolerance |
+| LsqrExhausted | The method's sequences ended, so that in exact arithmetic x is the solution, and neither norm as formed is within its tolerance. A diagonal entry of the reduction that has underflowed to zero ends them as a vanished norm does |
 | LsqrLimit | The step limit was reached with neither tolerance met; the two norms say how far it got |
 | LsqrNonFinite | b, an operator or an update produced a value that was not finite |
-| LsqrOutOfRange | The right-hand side's size divided by the operator's is not a number the format holds, or the damping is more than 2^500 times the operator's size |
+| LsqrOutOfRange | The right-hand side's size divided by the size of the transpose's first image is not a number the format holds, or the damping is more than 2^500 times that size. Never where that image is zero: zero then solves the problem whatever the damping |
 | LsqrBadSize | b or x does not have the workspace's length for it |
 | LsqrBadTolerance | A tolerance is negative or not a number |
 | LsqrBadDamping | The damping is negative, infinite or not a number |
@@ -85,10 +85,15 @@ completed where an operator's image was at fault.
 - **A confirmation that fails does not restart the method.** The iteration goes on from
   where it was, and the estimate that triggered must then fall by the factor it was out
   by before it triggers again; one that was exactly zero is switched off. So a wrong
-  estimate does not cost two products a step. In the tests one wrong product, after which
+  estimate need not cost two products a step. In the tests one wrong product, after which
   the estimates are wrong for good, costs two confirmations in forty steps; a product
   wrong by less, after which the estimate is within the tolerance at 22 of forty steps,
   costs four; and an estimate that is zero at three steps running costs one.
+  **A tolerance below what rounding lets the norm reach does cost them.** The estimate
+  then goes on falling while the norm formed stays where it is, and each fall triggers
+  again: on a four by three matrix whose gradient stops at 7 × 10⁻¹⁵, a tolerance of
+  5 × 10⁻¹⁵ costs 35 confirmations in forty steps, and one of 10⁻¹⁵ costs 32. Nothing in
+  the call recognizes a stall; the step limit is what bounds it.
 - **Which tolerance to give.** A system that has a solution is asked for its residual. A
   least squares problem, whose residual does not go to zero, is given a residual
   tolerance of zero and stopped on its gradient, which is zero exactly at a minimizer;
@@ -106,46 +111,84 @@ completed where an operator's image was at fault.
   damped objective `‖b − A x‖² + λ²‖x‖²` does not rise, the norm of x does not fall, and the
   distance from x to the minimizer does not rise. The tests measure each exactly on every
   iterate of 120 small problems and find none broken by more than a part in 2³⁰, a
-  distance already at rounding level not being compared. **Neither the residual without
-  the damped term nor the gradient is monotone.**
+  distance already at rounding level not being compared. **The residual without the damped
+  term does not rise either**, since the objective does not rise and the norm does not
+  fall, and the tests measure it with the other three. **The gradient is not monotone.**
+  An earlier version of this page said the residual was not; an independent review
+  showed that it is.
 - **In exact arithmetic the method ends in at most as many steps as the rank of A.** In
   floating point the vectors it builds lose their orthogonality; it then takes more
   steps than that, and on a badly conditioned matrix many more. The count grows with the
   condition number of A, where conjugate gradients on a definite matrix grow with its
   root. **No rate is promised**; the call stops on what it measures, and the limit is the
   caller's.
-- **`operator-norm-estimate` is an estimate and proves nothing.** While the method has
-  taken no more steps than it would in exact arithmetic it is below the Frobenius norm of
-  A, to rounding. Past that it goes on growing, as the lost orthogonality lets the same
-  directions be counted again, and can exceed that norm. It is offered for forming a
-  relative tolerance after a first call, not as a bound.
+- **`operator-norm-estimate` is an estimate and proves nothing, in either direction.** It
+  is below the Frobenius norm of A only until a singular value has converged. The vectors
+  then lose their orthogonality along it and it is counted again, and a dominant singular
+  value converges within a few steps: on a matrix of order 40 with one singular value of
+  1000 and the rest between 1 and 2 the estimate is above that norm at the fourth step,
+  1.41 of it at the sixth and 3.46 of it at the fortieth. A matrix with no dominant value
+  shows nothing of the kind until past its rank, and an earlier version of this page gave
+  that as the rule. It is offered for a first idea of the operator's size, not as a bound,
+  and not for a tolerance that has to mean something.
 - **An operator pair that are not transposes of one another is not detected.** The
   estimates are then wrong, and the confirmations, made with the same pair, decide.
 - **The size of the problem does not limit it.** The right-hand side is divided by the
   power of two at its largest entry and every image of either operator by the power of
-  two at the largest entry of the transpose's first image. Everything iterated is then
-  near 1, and the iterate is multiplied back by one power of two when the call returns.
-  Those divisions change no significand, so the same problem with b multiplied by a power
-  of two, or A and λ by another, gives the same iterates bit for bit wherever the
-  operators' own products stay in range.
+  two at the largest entry of the transpose's first image. The iterate is multiplied back
+  by one power of two when the call returns. Those divisions change no significand, so
+  the same problem with b multiplied by a power of two, or A and λ by another, gives the
+  same iterates bit for bit wherever the operators' own products stay in range.
+- **Sizes inside one problem are another matter, and three things are said of them.**
+  - **An entry of b more than 2^1022 below its largest is not seen by the iteration.**
+    It is seen by the report: the residual is formed from b as it was given, entry by
+    entry, and measured at its own size. For the identity and `b = (2^100, 2^-980)` at
+    tolerances of zero the call returns `(2^100, 0)` with `LsqrExhausted` and a residual
+    of 2^-980, where before Batch 21 it reported `LsqrResidualMet` and a residual of 0. A
+    second call on that residual finds the rest.
+  - **Where b is all but orthogonal to the operator's range the things iterated are not
+    near 1.** The first image is then far below the operator's size, and a left or right
+    vector can be 2^512 or more before it is made a unit. A norm whose sum of squares is
+    above the largest number is measured again with the entries lowered, as one too small
+    is measured again with them lifted, and the call goes on. The iterate is then held far
+    below its unit and can lose digits; the norms formed say what was reached.
+  - **An iterate with entries above 2^512** has a sum of squares that is not a number. It
+    is read only under a damping, and is then measured again likewise.
   [The scale-sweep roster](rosters.md#what-is-declared) pins it: identical from 2^-800 to
   2^1020 with the right-hand side scaled and with the matrix and the damping scaled, and
   to 2^1000 with the matrix and the right-hand side scaled together, past which the
   right-hand side used there cannot be held.
-- **`LsqrOutOfRange` is the case where no power of two serves.** The right-hand side's
-  size over the operator's, which is the solution's own scale, is above the largest
-  number or below the smallest normal one; or the damping is more than 2^500 times the
-  operator's size, the operator's size being that of the transpose's first image. A
+- **`LsqrOutOfRange` is where the two powers of two do not serve.** The right-hand side's
+  size over that of the transpose's first image is above the largest number or below the
+  smallest normal one; or the damping is more than 2^500 times that image's size. That
+  size is the operator's own, and the ratio the solution's scale, where b has a fair part
+  in the operator's range; where it has not, both are off by as much as b is orthogonal
+  to it, and a problem can be refused that another pair of powers would have served:
+  `A = [1; 0]`, `b = (2^-501, 1)` under a damping of 1 is. A right-hand side the
+  transpose sends to zero exactly is not refused: zero solves it. A
   damped solution is of the order of the operator over the damping's square, and beyond
   that ratio the iterate could not be held in the iteration's units. Up to it the problem
   is solved: the tests take a damping 2^480 times the operator.
 - **A norm too small or too large to hold.** A gradient above the largest number is
   reported as infinity and meets no tolerance. A norm that is not zero and whose value in
   the caller's units rounds to zero is reported as zero and **does not meet a tolerance of
-  zero**; it meets any other.
-- **The operators are given vectors of unit size**, and are assumed linear, as the method
-  assumes. One that is not, an absolute threshold inside it for instance, sees arguments
-  of another size than the caller's.
+  zero**; it meets any other. A norm is brought to the caller's units by the two powers
+  of two together where their product is a number the format holds, so that a small one
+  and a large one do not lose between them a value that is in range: before Batch 21 a
+  gradient of 2^-601 was reported as zero, and called met, where the operator was at
+  2^-500 and the right-hand side at 2^500.
+- **In the steps the operators are given vectors of unit size**, and they are assumed
+  linear, as the method assumes. In a confirmation the transpose is given the residual at
+  unit size, and the operator the iterate in the iteration's units, which is of the
+  solution's size over the right-hand side's and grows with the condition number. One
+  that is not linear, an absolute threshold inside it for instance, sees arguments of
+  other sizes than the caller's.
+- **If an operator signals a condition the call does not return**, and x then holds the
+  iterate reached in the iteration's units, not the caller's.
+- **The last step allowed makes a product it does not need for the iterate.** Its
+  transpose product serves the last entry of the gradient's history and tells the end of
+  the sequences from the limit. A value that is not finite in it ends the call as
+  `LsqrNonFinite` with an iterate that was finished.
 
 ## The method
 
