@@ -2,6 +2,21 @@
 
 Changes a caller can meet. Each release's evidence is in the batch record it links.
 
+## 0.22.3 — 2026-11-23
+
+Changed: the pinned Coalton compiler moves from `deb300be` to `d41420e`, and the sources
+are restyled by an outside audit to rely on it. No interface, status or result changes:
+the 9,000 damped solves give the hash they gave before.
+
+- `coalton/math:finite?` is declared inline in the standard library from `d41420e`, and
+  the library now calls it bare. **Built against an earlier Coalton the library still
+  computes the same results but allocates on every checked value**, and its own
+  allocation tests refuse it; `toolchain.lock.json` and `toolchain.sources.json` describe
+  the new compiler.
+- The messages of `InvalidDimensions` and `InvalidStructure` raised for a matrix that
+  differs from an analyzed pattern no longer begin with "Gram" or "Augmented": one
+  check serves both plans. The error classes are unchanged.
+
 ## 0.22.2 — 2026-11-23
 
 `coalton-linalg/sparse/damped`, after a consumer's review of 0.22.0.

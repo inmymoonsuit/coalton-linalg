@@ -89,8 +89,9 @@ the places where a second opinion is most wanted:
   handles, `(repr :enum)` for outcomes, and latest-call accessors in place of result
   objects. The reasoning is in [the factorization contract](docs/spd-ldlt.md#representation-choices)
   and [the design review](docs/design.md#coalton-interface-review-2026-11-19).
-- **Hot loops.** `for` with `:while`, `cell`s as accumulators, `(inline (finite? x))` on
-  every checked value, and the block-compilation settings in the system definition.
+- **Hot loops.** `for` with `:while` and `break`, `cell`s as accumulators, `finite?` on
+  every checked value, which the pinned compiler inlines, and the block-compilation
+  settings in the system definition.
   [The dense factorization](src/dense/indefinite-ldlt.ct) is the shortest complete example.
 - **Where a double is boxed.** One helper returning an F64 allocated 16 bytes a call until
   it wrote into an array instead, while others in the same file did not;

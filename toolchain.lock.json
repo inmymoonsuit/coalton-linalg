@@ -1,10 +1,10 @@
 {
   "format": 1,
   "description": "Offline content pins for the installed, tested Windows x86-64 toolchain. No dependency files are redistributed by this manifest.",
-  "recorded_date": "2026-11-22",
+  "recorded_date": "2026-11-23",
   "provenance": {
     "sbcl": "2.6.10",
-    "coalton_git_revision": "deb300be5a51ad4ed903d23e6fe510acb34e9138",
+    "coalton_git_revision": "d41420ef6514b800a44f60b0e8a47929689651f8",
     "coalton_version_file": "\"0.0.1\"",
     "quicklisp_client": "2021-02-13",
     "quicklisp_dist": "2026-01-01"
@@ -510,8 +510,8 @@
           "bytes": 3849
         },
         "docs/manual/site/operators/define-class.md": {
-          "sha256": "4691755213db554f06f5d49a8478b6afb9b897a833ed2c9eeed86b38ce68a883",
-          "bytes": 4027
+          "sha256": "1bcce1f9541f81dbd0005506b67a3effbae83c9cb72acfc3dfc667fa78fbab99",
+          "bytes": 4320
         },
         "docs/manual/site/operators/define-exception.md": {
           "sha256": "f3b12c77c6a5607af71b8912b34fa1c30e8faa83f1809a4c664f1500d9438dbb",
@@ -602,8 +602,8 @@
           "bytes": 2062
         },
         "docs/manual/site/operators/inline.md": {
-          "sha256": "7310980468fd5c46e0ab38e990c7f185118922f00493a2dff9ddbb86f1de71a9",
-          "bytes": 2795
+          "sha256": "fdb89414cac5278403e2d2619916cc3b6ec7e266bdbc1bb2dcd52b9ba904f164",
+          "bytes": 3037
         },
         "docs/manual/site/operators/keyword-tail.md": {
           "sha256": "fecbebfcde8f7b7eaa7ba288129cbddcc91ee27fe9bb80a5ead233b1695d2107",
@@ -654,8 +654,8 @@
           "bytes": 1613
         },
         "docs/manual/site/operators/overlap.md": {
-          "sha256": "4d4a5f3d4dcc8c631cb959882f6dd339436e27cd2244b5e735076d39246292ab",
-          "bytes": 7832
+          "sha256": "f035bd111038c1c483ec712161c35eea5bf777fdb81437ae0330071a56bc5736",
+          "bytes": 7486
         },
         "docs/manual/site/operators/pattern-bind.md": {
           "sha256": "18cafc1fd8d9b8249afe7ff07ddfcba3a98a443316c6cb5d86df02fa850fa26d",
@@ -774,8 +774,8 @@
           "bytes": 415
         },
         "docs/manual/site/topics/advanced-coalton-programming.md": {
-          "sha256": "48275970d8092200a99db6ad8c5f38ec2375c74225c9e238987288650c1e7200",
-          "bytes": 30988
+          "sha256": "e95e3f9249594a2c34991fe1e57b0702071d10160be50c6904356554576b6f29",
+          "bytes": 31343
         },
         "docs/manual/site/topics/coalton-for-common-lispers.md": {
           "sha256": "54d8746b09fc24748cfc09183ccfd7119508077be2dec22f7625955221d6513e",
@@ -806,8 +806,8 @@
           "bytes": 1882
         },
         "docs/manual/site/topics/parallel-programming.md": {
-          "sha256": "373233e1576c819970ca5901f432a1881ad2c571ffda1acccc77e43345af6935",
-          "bytes": 30013
+          "sha256": "249bbca1ebdf49beef30c182a414602b8dfc9f2532986d70ca08b3643025a608",
+          "bytes": 29997
         },
         "docs/manual/site/topics/performance-and-optimization.md": {
           "sha256": "5519a0d1802b184eabc7efa5bc78d15e520566488cd40ca149dabc917ff4e046",
@@ -1038,24 +1038,24 @@
           "bytes": 5739
         },
         "library/boolean.ct": {
-          "sha256": "191deef31de5487e58672cafd7e9d0fed350c98d1290f3cd0f994cd969075180",
-          "bytes": 861
+          "sha256": "1ace760be3f82e24d9015228e7b5668ed334469d19843c49c9ef8eb51db50fb7",
+          "bytes": 874
         },
         "library/builtin.ct": {
           "sha256": "f4fd33d3b10f1d894492268bf2fb43f6dddaf6d01d18f28405c491442fab4968",
           "bytes": 2303
         },
         "library/cell.ct": {
-          "sha256": "9e10ed782a5e32a09206fdcf0ab37ee98e1383d2958d4d01ac3b948d63e6229b",
-          "bytes": 4762
+          "sha256": "11f7df77304ec5946976e1b65e9db025e430503950682e7d79f91962e59cea5e",
+          "bytes": 4840
         },
         "library/char.ct": {
           "sha256": "5aa98cd1aa767fb750799662a09e7066c2c2916343f978712c5b2c1154e36259",
           "bytes": 4957
         },
         "library/classes.ct": {
-          "sha256": "26a2bcf05536f63a3f365a9e4a7773b0b1c7f75f1f1f8de93d56e9b7ec9ea0eb",
-          "bytes": 25326
+          "sha256": "76a1ce37c147bb0560db7a2cb6ee68ebc644ae0f624c27585af8a7a46a044c1b",
+          "bytes": 25553
         },
         "library/derivers.lisp": {
           "sha256": "7f2109092c4d4d8f4c6d3555ff14cf38a22688c5d9ec7c830792aedb7b25d2c3",
@@ -1098,20 +1098,20 @@
           "bytes": 46021
         },
         "library/functions.ct": {
-          "sha256": "5793ed9d4263252db37fa2a91a58d74ead9d52ed0c527ab3481ee3af6e2f8f1d",
-          "bytes": 5835
+          "sha256": "ae52500988b1ae6309b748dcd87f408bf3546c83a2d46b27d68369b49559f974",
+          "bytes": 5845
         },
         "library/hash-defining-macros.lisp": {
           "sha256": "6660f913697c7bf903b6840fb2266f68fe653d321757b25cead28ecdef320f2d",
           "bytes": 955
         },
         "library/hash.ct": {
-          "sha256": "0319d452ebfc0d7918f15f933b40427a9c82745dc1d8e5caa7ca951fa790cb98",
-          "bytes": 2172
+          "sha256": "04782d98ae5b7cf5c8f0050bcea5f813cfbeb32c33f320a267b82aca1e4d721c",
+          "bytes": 2246
         },
         "library/hashmap.ct": {
-          "sha256": "6b0e0719db04562463ee372da6aae1ee5cd0dc339e55d8b44235e50a1aef802a",
-          "bytes": 32687
+          "sha256": "5183aa37f03f225243668be410e71f7446823ff27fcd64b154509448938b81b8",
+          "bytes": 32786
         },
         "library/hashtable.ct": {
           "sha256": "4e3eba5f03def8732ba71b589538b23261a43bf4feb71358cb80e442af103234",
@@ -1142,12 +1142,12 @@
           "bytes": 11003
         },
         "library/list.ct": {
-          "sha256": "ad96f3ec75c27039e6dbb5d237ff3a9f0dfdf30067df81fe87c4c202ab8f2202",
-          "bytes": 26755
+          "sha256": "50282d0b0a8afc57ba11d229cc54fe9faafe88d19df3bca8279fb170d15d6380",
+          "bytes": 27253
         },
         "library/math/arith.ct": {
-          "sha256": "bb1315f56d37d195d26b3ff54c8a5653b1b655eb2c6c89ff263e85b890bfbbf1",
-          "bytes": 7100
+          "sha256": "61daeff6ac6d1ca6e474b4ade116d823180aac696e9c1080de32fb0fc0ddfa60",
+          "bytes": 7111
         },
         "library/math/bounded.ct": {
           "sha256": "d953ce706964c7e0827a5c50f2246fd999a6372e857cda9074c6748c47e58ff7",
@@ -1158,24 +1158,24 @@
           "bytes": 12292
         },
         "library/math/conversions.ct": {
-          "sha256": "2d6c22713e2729ec6d1ff9adf1586f697073eb21c8f561a771915aa093d67073",
-          "bytes": 9452
+          "sha256": "225cb88c750ec3cb1aa8d3691dddb93d5f44bd6199ef4fb8acb746d4980a4308",
+          "bytes": 9463
         },
         "library/math/elementary.ct": {
-          "sha256": "4de1a5ec18b488351a59ca49b980ce547ab217ce703cc84c38177296ab461544",
-          "bytes": 14878
+          "sha256": "e50dec06176543595bd4c34be9e4a6fdafd9476b794472bb434483acd4acff62",
+          "bytes": 15160
         },
         "library/math/fraction.ct": {
-          "sha256": "06a2e271a91ba46c168ab15ac7e52c9af300b801dcdfd7cdd970f64d2f382742",
-          "bytes": 3087
+          "sha256": "3ecce02db9b626a8548225e1b8e3350c13306239439bba0ffaa3706e34333982",
+          "bytes": 3255
         },
         "library/math/integral.ct": {
-          "sha256": "bc5abe3bec54472587965d39796fbee8e0af2652359b5df7354f4e2d9f9adeae",
-          "bytes": 10936
+          "sha256": "d82ad9eac8cc472cbd0cbc2869938a52665db9160e9922314353965aecfe2597",
+          "bytes": 10904
         },
         "library/math/num-defining-macros.lisp": {
-          "sha256": "056bbbcf620285f586bec5fb754a1cb60c66fec984c4db7cb930153dfb630c57",
-          "bytes": 14695
+          "sha256": "d9c8d97859e969d924f82f2d00890713d431bfd48544ff8dce03c552d75e3ecd",
+          "bytes": 14709
         },
         "library/math/num.ct": {
           "sha256": "cc78d19ea085cd7a65860cc76b6d2012f97453f1a274d842bd77739a858a784d",
@@ -1186,8 +1186,8 @@
           "bytes": 387
         },
         "library/math/real.ct": {
-          "sha256": "3ee659608da55633d739d083b46c944458b5f9093357a76e22fef5577cb1c07b",
-          "bytes": 9647
+          "sha256": "43a2f50f8c4be2ce414059e463a0b49608fa5462ce9709c522a165c415d6997f",
+          "bytes": 9798
         },
         "library/monad/classes.ct": {
           "sha256": "c9f46e4410cf52d0529e880b6e62fa70180e8b0a8bf0406040b84b2aa84e3ece",
@@ -1226,8 +1226,8 @@
           "bytes": 4053
         },
         "library/optional.ct": {
-          "sha256": "9c2c2ff9cbb71d5ac7fd458ab100f816b4ac7e2b1b1c1a8b8c358fd1d51d6dcb",
-          "bytes": 3405
+          "sha256": "3e2dd3c2b1d8de0c867abb9f3535f9389c3757e4433a60907a6255000f4d4125",
+          "bytes": 3470
         },
         "library/ordmap.ct": {
           "sha256": "bb3593fb171f105e76b78ad34775b1431d4e972a3cc2869386f9d588d866f49e",
@@ -1246,12 +1246,12 @@
           "bytes": 3864
         },
         "library/queue.ct": {
-          "sha256": "935318b1422ff81c4e90c6effb54427e2d8cd8f54fbefab67d6dfc80199fab48",
-          "bytes": 8501
+          "sha256": "27c0b3b3d238866220c05bb6369727ca761951221d6646fa833dad98270d2bd6",
+          "bytes": 8608
         },
         "library/randomaccess.ct": {
-          "sha256": "7b4c235e5895928bbc1592e084c1edb3bf9391f607b2b65a84a503f86c037bab",
-          "bytes": 3968
+          "sha256": "5ee191ddde44b1774bc4a105d4e53c5dd0b61e474029e83444d123cbf45ad79d",
+          "bytes": 4012
         },
         "library/result.ct": {
           "sha256": "c2db83bfebe36fe2006c521d6ee7ae1f864d3f35f96cb958976994f1e470627b",
@@ -1270,12 +1270,12 @@
           "bytes": 6143
         },
         "library/slice.ct": {
-          "sha256": "226f6b68ad3dc79a1f06786d3bd0c8dd1d5a9b43e3a101c84631f03ec374bf28",
-          "bytes": 6687
+          "sha256": "da83b4b194905b5053d262043e6816fc85728b277476df97595a6ee2e80e3415",
+          "bytes": 6698
         },
         "library/string.ct": {
-          "sha256": "9570d7cac4f9cee46d13cad9c632fa13e1d2f37122baae86e31be49f7d6dc0c2",
-          "bytes": 8378
+          "sha256": "35771c7a5785732432c29a6e33af2a5c3370d4e6704fe56c5aa9c322eb922e3a",
+          "bytes": 8581
         },
         "library/symbol.ct": {
           "sha256": "3a5c13671dca0802682e535b9cd3fcca5f7f81b99fc4f37b8f71c967c90b7ca1",
@@ -1286,8 +1286,8 @@
           "bytes": 8449
         },
         "library/tuple.ct": {
-          "sha256": "ae346fc088ca759859edf3c7a08f6242c3dbd8bf7bbe1ae3fcade9d1091fcc0a",
-          "bytes": 3920
+          "sha256": "4d0a24264a1ea2b211c59e0b91ea9717a11053af4e590f81b287255ac6382dc9",
+          "bytes": 3972
         },
         "library/types.ct": {
           "sha256": "1d9f83d519e96ad0c9ac0b2d165bd53f659d85602f5505ed111d176501eda35b",
@@ -1298,8 +1298,8 @@
           "bytes": 1804
         },
         "library/vector.ct": {
-          "sha256": "45967fbac41c038a7d7b98d4a3dc952f004e4bd21322d6625a0bc22938212783",
-          "bytes": 14968
+          "sha256": "8523a9c9601ba32bca67980d31728d78dcbae3cd01d2ba8a9234ec340cc87df1",
+          "bytes": 15104
         },
         "mine/CREDITS.txt": {
           "sha256": "b1ceb498b1ad67f14cd41daaa602491b642aad11b67f52e6a54acaa1319d806a",
@@ -2226,8 +2226,8 @@
           "bytes": 19081
         },
         "src/codegen/optimizer.lisp": {
-          "sha256": "6abad6ba3fbfdb274cfbc08377302acf605cdb3332b6b66bfb14aa13fa0746d2",
-          "bytes": 32883
+          "sha256": "0be2b5b126717314a58550440148f422fa3497a7d39a57722c626e2009bcfcc3",
+          "bytes": 32600
         },
         "src/codegen/package.lisp": {
           "sha256": "fe97865be8b68297c65170fa79b80cdb4bab8a937be016316d9fa7d976c67b3f",
@@ -2246,8 +2246,8 @@
           "bytes": 3853
         },
         "src/codegen/resolve-instance.lisp": {
-          "sha256": "4d7dbcaf8141e317213d3db32369ff02914db8d651f336d4b0e3945d10226bd1",
-          "bytes": 8522
+          "sha256": "90598c9236ead4ec26dc756b3e57bf267f59abff53964ccb3415287ef4820467",
+          "bytes": 7947
         },
         "src/codegen/scalar-replacement.lisp": {
           "sha256": "bb6ede8ffc16ca2664b2eb5c85b5f2e4436b369c8cf1111d2f1a0f1cdf604c27",
@@ -2266,8 +2266,8 @@
           "bytes": 21571
         },
         "src/codegen/translate-expression.lisp": {
-          "sha256": "5972c1454acdb714396a15632992a2c09eec4e93a83a34e0aee6e461dd14c28f",
-          "bytes": 76106
+          "sha256": "70b8c81a7219e8ada4f19afa87a8e084ad34780a8a14d26180d69d95b49a7cce",
+          "bytes": 76099
         },
         "src/codegen/translate-instance.lisp": {
           "sha256": "477aa6ab0c92b17e1121c72b161fcdd7bf02d5f677c86923213f64fe3327d941",
@@ -2326,8 +2326,8 @@
           "bytes": 1192
         },
         "src/entry.lisp": {
-          "sha256": "0b2d53959d88033a594d09846e8b35c119db9758f6b12858188f5f8fa166ec8e",
-          "bytes": 16775
+          "sha256": "291adca333e97c51efa2664e4805ec0437f9b276593d5f920c6ad9ee718b127b",
+          "bytes": 17911
         },
         "src/faux-macros.lisp": {
           "sha256": "b0ab2129c4e0699dcae29c5aecd5f531287595c2b3ae92373d2ed84558c67d5b",
@@ -2462,8 +2462,8 @@
           "bytes": 7059
         },
         "src/source.lisp": {
-          "sha256": "4030e160abd02d207fadac5fe34ada98a02480dd6a0f23f6636d008acacc5cea",
-          "bytes": 38061
+          "sha256": "b648e1feeda06ed4aa9d0035495cbbfe4aacb76966d1a3a32731b0e26982c2a8",
+          "bytes": 38844
         },
         "src/testing/coalton-native-test-utils.lisp": {
           "sha256": "e81e1350df4e06eec99fe4ef0fc818a086b9b179a6eb2da434d5406c0b52bdca",
@@ -2486,8 +2486,8 @@
           "bytes": 4231
         },
         "src/typechecker/context-reduction.lisp": {
-          "sha256": "1991ee678648f26fc87f2e9649c4db03121c74278d8b54acfe8648014ead20c6",
-          "bytes": 20444
+          "sha256": "b1563cc78f30be7a2f2d4b8e749dd63a4aea08db955189a5cc8c8276cebe55f8",
+          "bytes": 20390
         },
         "src/typechecker/control-flow.lisp": {
           "sha256": "84ad8efd6d704db1788404486b6a99b3e1e7e0f27192ed224fc3910f856b1d04",
@@ -2498,24 +2498,24 @@
           "bytes": 26422
         },
         "src/typechecker/define-instance.lisp": {
-          "sha256": "3bf115b2d1ae359b9cf6e305b00a8c2d6da5f56218ba7448bae32dc8cb85b40c",
-          "bytes": 33712
+          "sha256": "4b1ba56ad67fd8573c0917e872162060d0553bda0e363fe0372b2fc0da8459a3",
+          "bytes": 33243
         },
         "src/typechecker/define-type.lisp": {
           "sha256": "642a6f8c052dbc748fb0828bdc885ea3f67f662f37f869615b7dfede87b6bbe4",
           "bytes": 52860
         },
         "src/typechecker/define.lisp": {
-          "sha256": "e860452dba95548700e40156a2624a31edba5674b6d576aa39b1b024688d0e4b",
-          "bytes": 286318
+          "sha256": "21b9356600b4f704ccf10afca8429cf3508d21fbb589fb27854cb637d914f52f",
+          "bytes": 286704
         },
         "src/typechecker/derive.lisp": {
           "sha256": "4ef17194b3e15ce0d00f868714c6c3de5f25883d444c9f8430725953a6822ea1",
           "bytes": 6539
         },
         "src/typechecker/environment.lisp": {
-          "sha256": "c80655166ac1f324946eee767060d5b571aa5938f8fa28f1cb5265e4769c2f20",
-          "bytes": 128120
+          "sha256": "2cae9ade8cd7f5bf56980e2f5895432b6a3587f68909b91777e596111a0bb930",
+          "bytes": 131686
         },
         "src/typechecker/expression.lisp": {
           "sha256": "0b6368e2f8921b8a03de2bbe18c3a343ce91c46faad658e95674d2b4da70b000",
@@ -2550,8 +2550,8 @@
           "bytes": 5935
         },
         "src/typechecker/predicate.lisp": {
-          "sha256": "ec90eed88ac987813b5aecd78991269a425b0e3a887b5170b1f42c273f99a612",
-          "bytes": 15840
+          "sha256": "10090a78a9d3be1b9643e5c3e15e0c2bf7d87016c206582b7baa20518c188eb5",
+          "bytes": 16233
         },
         "src/typechecker/scheme.lisp": {
           "sha256": "8992a27ff72cf7c0b84afb8434be6260f947a672fd1d65bdc9d036534e7b64f4",
@@ -2586,8 +2586,8 @@
           "bytes": 11832
         },
         "src/typechecker/type-errors.lisp": {
-          "sha256": "d63dbd4ec1ce98a69e957a9fea0524ada95b4075251ac37b57779a35eef1ff8e",
-          "bytes": 11799
+          "sha256": "9fc832b48e9b0eddfce42165acc3c240c3371f117edd95886d606bb2f33d42cc",
+          "bytes": 11021
         },
         "src/typechecker/type-string.lisp": {
           "sha256": "ac228c1c1cae3d08a5e8eedc0f7ccd9a7df0afdadf1acf14e17224d154a10aca",
@@ -2662,8 +2662,8 @@
           "bytes": 2488
         },
         "tests/environment-persist-tests.lisp": {
-          "sha256": "b6939413f81e31651972f79f3d5365f9ad9295d01d06ae3d9c6cca41da6dc536",
-          "bytes": 4985
+          "sha256": "090adc95a49d882f7b374efa88b5fe0c2ca8e14c514f2134997f83da22122fc3",
+          "bytes": 7220
         },
         "tests/error-tests.lisp": {
           "sha256": "a15ce2ea96be3bca071482a2c50dc19e635419cac06090074fe0662b8a9d8432",
@@ -2694,8 +2694,8 @@
           "bytes": 2333
         },
         "tests/fundep-tests.lisp": {
-          "sha256": "d6cbedc9901155aad21203e50739dfd86eff1132cdb0ae33f6e41e65065c2d78",
-          "bytes": 43519
+          "sha256": "cdc23621c1deccba349b512984641a7a52f6ff8c87fea6f07d06a03b7a4f6410",
+          "bytes": 48016
         },
         "tests/hashmap-tests.lisp": {
           "sha256": "c6e2a6632bf3e1ea91734dab1cd2efa1c6b404c3ddb47c4419b98f3d2283aa3c",
@@ -2716,6 +2716,14 @@
         "tests/inliner-tests.ct": {
           "sha256": "8b528f1566f6fb021c853882461c100bc5c98d38dd0239af2a3ee30f75354df2",
           "bytes": 28155
+        },
+        "tests/instance-interface/client.lisp": {
+          "sha256": "48bddf98247e568d30055475177b22c6fec1f89f13ac29b063a1d3bb6f52074e",
+          "bytes": 259
+        },
+        "tests/instance-interface/provider.lisp": {
+          "sha256": "eb9df797a5d7172cb7ed0cbdd2c04c35511d6622b4bde35dc55c94030c174820",
+          "bytes": 639
         },
         "tests/iterator-tests.lisp": {
           "sha256": "8eb473a7517c3af7bee1aff7429be40d6ed21407811b3511222ebd08bc0ddf07",
@@ -2782,8 +2790,8 @@
           "bytes": 11866
         },
         "tests/overlap-tests.lisp": {
-          "sha256": "5a2182d51a8ea98d00e38d243bc888ad04c6ae779407ef10289a5798b7b03295",
-          "bytes": 17513
+          "sha256": "c4c32b72bc2578cc0ef7e25de353c8cb8fa0f1a149735a4af907d96e8a5febe0",
+          "bytes": 18822
         },
         "tests/package.lisp": {
           "sha256": "9f065534035187e015765cbbafdfb28d0674dc5b591886599a074b9fe9f68ed3",
@@ -2894,8 +2902,8 @@
           "bytes": 3181
         },
         "tests/test-files/fundeps.txt": {
-          "sha256": "85f1793d220e10a5ac5f7a0ca6c2f4052c7da772ef6c1690796ceb0c543c32cb",
-          "bytes": 18966
+          "sha256": "b493e8c228c43990dec9b991bdccf7ec2bef43bd7ab3057a2b605cd05df8af5b",
+          "bytes": 19154
         },
         "tests/test-files/hashtable.txt": {
           "sha256": "1ce21da6cc78f3542891b26bb46416a931cc6159261b00ed5063f1000912b784",
@@ -3094,8 +3102,8 @@
           "bytes": 1382
         },
         "tests/toplevel-tests.lisp": {
-          "sha256": "7451458ca36d6e1c36d5a89043bf99699fc70a3849fb82c9e7d860ad230e7cde",
-          "bytes": 9981
+          "sha256": "122d147b16592f0d80bd2139a4d2e690f6df028fc0d0b07bd9f3bf8668ad1845",
+          "bytes": 12503
         },
         "tests/type-alias-tests.lisp": {
           "sha256": "b45c371f9472cae9af68acd4dfe8a64f11a8270c7f2d930c2b80a067d7fdd5cf",
@@ -3126,8 +3134,8 @@
           "bytes": 8138
         },
         "threads/README.md": {
-          "sha256": "35b8cdfa7a473d3e5867e12c2cb9abdf345e776e78f646929e645f09a79b4ceb",
-          "bytes": 18679
+          "sha256": "f5dbd8ea4c3ad70156e492266acfdb0ad61bea8dd6475d2bbfa001468b499bf2",
+          "bytes": 18722
         },
         "threads/atomic.ct": {
           "sha256": "d2eaa9d2ed68763c69a07dfbb99be57b592e5994ccfafbfeb5e61a1be39fffb1",
@@ -3162,8 +3170,8 @@
           "bytes": 2147
         },
         "threads/parallel.ct": {
-          "sha256": "356698ea58f5ff4f7da7e7a2ccd6be4754822f2e4eeade89fda50788158f8916",
-          "bytes": 17572
+          "sha256": "9f73dd12380031a2545910be2cd340c86c54db7df7e4327dd24685b7eeb5dc35",
+          "bytes": 17582
         },
         "threads/runtime/api.lisp": {
           "sha256": "4942acf8f159a8df59b0c7ac795b1fa37ab071204f3b265c2916200417afb92e",
